@@ -34,6 +34,22 @@ export async function moduleInClassroom(
   ) as ModuleRow | null;
 }
 
+/** A student may only interact with modules that their classroom has published. */
+export async function publishedModuleInClassroom(
+  id: string,
+  classroomId: string,
+): Promise<ModuleRow | null> {
+  return unwrap(
+    await supabase
+      .from("modules")
+      .select("*")
+      .eq("id", id)
+      .eq("classroom_id", classroomId)
+      .eq("state", "published")
+      .maybeSingle(),
+  ) as ModuleRow | null;
+}
+
 export async function studentInClassroom(
   id: string,
   classroomId: string,

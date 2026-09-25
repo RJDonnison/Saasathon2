@@ -112,14 +112,12 @@ classroomsRouter.get(
 );
 classroomsRouter.get("/:id/modules", async (req, res) => {
   if (!(await member(req, res))) return;
-  const rows = unwrap(
-    await supabase
-      .from("modules")
-      .select("*")
-      .eq("classroom_id", req.params.id)
-      .order("position")
-      .order("id"),
-  ) as ModuleRow[];
+  let query = supabase
+    .from("modules")
+    .select("*")
+    .eq("classroom_id", req.params.id);
+  if (req.user!.role === "student") query = query.eq("state", "published");
+  const rows = unwrap(await query.order("position").order("id")) as ModuleRow[];
   const body: ListModulesResponse = rows.map(toModule);
   res.json(body);
 });
@@ -137,25 +135,64 @@ classroomsRouter.get(
     )
       return res.status(404).json({ error: "Student not found" });
     const studentId = String(req.params.studentId);
+    // Resolve every descendant from this classroom first. A global user may belong to several classrooms.
+    const modules = unwrap(
+      await supabase
+        .from("modules")
+        .select("id")
+        .eq("classroom_id", req.params.id),
+    ) as { id: string }[];
+    const moduleIds = modules.map((m) => m.id);
+    const sections = moduleIds.length
+      ? (unwrap(
+          await supabase
+            .from("sections")
+            .select("id")
+            .in("module_id", moduleIds),
+        ) as { id: string }[])
+      : [];
+    const sectionIds = sections.map((s) => s.id);
+    const questions = sectionIds.length
+      ? (unwrap(
+          await supabase
+            .from("questions")
+            .select("id")
+            .in("section_id", sectionIds),
+        ) as { id: string }[])
+      : [];
+    const questionIds = questions.map((q) => q.id);
+    const exercises = questionIds.length
+      ? (unwrap(
+          await supabase
+            .from("code_exercises")
+            .select("id")
+            .in("question_id", questionIds),
+        ) as { id: string }[])
+      : [];
+    const exerciseIds = exercises.map((e) => e.id);
     const [moduleProgress, sectionProgress, attempts, submissions] =
       await Promise.all([
         supabase
           .from("module_progress")
           .select("*")
-          .eq("student_id", studentId),
+          .eq("student_id", studentId)
+          .in("module_id", moduleIds),
         supabase
           .from("section_progress")
           .select("*")
-          .eq("student_id", studentId),
+          .eq("student_id", studentId)
+          .in("section_id", sectionIds),
         supabase
           .from("attempts")
           .select("*")
           .eq("student_id", studentId)
+          .in("question_id", questionIds)
           .order("created_at"),
         supabase
           .from("code_submissions")
           .select("*")
           .eq("student_id", studentId)
+          .in("code_exercise_id", exerciseIds)
           .order("created_at"),
       ]).then((results) => results.map(unwrap));
     const submissionIds = (submissions as { id: string }[]).map((s) => s.id);

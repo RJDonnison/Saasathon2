@@ -4,6 +4,7 @@ import type {
   Classroom,
   CodeCheck,
   CodeExercise,
+  CodeHint,
   CodeSubmission,
   Comment,
   Membership,
@@ -32,6 +33,9 @@ export type ModuleRow = {
   classroom_id: string;
   title: string;
   content: string;
+  description: string;
+  overview: string;
+  state: Module["state"];
   position: number;
 };
 export type SectionRow = {
@@ -80,6 +84,12 @@ export type CheckRow = {
   code_exercise_id: string;
   name: string;
   description: string;
+  position: number;
+};
+export type HintRow = {
+  id: string;
+  code_exercise_id: string;
+  text: string;
   position: number;
 };
 export type ModuleProgressRow = {
@@ -149,6 +159,9 @@ export const toModule = (r: ModuleRow): Module => ({
   classroomId: r.classroom_id,
   title: r.title,
   content: r.content,
+  description: r.description,
+  overview: r.overview,
+  state: r.state,
   position: r.position,
 });
 export const toSection = (r: SectionRow): Section => ({
@@ -197,6 +210,12 @@ export const toCheck = (r: CheckRow): CodeCheck => ({
   codeExerciseId: r.code_exercise_id,
   name: r.name,
   description: r.description,
+  position: r.position,
+});
+export const toHint = (r: HintRow): CodeHint => ({
+  id: r.id,
+  codeExerciseId: r.code_exercise_id,
+  text: r.text,
   position: r.position,
 });
 export const toModuleProgress = (r: ModuleProgressRow): ModuleProgress => ({

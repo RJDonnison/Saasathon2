@@ -7,6 +7,7 @@ import {
   toBlock,
   toCheck,
   toExercise,
+  toHint,
   toModule,
   toOption,
   toQuestion,
@@ -16,6 +17,7 @@ import {
   type BlockRow,
   type CheckRow,
   type ExerciseRow,
+  type HintRow,
   type ModuleRow,
   type OptionRow,
   type QuestionRow,
@@ -30,11 +32,15 @@ import type {
   CreateQuestionRequest,
   CreateReferenceAnswerRequest,
   CreateSectionRequest,
-  GetModuleResponse,
+  GetStudentModuleResponse,
+  GetTeacherModuleResponse,
+  ModuleState,
   QuestionKind,
   TeacherModule,
   UpdateBlockRequest,
   UpdateCodeCheckRequest,
+  CreateCodeHintRequest,
+  UpdateCodeHintRequest,
   UpdateModuleRequest,
   UpdateOptionRequest,
   UpdateQuestionRequest,
@@ -45,6 +51,7 @@ import type {
 
 export const modulesRouter = Router();
 const kinds: QuestionKind[] = ["mcq", "short", "code"];
+const states: ModuleState[] = ["draft", "published"];
 const validPosition = (value: unknown) =>
   value === undefined || (Number.isInteger(value) && (value as number) >= 0);
 const nextPosition = async (
@@ -62,11 +69,53 @@ const nextPosition = async (
   ) as { position: number }[];
   return (rows[0]?.position ?? -1) + 1;
 };
+/**
+ * Position PATCHes represent insertion at the requested sibling position.
+ * Re-numbering the sibling set prevents duplicate positions from making the
+ * secondary ID sort determine a move's result.
+ */
+const moveWithinSiblings = async (
+  table: string,
+  parentColumn: string,
+  parentId: string,
+  id: string,
+  requestedPosition: number,
+) => {
+  const siblings = unwrap(
+    await supabase
+      .from(table)
+      .select("id, position")
+      .eq(parentColumn, parentId)
+      .order("position")
+      .order("id"),
+  ) as { id: string; position: number }[];
+  const currentIndex = siblings.findIndex((sibling) => sibling.id === id);
+  if (currentIndex < 0) return requestedPosition;
+  const [moving] = siblings.splice(currentIndex, 1);
+  const targetIndex = siblings.findIndex(
+    (sibling) => sibling.position >= requestedPosition,
+  );
+  siblings.splice(targetIndex < 0 ? siblings.length : targetIndex, 0, moving);
+  for (const [position, sibling] of siblings.entries()) {
+    unwrap(
+      await supabase.from(table).update({ position }).eq("id", sibling.id),
+    );
+  }
+  return siblings.findIndex((sibling) => sibling.id === id);
+};
 
 async function aggregate(
   module: ModuleRow,
+  teacher: true,
+): Promise<GetTeacherModuleResponse>;
+async function aggregate(
+  module: ModuleRow,
+  teacher: false,
+): Promise<GetStudentModuleResponse>;
+async function aggregate(
+  module: ModuleRow,
   teacher: boolean,
-): Promise<GetModuleResponse> {
+): Promise<GetTeacherModuleResponse | GetStudentModuleResponse> {
   const sections = unwrap(
     await supabase
       .from("sections")
@@ -108,7 +157,7 @@ async function aggregate(
       ]).then((r) => r.map(unwrap))) as [OptionRow[], ExerciseRow[]])
     : [[], []];
   const exerciseIds = exercises.map((e) => e.id);
-  const [references, checks] =
+  const [references, checks, hints] =
     teacher && exerciseIds.length
       ? ((await Promise.all([
           supabase
@@ -123,8 +172,18 @@ async function aggregate(
             .in("code_exercise_id", exerciseIds)
             .order("position")
             .order("id"),
-        ]).then((r) => r.map(unwrap))) as [ReferenceRow[], CheckRow[]])
-      : [[], []];
+          supabase
+            .from("code_hints")
+            .select("*")
+            .in("code_exercise_id", exerciseIds)
+            .order("position")
+            .order("id"),
+        ]).then((r) => r.map(unwrap))) as [
+          ReferenceRow[],
+          CheckRow[],
+          HintRow[],
+        ])
+      : [[], [], []];
   const result = {
     ...toModule(module),
     sections: sections.map((section) => ({
@@ -151,6 +210,9 @@ async function aggregate(
                         checks: checks
                           .filter((c) => c.code_exercise_id === exercise.id)
                           .map(toCheck),
+                        hints: hints
+                          .filter((h) => h.code_exercise_id === exercise.id)
+                          .map(toHint),
                       }
                     : toExercise(exercise),
                 }
@@ -159,7 +221,7 @@ async function aggregate(
         }),
     })),
   };
-  return result as TeacherModule;
+  return result;
 }
 async function ownedModule(
   req: any,
@@ -205,7 +267,11 @@ async function ownedQuestion(
 
 modulesRouter.get("/:id", async (req, res) => {
   const module = await ownedModule(req, res, req.params.id);
-  if (module) res.json(await aggregate(module, req.user!.role === "teacher"));
+  if (!module) return;
+  if (req.user!.role !== "teacher" && module.state !== "published")
+    return res.status(404).json({ error: "Module not found" });
+  if (req.user!.role === "teacher") res.json(await aggregate(module, true));
+  else res.json(await aggregate(module, false));
 });
 modulesRouter.post("/", requireRole("teacher"), async (req, res) => {
   const body = (req.body ?? {}) as Partial<CreateModuleRequest>;
@@ -213,6 +279,9 @@ modulesRouter.post("/", requireRole("teacher"), async (req, res) => {
     typeof body.title !== "string" ||
     !body.title.trim() ||
     (body.content !== undefined && typeof body.content !== "string") ||
+    (body.description !== undefined && typeof body.description !== "string") ||
+    (body.overview !== undefined && typeof body.overview !== "string") ||
+    (body.state !== undefined && !states.includes(body.state)) ||
     !validPosition(body.position)
   )
     return res
@@ -229,6 +298,9 @@ modulesRouter.post("/", requireRole("teacher"), async (req, res) => {
         classroom_id: req.user!.classroomId,
         title: body.title.trim(),
         content: body.content ?? "",
+        description: body.description?.trim() ?? "",
+        overview: body.overview?.trim() ?? "",
+        state: body.state ?? "draft",
         position,
       })
       .select("*")
@@ -244,16 +316,46 @@ modulesRouter.patch("/:id", requireRole("teacher"), async (req, res) => {
     (body.title !== undefined &&
       (typeof body.title !== "string" || !body.title.trim())) ||
     (body.content !== undefined && typeof body.content !== "string") ||
+    (body.description !== undefined && typeof body.description !== "string") ||
+    (body.overview !== undefined && typeof body.overview !== "string") ||
+    (body.state !== undefined && !states.includes(body.state)) ||
     !validPosition(body.position)
   )
     return res.status(400).json({ error: "Invalid module fields" });
+  const requestedState = body.state ?? current.state;
+  if (requestedState === "published") {
+    const sections = unwrap(
+      await supabase
+        .from("sections")
+        .select("id")
+        .eq("module_id", current.id)
+        .limit(1),
+    ) as { id: string }[];
+    if (!sections.length)
+      return res
+        .status(400)
+        .json({ error: "A published module needs at least one section" });
+  }
+  const position =
+    body.position === undefined
+      ? current.position
+      : await moveWithinSiblings(
+          "modules",
+          "classroom_id",
+          current.classroom_id,
+          current.id,
+          body.position,
+        );
   const row = unwrap(
     await supabase
       .from("modules")
       .update({
         title: body.title?.trim() ?? current.title,
         content: body.content ?? current.content,
-        position: body.position ?? current.position,
+        description: body.description?.trim() ?? current.description,
+        overview: body.overview?.trim() ?? current.overview,
+        state: requestedState,
+        position,
       })
       .eq("id", current.id)
       .select("*")
@@ -314,6 +416,16 @@ modulesRouter.patch(
       !validPosition(b.position)
     )
       return res.status(400).json({ error: "Invalid section fields" });
+    const position =
+      b.position === undefined
+        ? s.position
+        : await moveWithinSiblings(
+            "sections",
+            "module_id",
+            s.module_id,
+            s.id,
+            b.position,
+          );
     res.json(
       toSection(
         unwrap(
@@ -321,7 +433,7 @@ modulesRouter.patch(
             .from("sections")
             .update({
               title: b.title?.trim() ?? s.title,
-              position: b.position ?? s.position,
+              position,
             })
             .eq("id", s.id)
             .select("*")
@@ -392,6 +504,16 @@ modulesRouter.patch("/blocks/:id", requireRole("teacher"), async (req, res) => {
     !validPosition(b.position)
   )
     return res.status(400).json({ error: "Invalid block fields" });
+  const position =
+    b.position === undefined
+      ? block.position
+      : await moveWithinSiblings(
+          "section_blocks",
+          "section_id",
+          block.section_id,
+          block.id,
+          b.position,
+        );
   res.json(
     toBlock(
       unwrap(
@@ -400,7 +522,7 @@ modulesRouter.patch("/blocks/:id", requireRole("teacher"), async (req, res) => {
           .update({
             type: b.type?.trim() ?? block.type,
             content: b.content === undefined ? block.content : b.content,
-            position: b.position ?? block.position,
+            position,
           })
           .eq("id", block.id)
           .select("*")
@@ -440,6 +562,7 @@ modulesRouter.post(
       (b.answerKey !== undefined &&
         b.answerKey !== null &&
         typeof b.answerKey !== "string") ||
+      (b.kind === "mcq" && b.answerKey !== undefined && b.answerKey !== null) ||
       !validPosition(b.position)
     )
       return res.status(400).json({ error: "Invalid question fields" });
@@ -479,6 +602,56 @@ modulesRouter.patch(
       !validPosition(b.position)
     )
       return res.status(400).json({ error: "Invalid question fields" });
+    if (b.kind !== undefined && b.kind !== q.kind) {
+      const [optionsResult, exerciseResult] = await Promise.all([
+        supabase
+          .from("question_options")
+          .select("id")
+          .eq("question_id", q.id)
+          .limit(1),
+        supabase
+          .from("code_exercises")
+          .select("id")
+          .eq("question_id", q.id)
+          .maybeSingle(),
+      ]);
+      const options = unwrap(optionsResult) as { id: string }[];
+      const exercise = unwrap(exerciseResult) as { id: string } | null;
+      if (options.length || exercise)
+        return res.status(409).json({
+          error:
+            "Delete the question's options or code exercise before changing its kind",
+        });
+    }
+    if (
+      b.answerKey !== undefined &&
+      b.answerKey !== null &&
+      (b.kind ?? q.kind) === "mcq"
+    ) {
+      const option = unwrap(
+        await supabase
+          .from("question_options")
+          .select("id")
+          .eq("id", b.answerKey)
+          .eq("question_id", q.id)
+          .maybeSingle(),
+      );
+      if (!option)
+        return res.status(400).json({
+          error:
+            "MCQ answerKey must be an option ID belonging to this question",
+        });
+    }
+    const position =
+      b.position === undefined
+        ? q.position
+        : await moveWithinSiblings(
+            "questions",
+            "section_id",
+            q.section_id,
+            q.id,
+            b.position,
+          );
     const row = unwrap(
       await supabase
         .from("questions")
@@ -486,7 +659,7 @@ modulesRouter.patch(
           prompt: b.prompt?.trim() ?? q.prompt,
           kind: b.kind ?? q.kind,
           answer_key: b.answerKey === undefined ? q.answer_key : b.answerKey,
-          position: b.position ?? q.position,
+          position,
         })
         .eq("id", q.id)
         .select("*")
@@ -561,6 +734,16 @@ modulesRouter.patch(
       !validPosition(b.position)
     )
       return res.status(400).json({ error: "Invalid option fields" });
+    const position =
+      b.position === undefined
+        ? o.position
+        : await moveWithinSiblings(
+            "question_options",
+            "question_id",
+            o.question_id,
+            o.id,
+            b.position,
+          );
     res.json(
       toOption(
         unwrap(
@@ -568,7 +751,7 @@ modulesRouter.patch(
             .from("question_options")
             .update({
               text: b.text?.trim() ?? o.text,
-              position: b.position ?? o.position,
+              position,
             })
             .eq("id", o.id)
             .select("*")
@@ -589,7 +772,13 @@ modulesRouter.delete(
         .eq("id", req.params.id)
         .maybeSingle(),
     ) as OptionRow | null;
-    if (!o || !(await ownedQuestion(req, res, o.question_id))) return;
+    if (!o) return;
+    const question = await ownedQuestion(req, res, o.question_id);
+    if (!question) return;
+    if (question.answer_key === o.id)
+      return res.status(409).json({
+        error: "Clear or replace this option's answerKey before deleting it",
+      });
     unwrap(await supabase.from("question_options").delete().eq("id", o.id));
     res.status(204).end();
   },
@@ -648,13 +837,15 @@ async function exerciseFor(
 }
 function childCrud(
   base: string,
-  table: "reference_answers" | "code_checks",
+  table: "reference_answers" | "code_checks" | "code_hints",
   create: (
     b: any,
     exerciseId: string,
     position: number,
   ) => Record<string, unknown>,
   update: (b: any, old: any) => Record<string, unknown>,
+  valid: (b: any, partial: boolean) => boolean,
+  map: (row: any) => unknown,
 ) {
   modulesRouter.post(
     `/exercises/:id/${base}`,
@@ -663,6 +854,8 @@ function childCrud(
       const e = await exerciseFor(req, res, req.params.id);
       const b = req.body as any;
       if (!e || !b || typeof b !== "object") return;
+      if (!valid(b, false))
+        return res.status(400).json({ error: "Invalid authoring fields" });
       const position =
         b.position ?? (await nextPosition(table, "code_exercise_id", e.id));
       if (!validPosition(position))
@@ -674,7 +867,7 @@ function childCrud(
           .select("*")
           .single(),
       );
-      res.status(201).json(row);
+      res.status(201).json(map(row));
     },
   );
   modulesRouter.patch(
@@ -689,15 +882,27 @@ function childCrud(
           .maybeSingle(),
       ) as any;
       if (!old || !(await exerciseFor(req, res, old.code_exercise_id))) return;
+      if (!valid(req.body ?? {}, true))
+        return res.status(400).json({ error: "Invalid authoring fields" });
+      const position =
+        req.body?.position === undefined
+          ? old.position
+          : await moveWithinSiblings(
+              table,
+              "code_exercise_id",
+              old.code_exercise_id,
+              old.id,
+              req.body.position,
+            );
       const row = unwrap(
         await supabase
           .from(table)
-          .update(update(req.body ?? {}, old))
+          .update(update({ ...(req.body ?? {}), position }, old))
           .eq("id", old.id)
           .select("*")
           .single(),
       );
-      res.json(row);
+      res.json(map(row));
     },
   );
   modulesRouter.delete(
@@ -732,6 +937,18 @@ childCrud(
     answer: b.answer ?? old.answer,
     position: b.position ?? old.position,
   }),
+  (b, partial) =>
+    typeof b === "object" &&
+    (partial
+      ? (b.title === undefined ||
+          (typeof b.title === "string" && b.title.trim())) &&
+        (b.answer === undefined || typeof b.answer === "string") &&
+        validPosition(b.position)
+      : typeof b.title === "string" &&
+        b.title.trim() &&
+        typeof b.answer === "string" &&
+        validPosition(b.position)),
+  toReference,
 );
 childCrud(
   "checks",
@@ -748,4 +965,41 @@ childCrud(
     description: b.description ?? old.description,
     position: b.position ?? old.position,
   }),
+  (b, partial) =>
+    typeof b === "object" &&
+    (partial
+      ? (b.name === undefined ||
+          (typeof b.name === "string" && b.name.trim())) &&
+        (b.description === undefined || typeof b.description === "string") &&
+        validPosition(b.position)
+      : typeof b.name === "string" &&
+        b.name.trim() &&
+        typeof b.description === "string" &&
+        validPosition(b.position)),
+  toCheck,
+);
+
+childCrud(
+  "hints",
+  "code_hints",
+  (b: CreateCodeHintRequest, id, position) => ({
+    id: randomUUID(),
+    code_exercise_id: id,
+    text: b.text.trim(),
+    position,
+  }),
+  (b: UpdateCodeHintRequest, old) => ({
+    text: b.text?.trim() ?? old.text,
+    position: b.position ?? old.position,
+  }),
+  (b, partial) =>
+    typeof b === "object" &&
+    (partial
+      ? (b.text === undefined ||
+          (typeof b.text === "string" && b.text.trim())) &&
+        validPosition(b.position)
+      : typeof b.text === "string" &&
+        b.text.trim() &&
+        validPosition(b.position)),
+  toHint,
 );

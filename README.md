@@ -83,6 +83,8 @@ All endpoints require a Supabase access token in `Authorization: Bearer <token>`
 Users are global and role is stored on `memberships`, scoped to each classroom. Joining a classroom selects its
 membership for subsequent requests.
 
+> **Demo-only limitation:** anyone with a room code can choose the teacher role while joining. This is not staff authorization for production.
+
 ### Auth and classroom reads
 
 - `POST /api/auth/join` — `{ roomCode, role }`; creates or updates the caller's classroom membership.

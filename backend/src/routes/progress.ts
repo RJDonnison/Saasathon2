@@ -29,36 +29,78 @@ async function permitted(req: any, studentId: string) {
   );
 }
 
+async function classroomModuleIds(
+  classroomId: string,
+  publishedOnly: boolean,
+): Promise<string[]> {
+  let query = supabase
+    .from("modules")
+    .select("id")
+    .eq("classroom_id", classroomId);
+  if (publishedOnly) query = query.eq("state", "published");
+  const rows = unwrap(await query) as { id: string }[];
+  return rows.map((row) => row.id);
+}
+
 progressRouter.get("/students/:id/progress", async (req, res) => {
   if (!(await permitted(req, req.params.id)))
     return res.status(404).json({ error: "Student not found" });
-  const rows = unwrap(
-    await supabase
-      .from("module_progress")
-      .select("*")
-      .eq("student_id", req.params.id),
-  ) as ModuleProgressRow[];
+  const moduleIds = await classroomModuleIds(
+    req.user!.classroomId,
+    req.user!.role === "student",
+  );
+  const rows = moduleIds.length
+    ? (unwrap(
+        await supabase
+          .from("module_progress")
+          .select("*")
+          .eq("student_id", req.params.id)
+          .in("module_id", moduleIds),
+      ) as ModuleProgressRow[])
+    : [];
   res.json(rows.map(toModuleProgress));
 });
 progressRouter.get("/students/:id/section-progress", async (req, res) => {
   if (!(await permitted(req, req.params.id)))
     return res.status(404).json({ error: "Student not found" });
-  const rows = unwrap(
-    await supabase
-      .from("section_progress")
-      .select("*")
-      .eq("student_id", req.params.id),
-  ) as SectionProgressRow[];
+  const moduleIds = await classroomModuleIds(
+    req.user!.classroomId,
+    req.user!.role === "student",
+  );
+  const sectionIds = moduleIds.length
+    ? (
+        unwrap(
+          await supabase
+            .from("sections")
+            .select("id")
+            .in("module_id", moduleIds),
+        ) as { id: string }[]
+      ).map((section) => section.id)
+    : [];
+  const rows = sectionIds.length
+    ? (unwrap(
+        await supabase
+          .from("section_progress")
+          .select("*")
+          .eq("student_id", req.params.id)
+          .in("section_id", sectionIds),
+      ) as SectionProgressRow[])
+    : [];
   res.json(rows.map(toSectionProgress));
 });
 progressRouter.put("/progress", async (req, res) => {
   const b = (req.body ?? {}) as Partial<UpsertModuleProgressRequest>;
   const studentId = b.studentId ?? req.user!.userId;
+  const module =
+    typeof b.moduleId === "string"
+      ? await moduleInClassroom(b.moduleId, req.user!.classroomId)
+      : null;
   if (
     typeof b.moduleId !== "string" ||
     !statuses.includes(b.status as ProgressStatus) ||
     !(await permitted(req, studentId)) ||
-    !(await moduleInClassroom(b.moduleId, req.user!.classroomId))
+    !module ||
+    (req.user!.role === "student" && module.state !== "published")
   )
     return res.status(400).json({ error: "Invalid module progress request" });
   const row = unwrap(
@@ -92,11 +134,15 @@ progressRouter.put("/section-progress", async (req, res) => {
             .maybeSingle(),
         ) as SectionRow | null)
       : null;
+  const module = section
+    ? await moduleInClassroom(section.module_id, req.user!.classroomId)
+    : null;
   if (
     !section ||
     !statuses.includes(b.status as ProgressStatus) ||
     !(await permitted(req, studentId)) ||
-    !(await moduleInClassroom(section.module_id, req.user!.classroomId))
+    !module ||
+    (req.user!.role === "student" && module.state !== "published")
   )
     return res.status(400).json({ error: "Invalid section progress request" });
   const row = unwrap(

@@ -1,10 +1,11 @@
-import { Navigate, Route, Routes } from 'react-router-dom'
-import ProtectedRoute from './auth/ProtectedRoute.tsx'
-import JoinPage from './pages/JoinPage.tsx'
-import StudentLayout from './student/StudentLayout.tsx'
-import StudentHome from './student/StudentHome.tsx'
-import TeacherLayout from './teacher/TeacherLayout.tsx'
-import TeacherHome from './teacher/TeacherHome.tsx'
+import { Navigate, Route, Routes } from "react-router-dom";
+import ProtectedRoute from "./auth/ProtectedRoute.tsx";
+import JoinPage from "./pages/JoinPage.tsx";
+import StudentLayout from "./student/StudentLayout.tsx";
+import StudentHome from "./student/StudentHome.tsx";
+import TeacherLayout from "./teacher/TeacherLayout.tsx";
+import TeacherHome from "./teacher/TeacherHome.tsx";
+import TeacherModules from "./teacher/TeacherModules.tsx";
 
 export default function App() {
   return (
@@ -32,10 +33,11 @@ export default function App() {
         }
       >
         <Route index element={<TeacherHome />} />
+        <Route path="modules" element={<TeacherModules />} />
         <Route path="*" element={<Navigate to="/teacher" replace />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
-  )
+  );
 }

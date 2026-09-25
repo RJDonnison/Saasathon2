@@ -2,6 +2,7 @@ import type { Server as HttpServer } from "node:http";
 import { Server, type Socket } from "socket.io";
 import { findProfile, verifyToken, type AuthUser } from "./auth.js";
 import { CLIENT_ORIGIN } from "./config.js";
+import { publishedModuleInClassroom } from "./access.js";
 import type {
   ClientToServerEvents,
   PresenceUpdatePayload,
@@ -24,6 +25,7 @@ type AppSocket = Socket<
 
 // In-memory presence: classroomId -> studentId -> number of open sockets (handles multiple tabs).
 const online = new Map<string, Map<string, number>>();
+const statuses = new Set(["idle", "working", "stuck"]);
 
 function onlineStudentIds(classroomId: string): string[] {
   return [...(online.get(classroomId)?.keys() ?? [])];
@@ -81,9 +83,13 @@ export function attachSockets(httpServer: HttpServer): AppServer {
       role === "student" &&
       studentId === userId &&
       payloadClassroomId === classroomId;
+    let lastRaise = 0;
+    let lastStatus = 0;
 
     socket.on("raise_hand", (payload) => {
       if (!isValidSender(payload?.studentId, payload?.classroomId)) return;
+      if (Date.now() - lastRaise < 1000) return;
+      lastRaise = Date.now();
       io.to(classroomId).emit("raise_hand", {
         type: "raise_hand",
         studentId: userId,
@@ -91,8 +97,14 @@ export function attachSockets(httpServer: HttpServer): AppServer {
       });
     });
 
-    socket.on("student_status_update", (payload) => {
+    socket.on("student_status_update", async (payload) => {
       if (!isValidSender(payload?.studentId, payload?.classroomId)) return;
+      if (!statuses.has(payload.status) || typeof payload.moduleId !== "string")
+        return;
+      if (Date.now() - lastStatus < 500) return;
+      if (!(await publishedModuleInClassroom(payload.moduleId, classroomId)))
+        return;
+      lastStatus = Date.now();
       io.to(classroomId).emit("student_status_update", {
         type: "student_status_update",
         studentId: userId,
