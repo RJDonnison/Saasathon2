@@ -64,7 +64,8 @@ Then set up Supabase (the only database):
 
 - **Room code: `DEMO123`**
 - Teacher: `Ms. Rivera` · Students: `Alex`, `Sam`
-- Two modules: "Variables and Types", "Loops"
+- One ordered module with two sections, markdown content, MCQ/short/code questions, a code exercise,
+  two teacher reference answers/checks, progress, an attempt, a sandbox result, and a line comment.
 
 Sign in with Google, then join with `DEMO123` as a student in one browser window and as a teacher in another
 (use two Google accounts, or a normal window plus a private one) to try the raise-hand flow. Your name comes
@@ -74,3 +75,51 @@ from your Google profile. Alex and Sam are demo rows with no login; they just po
 
 Code execution (`POST /api/code/run`) and AI hints (`POST /api/ai/hint`) return mock responses. The OpenAI
 client is scaffolded in `backend/src/openai.ts` but not wired into any route.
+
+## Core API
+
+All endpoints require a Supabase access token in `Authorization: Bearer <token>`. `POST /api/auth/join` and
+`GET /api/auth/me` only require a signed-in identity; all other endpoints also require a classroom membership.
+Users are global and role is stored on `memberships`, scoped to each classroom. Joining a classroom selects its
+membership for subsequent requests.
+
+### Auth and classroom reads
+
+- `POST /api/auth/join` — `{ roomCode, role }`; creates or updates the caller's classroom membership.
+- `GET /api/auth/me`
+- `POST /api/classrooms` (teacher) — `{ name, roomCode }`; adds the caller as its teacher.
+- `GET /api/classrooms/:id`, `GET /api/classrooms/:id/modules` (members)
+- `GET /api/classrooms/:id/students` (teacher)
+- `GET /api/classrooms/:id/students/:studentId/aggregate` (teacher) — progress, attempts, submissions,
+  and submission comments for that scoped student.
+
+### Authored learning content (teacher only)
+
+`GET /api/modules/:id` returns a nested ordered module. Teachers receive answer keys, reference answers,
+and checks; students receive the same content without those fields.
+
+- Modules: `POST /api/modules`, `PATCH|DELETE /api/modules/:id`
+- Sections: `POST /api/modules/:id/sections`, `PATCH|DELETE /api/modules/sections/:id`
+- Blocks: `POST /api/modules/sections/:id/blocks`, `PATCH|DELETE /api/modules/blocks/:id`
+- Questions: `POST /api/modules/sections/:id/questions`, `PATCH|DELETE /api/modules/questions/:id`
+- MCQ options: `POST /api/modules/questions/:id/options`, `PATCH|DELETE /api/modules/options/:id`
+- Code exercise (one per code question): `PUT /api/modules/questions/:id/exercise`
+- Reference answers: `POST /api/modules/exercises/:id/references`,
+  `PATCH|DELETE /api/modules/references/:id`
+- Code checks: `POST /api/modules/exercises/:id/checks`, `PATCH|DELETE /api/modules/checks/:id`
+
+Create/update bodies and response shapes are defined in [`shared/types.ts`](shared/types.ts). Every ordered
+entity accepts `position`; omitting it appends it to its parent.
+
+### Student work
+
+- `PUT /api/progress`, `PUT /api/section-progress` — `{ studentId? , moduleId|sectionId, status }`.
+  Students can update only themselves; teachers can update classroom students.
+- `GET /api/students/:id/progress`, `GET /api/students/:id/section-progress`
+- `POST /api/attempts` — `{ questionId, answer }`; the API records correctness only where an answer key
+  exists.
+- `POST /api/submissions` — `{ codeExerciseId, code, stdout?, stderr?, passed? }`.
+  `stdout`, `stderr`, and `passed` are supplied by an external sandbox; **the API never executes code**.
+- `GET /api/submissions/:id/comments`, `POST /api/comments` — a comment body is
+  `{ submissionId, text, lineStart?, lineEnd? }`. Students may comment only on their own submissions;
+  teachers can comment in their classroom.
