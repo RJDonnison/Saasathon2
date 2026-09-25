@@ -112,11 +112,10 @@ classroomsRouter.get(
 );
 classroomsRouter.get("/:id/modules", async (req, res) => {
   if (!(await member(req, res))) return;
-  let query = supabase
+  const query = supabase
     .from("modules")
     .select("*")
     .eq("classroom_id", req.params.id);
-  if (req.user!.role === "student") query = query.eq("state", "published");
   const rows = unwrap(await query.order("position").order("id")) as ModuleRow[];
   const body: ListModulesResponse = rows.map(toModule);
   res.json(body);

@@ -53,9 +53,9 @@ export default function ClassroomGrid({
     });
   }, [classroomId]);
   return (
-    <section className="rounded border bg-white p-4">
+    <section className="rounded-2xl border border-[#dfe5d8] bg-white p-5 shadow-sm">
       <h2 className="mb-3 font-semibold">Classroom roster</h2>
-      <p className="mb-3 text-xs text-gray-500">
+      <p className="mb-3 text-xs text-[#697266]">
         Select a student to load their activity; the roster itself is fetched
         once.
       </p>
@@ -64,15 +64,15 @@ export default function ClassroomGrid({
           <button
             key={s.id}
             onClick={() => onSelect(s)}
-            className="flex items-center justify-between rounded border p-3 text-left text-sm"
+            className="flex items-center justify-between rounded-xl border border-[#dfe5d8] p-3 text-left text-sm transition hover:bg-[#f4f7f0] focus:outline-none focus:ring-2 focus:ring-[#b7ee89]"
           >
             <span className="flex items-center gap-2">
               <span
-                className={`h-2 w-2 rounded-full ${online.has(s.id) ? "bg-green-500" : "bg-gray-300"}`}
+                className={`h-2 w-2 rounded-full ${online.has(s.id) ? "bg-[#71984f]" : "bg-[#c7cec0]"}`}
               />
               {s.name}
             </span>
-            <span className="text-xs text-gray-500">
+            <span className="text-xs text-[#697266]">
               {status[s.id] ?? "idle"}
             </span>
           </button>

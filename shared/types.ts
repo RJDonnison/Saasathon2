@@ -2,7 +2,6 @@
 export type Role = "student" | "teacher";
 export type ProgressStatus = "not_started" | "in_progress" | "completed";
 export type QuestionKind = "mcq" | "short" | "code";
-export type ModuleState = "draft" | "published";
 
 export interface Classroom {
   id: string;
@@ -30,9 +29,6 @@ export interface Module {
   classroomId: string;
   title: string;
   content: string;
-  description: string;
-  overview: string;
-  state: ModuleState;
   position: number;
 }
 export interface Section {
@@ -83,20 +79,12 @@ export interface CodeCheck {
   description: string;
   position: number;
 }
-export interface CodeHint {
-  id: string;
-  codeExerciseId: string;
-  text: string;
-  position: number;
-}
-
 /** Teacher aggregate. Includes answer keys, reference answers and checks. */
 export interface TeacherQuestion extends Question {
   answerKey: string | null;
   codeExercise?: CodeExercise & {
     referenceAnswers: ReferenceAnswer[];
     checks: CodeCheck[];
-    hints: CodeHint[];
   };
 }
 export interface TeacherSection extends Section {
@@ -200,17 +188,11 @@ export interface CreateClassroomRequest {
 export interface CreateModuleRequest {
   title: string;
   content?: string;
-  description?: string;
-  overview?: string;
-  state?: ModuleState;
   position?: number;
 }
 export interface UpdateModuleRequest {
   title?: string;
   content?: string;
-  description?: string;
-  overview?: string;
-  state?: ModuleState;
   position?: number;
 }
 export interface CreateSectionRequest {
@@ -277,15 +259,6 @@ export interface UpdateCodeCheckRequest {
   description?: string;
   position?: number;
 }
-export interface CreateCodeHintRequest {
-  text: string;
-  position?: number;
-}
-export interface UpdateCodeHintRequest {
-  text?: string;
-  position?: number;
-}
-
 export interface UpsertModuleProgressRequest {
   studentId?: string;
   moduleId: string;

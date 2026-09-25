@@ -53,14 +53,21 @@ export default function StudentDetailPanel({
   };
   if (!student)
     return (
-      <section className="rounded border bg-white p-4 text-sm text-gray-600">
+      <section className="rounded-2xl border border-[#dfe5d8] bg-white p-5 text-sm text-[#697266] shadow-sm">
         Select a student to fetch their aggregate progress and submissions.
       </section>
     );
   return (
-    <section className="flex flex-col gap-3 rounded border bg-white p-4">
+    <section className="flex flex-col gap-3 rounded-2xl border border-[#dfe5d8] bg-white p-5 shadow-sm">
       <h2 className="font-semibold">{student.name}'s review</h2>
-      {error && <p className="text-sm text-red-700">{error}</p>}
+      {error && (
+        <p
+          className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+          role="alert"
+        >
+          {error}
+        </p>
+      )}
       {!data ? (
         <p className="text-sm">Loading selected student activity…</p>
       ) : (
@@ -72,13 +79,13 @@ export default function StudentDetailPanel({
           {data.submissions.map((s) => (
             <article
               key={s.id}
-              className="flex flex-col gap-2 rounded border p-3"
+              className="flex flex-col gap-2 rounded-xl border border-[#dfe5d8] bg-[#f7f8f4] p-3"
             >
               <p className="text-xs text-gray-500">
                 Submission {s.id} ·{" "}
                 {s.passed === true ? "passed" : "not evaluated"}
               </p>
-              <pre className="overflow-auto rounded bg-gray-900 p-3 text-xs text-gray-100">
+              <pre className="overflow-auto rounded-lg bg-[#20271f] p-3 text-xs text-[#f4f7f0]">
                 {s.code}
               </pre>
               {data.comments
@@ -101,7 +108,7 @@ export default function StudentDetailPanel({
                   placeholder="Add a line comment"
                 />
                 <button
-                  className="rounded bg-blue-600 px-2 py-1 text-sm text-white"
+                  className="rounded-lg bg-[#71984f] px-2 py-1 text-sm font-medium text-white hover:bg-[#5f8b3b] focus:outline-none focus:ring-2 focus:ring-[#b7ee89]"
                   onClick={() => submitComment(s.id)}
                 >
                   Comment line 1

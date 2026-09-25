@@ -13,8 +13,8 @@ root/
 └── frontend/        Vite + React + TypeScript + Tailwind v4 + React Router
 ```
 
-- **Backend** — one Express server serving REST and Socket.io on the same HTTP server. Data in Supabase
-  (Postgres); the schema and demo seed are in `backend/schema.sql`.
+- **Backend** — one Express server serving REST and Socket.io on the same HTTP server. Data is in Supabase
+  (Postgres). The remote schema is fixed; `backend/schema.sql` is a reference/demo seed, not an upgrade script.
 - **Frontend** — one app. After joining, users are routed to `/student` or `/teacher` by role; visiting
   the other role's route redirects you back to your own.
 - **Auth** — Supabase Auth with Google sign-in, then a room code + role to enter a classroom. The browser's
@@ -47,8 +47,8 @@ Then set up Supabase (the only database):
 1. Create a project at [supabase.com](https://supabase.com).
 2. `cp .env.example .env` and fill in `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` and the two `VITE_SUPABASE_*`
    values (dashboard → Project Settings → API; the frontend gets the *publishable* key only).
-3. In the dashboard SQL editor, paste and run [`backend/schema.sql`](backend/schema.sql) once. It creates
-   the tables and seeds the demo data.
+3. Use a Supabase project with the existing supported schema. Do not run
+   [`backend/schema.sql`](backend/schema.sql) as an upgrade script for this fixed remote schema.
 4. Enable Google sign-in:
    - Google Cloud Console → APIs & Services → Credentials → create an OAuth client ID (Web application) with
      the authorized redirect URI `https://<project-ref>.supabase.co/auth/v1/callback`.
@@ -60,7 +60,7 @@ Then set up Supabase (the only database):
 
 ## Demo data
 
-`backend/schema.sql` seeds:
+For a separately provisioned demo database, `backend/schema.sql` contains a reference seed:
 
 - **Room code: `DEMO123`**
 - Teacher: `Ms. Rivera` · Students: `Alex`, `Sam`
@@ -99,6 +99,7 @@ membership for subsequent requests.
 
 `GET /api/modules/:id` returns a nested ordered module. Teachers receive answer keys, reference answers,
 and checks; students receive the same content without those fields.
+Modules use `title` and `content` only and become visible to every classroom member as soon as a teacher creates them.
 
 - Modules: `POST /api/modules`, `PATCH|DELETE /api/modules/:id`
 - Sections: `POST /api/modules/:id/sections`, `PATCH|DELETE /api/modules/sections/:id`

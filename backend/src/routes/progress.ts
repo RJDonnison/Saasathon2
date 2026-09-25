@@ -29,15 +29,11 @@ async function permitted(req: any, studentId: string) {
   );
 }
 
-async function classroomModuleIds(
-  classroomId: string,
-  publishedOnly: boolean,
-): Promise<string[]> {
-  let query = supabase
+async function classroomModuleIds(classroomId: string): Promise<string[]> {
+  const query = supabase
     .from("modules")
     .select("id")
     .eq("classroom_id", classroomId);
-  if (publishedOnly) query = query.eq("state", "published");
   const rows = unwrap(await query) as { id: string }[];
   return rows.map((row) => row.id);
 }
@@ -45,10 +41,7 @@ async function classroomModuleIds(
 progressRouter.get("/students/:id/progress", async (req, res) => {
   if (!(await permitted(req, req.params.id)))
     return res.status(404).json({ error: "Student not found" });
-  const moduleIds = await classroomModuleIds(
-    req.user!.classroomId,
-    req.user!.role === "student",
-  );
+  const moduleIds = await classroomModuleIds(req.user!.classroomId);
   const rows = moduleIds.length
     ? (unwrap(
         await supabase
@@ -63,10 +56,7 @@ progressRouter.get("/students/:id/progress", async (req, res) => {
 progressRouter.get("/students/:id/section-progress", async (req, res) => {
   if (!(await permitted(req, req.params.id)))
     return res.status(404).json({ error: "Student not found" });
-  const moduleIds = await classroomModuleIds(
-    req.user!.classroomId,
-    req.user!.role === "student",
-  );
+  const moduleIds = await classroomModuleIds(req.user!.classroomId);
   const sectionIds = moduleIds.length
     ? (
         unwrap(
@@ -99,8 +89,7 @@ progressRouter.put("/progress", async (req, res) => {
     typeof b.moduleId !== "string" ||
     !statuses.includes(b.status as ProgressStatus) ||
     !(await permitted(req, studentId)) ||
-    !module ||
-    (req.user!.role === "student" && module.state !== "published")
+    !module
   )
     return res.status(400).json({ error: "Invalid module progress request" });
   const row = unwrap(
@@ -141,8 +130,7 @@ progressRouter.put("/section-progress", async (req, res) => {
     !section ||
     !statuses.includes(b.status as ProgressStatus) ||
     !(await permitted(req, studentId)) ||
-    !module ||
-    (req.user!.role === "student" && module.state !== "published")
+    !module
   )
     return res.status(400).json({ error: "Invalid section progress request" });
   const row = unwrap(

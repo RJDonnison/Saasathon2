@@ -7,7 +7,6 @@ import {
   toBlock,
   toCheck,
   toExercise,
-  toHint,
   toModule,
   toOption,
   toQuestion,
@@ -17,7 +16,6 @@ import {
   type BlockRow,
   type CheckRow,
   type ExerciseRow,
-  type HintRow,
   type ModuleRow,
   type OptionRow,
   type QuestionRow,
@@ -34,13 +32,10 @@ import type {
   CreateSectionRequest,
   GetStudentModuleResponse,
   GetTeacherModuleResponse,
-  ModuleState,
   QuestionKind,
   TeacherModule,
   UpdateBlockRequest,
   UpdateCodeCheckRequest,
-  CreateCodeHintRequest,
-  UpdateCodeHintRequest,
   UpdateModuleRequest,
   UpdateOptionRequest,
   UpdateQuestionRequest,
@@ -51,7 +46,6 @@ import type {
 
 export const modulesRouter = Router();
 const kinds: QuestionKind[] = ["mcq", "short", "code"];
-const states: ModuleState[] = ["draft", "published"];
 const validPosition = (value: unknown) =>
   value === undefined || (Number.isInteger(value) && (value as number) >= 0);
 const nextPosition = async (
@@ -157,7 +151,7 @@ async function aggregate(
       ]).then((r) => r.map(unwrap))) as [OptionRow[], ExerciseRow[]])
     : [[], []];
   const exerciseIds = exercises.map((e) => e.id);
-  const [references, checks, hints] =
+  const [references, checks] =
     teacher && exerciseIds.length
       ? ((await Promise.all([
           supabase
@@ -172,18 +166,8 @@ async function aggregate(
             .in("code_exercise_id", exerciseIds)
             .order("position")
             .order("id"),
-          supabase
-            .from("code_hints")
-            .select("*")
-            .in("code_exercise_id", exerciseIds)
-            .order("position")
-            .order("id"),
-        ]).then((r) => r.map(unwrap))) as [
-          ReferenceRow[],
-          CheckRow[],
-          HintRow[],
-        ])
-      : [[], [], []];
+        ]).then((r) => r.map(unwrap))) as [ReferenceRow[], CheckRow[]])
+      : [[], []];
   const result = {
     ...toModule(module),
     sections: sections.map((section) => ({
@@ -210,9 +194,6 @@ async function aggregate(
                         checks: checks
                           .filter((c) => c.code_exercise_id === exercise.id)
                           .map(toCheck),
-                        hints: hints
-                          .filter((h) => h.code_exercise_id === exercise.id)
-                          .map(toHint),
                       }
                     : toExercise(exercise),
                 }
@@ -268,8 +249,6 @@ async function ownedQuestion(
 modulesRouter.get("/:id", async (req, res) => {
   const module = await ownedModule(req, res, req.params.id);
   if (!module) return;
-  if (req.user!.role !== "teacher" && module.state !== "published")
-    return res.status(404).json({ error: "Module not found" });
   if (req.user!.role === "teacher") res.json(await aggregate(module, true));
   else res.json(await aggregate(module, false));
 });
@@ -279,9 +258,6 @@ modulesRouter.post("/", requireRole("teacher"), async (req, res) => {
     typeof body.title !== "string" ||
     !body.title.trim() ||
     (body.content !== undefined && typeof body.content !== "string") ||
-    (body.description !== undefined && typeof body.description !== "string") ||
-    (body.overview !== undefined && typeof body.overview !== "string") ||
-    (body.state !== undefined && !states.includes(body.state)) ||
     !validPosition(body.position)
   )
     return res
@@ -298,9 +274,6 @@ modulesRouter.post("/", requireRole("teacher"), async (req, res) => {
         classroom_id: req.user!.classroomId,
         title: body.title.trim(),
         content: body.content ?? "",
-        description: body.description?.trim() ?? "",
-        overview: body.overview?.trim() ?? "",
-        state: body.state ?? "draft",
         position,
       })
       .select("*")
@@ -316,26 +289,9 @@ modulesRouter.patch("/:id", requireRole("teacher"), async (req, res) => {
     (body.title !== undefined &&
       (typeof body.title !== "string" || !body.title.trim())) ||
     (body.content !== undefined && typeof body.content !== "string") ||
-    (body.description !== undefined && typeof body.description !== "string") ||
-    (body.overview !== undefined && typeof body.overview !== "string") ||
-    (body.state !== undefined && !states.includes(body.state)) ||
     !validPosition(body.position)
   )
     return res.status(400).json({ error: "Invalid module fields" });
-  const requestedState = body.state ?? current.state;
-  if (requestedState === "published") {
-    const sections = unwrap(
-      await supabase
-        .from("sections")
-        .select("id")
-        .eq("module_id", current.id)
-        .limit(1),
-    ) as { id: string }[];
-    if (!sections.length)
-      return res
-        .status(400)
-        .json({ error: "A published module needs at least one section" });
-  }
   const position =
     body.position === undefined
       ? current.position
@@ -352,9 +308,6 @@ modulesRouter.patch("/:id", requireRole("teacher"), async (req, res) => {
       .update({
         title: body.title?.trim() ?? current.title,
         content: body.content ?? current.content,
-        description: body.description?.trim() ?? current.description,
-        overview: body.overview?.trim() ?? current.overview,
-        state: requestedState,
         position,
       })
       .eq("id", current.id)
@@ -837,7 +790,7 @@ async function exerciseFor(
 }
 function childCrud(
   base: string,
-  table: "reference_answers" | "code_checks" | "code_hints",
+  table: "reference_answers" | "code_checks",
   create: (
     b: any,
     exerciseId: string,
@@ -977,29 +930,4 @@ childCrud(
         typeof b.description === "string" &&
         validPosition(b.position)),
   toCheck,
-);
-
-childCrud(
-  "hints",
-  "code_hints",
-  (b: CreateCodeHintRequest, id, position) => ({
-    id: randomUUID(),
-    code_exercise_id: id,
-    text: b.text.trim(),
-    position,
-  }),
-  (b: UpdateCodeHintRequest, old) => ({
-    text: b.text?.trim() ?? old.text,
-    position: b.position ?? old.position,
-  }),
-  (b, partial) =>
-    typeof b === "object" &&
-    (partial
-      ? (b.text === undefined ||
-          (typeof b.text === "string" && b.text.trim())) &&
-        validPosition(b.position)
-      : typeof b.text === "string" &&
-        b.text.trim() &&
-        validPosition(b.position)),
-  toHint,
 );

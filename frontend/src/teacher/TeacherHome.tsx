@@ -7,7 +7,7 @@ import type { User } from "../../../shared/types";
 export default function TeacherHome() {
   const [student, setStudent] = useState<User | null>(null);
   return (
-    <div className="grid gap-4 md:grid-cols-2">
+    <div className="grid gap-5 md:grid-cols-2">
       <RaiseHandAlert />
       <ClassroomGrid onSelect={setStudent} />
       <StudentDetailPanel student={student} />

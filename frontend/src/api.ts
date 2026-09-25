@@ -109,8 +109,6 @@ export const api = {
     }),
   updateOption: (id: string, body: { position: number }) =>
     request(`/api/modules/options/${id}`, { method: "PATCH", json: body }),
-  updateHint: (id: string, body: { position: number }) =>
-    request(`/api/modules/hints/${id}`, { method: "PATCH", json: body }),
   updateReference: (id: string, body: { position: number }) =>
     request(`/api/modules/references/${id}`, { method: "PATCH", json: body }),
   updateCheck: (id: string, body: { position: number }) =>

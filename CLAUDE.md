@@ -69,9 +69,9 @@ MOCKED — don't "fix" these into real implementations unless explicitly asked; 
   (server-side only; it bypasses RLS, and RLS is enabled with no policies so the anon key can access nothing).
   It throws at startup if `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` are unset, and the backend
   checks the `classrooms` table is reachable before listening.
-- The schema **and** the demo seed live in `backend/schema.sql`. Supabase has no migration runner here:
-  when you change a table, update `backend/schema.sql` (and the row types/mappers in `backend/src/rows.ts`)
-  and re-run the SQL in the Supabase SQL editor. Add fields to `shared/types.ts` first.
+- The remote schema is fixed under the no-schema-change constraint. `backend/schema.sql` is a reference/demo
+  seed only; do not run it as an upgrade script or alter the remote schema. Modules support only
+  `id`, `classroom_id`, `title`, `content`, `created_at`, and `position`.
 - The seeded demo users (Ms. Rivera, Alex, Sam) have no auth account; they only populate the teacher's
   grid. Real users are created by `POST /api/auth/join`.
 - DB columns are snake_case; `rows.ts` maps them to the camelCase entities in `shared/types.ts`.
@@ -94,7 +94,7 @@ npm install --prefix frontend
 npm run install-all
 
 cp .env.example .env            # fill in the SUPABASE_* and VITE_SUPABASE_* values (all required)
-# one-time: paste backend/schema.sql into the Supabase dashboard SQL editor and run it
+# use the existing remote Supabase schema; do not run backend/schema.sql as an upgrade
 # one-time: enable Google sign-in (see below)
 npm run dev                     # from root: boots backend :4000 and frontend :5173
 ```
@@ -110,7 +110,7 @@ npm run dev                     # from root: boots backend :4000 and frontend :5
 `VITE_`-prefixed vars reach the browser, so `SUPABASE_SERVICE_ROLE_KEY` never does — don't change
 `envPrefix`, and never put the service-role key in a `VITE_` var. Restart the dev server after editing `.env`.
 
-`backend/schema.sql` creates the tables and seeds the demo data: room code **`DEMO123`**, teacher
+`backend/schema.sql` is a reference/demo seed for a separately provisioned database: room code **`DEMO123`**, teacher
 "Ms. Rivera", students "Alex" and "Sam", two modules.
 
 The backend resolves `.env` (repo root) from its working directory, so run it via its npm scripts

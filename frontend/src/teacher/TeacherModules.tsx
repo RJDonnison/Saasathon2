@@ -7,9 +7,10 @@ import type {
   TeacherQuestion,
 } from "../../../shared/types";
 
-const input = "w-full rounded border border-gray-300 px-3 py-2 text-sm";
+const input =
+  "w-full rounded-xl border border-[#dfe5d8] bg-white px-3 py-2 text-sm text-[#20271f] outline-none transition focus:border-[#71984f] focus:ring-2 focus:ring-[#b7ee89]/50";
 const button =
-  "rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50";
+  "rounded-xl bg-[#71984f] px-3 py-2 text-sm font-semibold text-white transition hover:bg-[#5f8b3b] focus:outline-none focus:ring-2 focus:ring-[#b7ee89] focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50";
 
 export default function TeacherModules() {
   const { user } = useAuth();
@@ -112,9 +113,9 @@ export default function TeacherModules() {
   };
   return (
     <div className="grid gap-5 lg:grid-cols-[18rem_1fr]">
-      <aside className="flex flex-col gap-3 rounded border bg-white p-4">
+      <aside className="flex flex-col gap-3 rounded-2xl border border-[#dfe5d8] bg-white p-4 shadow-sm">
         <div className="flex items-center justify-between">
-          <h2 className="font-semibold">Modules</h2>
+          <h2 className="font-semibold text-[#20271f]">Modules</h2>
           <button
             className={button}
             disabled={saving}
@@ -123,20 +124,22 @@ export default function TeacherModules() {
             New
           </button>
         </div>
-        <p className="text-xs text-gray-500">
-          Publishing makes a module immediately visible to students.
+        <p className="text-xs text-[#697266]">
+          New modules are immediately visible to classroom students.
         </p>
         {modules.map((m, moduleIndex) => (
           <div
             key={m.id}
-            className={`flex items-center gap-2 rounded border p-3 text-sm ${selected?.id === m.id ? "border-blue-500 bg-blue-50" : ""}`}
+            className={`flex items-center gap-2 rounded-xl border p-3 text-sm transition ${selected?.id === m.id ? "border-[#91bf70] bg-[#f4f7f0]" : "border-[#dfe5d8] bg-white hover:bg-[#f7f8f4]"}`}
           >
             <button
               onClick={() => void open(m.id)}
               className="min-w-0 flex-1 text-left"
             >
               <span className="block font-medium">{m.title}</span>
-              <span className="text-xs text-gray-500">{m.state}</span>
+              <span className="text-xs text-[#697266]">
+                Module {moduleIndex + 1}
+              </span>
             </button>
             <PositionControls
               itemLabel={`module ${m.title}`}
@@ -154,37 +157,32 @@ export default function TeacherModules() {
           </div>
         ))}
       </aside>
-      <section className="flex flex-col gap-5 rounded border bg-white p-5">
+      <section className="flex flex-col gap-5 rounded-2xl border border-[#dfe5d8] bg-white p-5 shadow-sm">
         {error && (
-          <p className="rounded bg-red-50 p-3 text-sm text-red-700">{error}</p>
+          <p
+            className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+            role="alert"
+          >
+            {error}
+          </p>
         )}
         {!selected ? (
-          <p className="text-gray-600">Select a module or create a draft.</p>
+          <p className="text-[#697266]">
+            Select a module or create one for your classroom.
+          </p>
         ) : (
           <>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="font-semibold">Module authoring</h2>
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-[#697266]">
                   Changes save when you use Save. Use the arrow controls to
                   reorder authored items.
                 </p>
               </div>
               <div className="flex gap-2">
                 <button
-                  className={button}
-                  onClick={() =>
-                    void save({
-                      state: selected.state === "draft" ? "published" : "draft",
-                    })
-                  }
-                >
-                  {selected.state === "draft"
-                    ? "Publish now"
-                    : "Return to draft"}
-                </button>
-                <button
-                  className="rounded border border-red-300 px-3 py-2 text-sm text-red-700"
+                  className="rounded-xl border border-red-200 px-3 py-2 text-sm font-medium text-red-700 transition hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-200"
                   onClick={() => void remove()}
                 >
                   Delete
@@ -202,7 +200,7 @@ export default function TeacherModules() {
             {selected.sections.map((section, sectionIndex) => (
               <div
                 key={section.id}
-                className="flex flex-col gap-3 rounded border p-4"
+                className="flex flex-col gap-3 rounded-xl border border-[#dfe5d8] bg-[#f7f8f4] p-4"
               >
                 <div className="flex items-center justify-between gap-3">
                   <h4 className="font-medium">
@@ -224,13 +222,13 @@ export default function TeacherModules() {
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <button
-                    className="rounded border px-2 py-1 text-xs"
+                    className="rounded-lg border border-[#dfe5d8] bg-white px-2 py-1 text-xs font-medium text-[#40513b] hover:bg-[#f4f7f0]"
                     onClick={() => void addBlock(section.id, "text")}
                   >
                     + Text block
                   </button>
                   <button
-                    className="rounded border px-2 py-1 text-xs"
+                    className="rounded-lg border border-[#dfe5d8] bg-white px-2 py-1 text-xs font-medium text-[#40513b] hover:bg-[#f4f7f0]"
                     onClick={() => void addBlock(section.id, "code")}
                   >
                     + Code block
@@ -238,7 +236,7 @@ export default function TeacherModules() {
                   {(["mcq", "short", "code"] as const).map((k) => (
                     <button
                       key={k}
-                      className="rounded border px-2 py-1 text-xs"
+                      className="rounded-lg border border-[#dfe5d8] bg-white px-2 py-1 text-xs font-medium text-[#40513b] hover:bg-[#f4f7f0]"
                       onClick={() => void addQuestion(section.id, k)}
                     >
                       + {k} question
@@ -246,7 +244,10 @@ export default function TeacherModules() {
                   ))}
                 </div>
                 {section.blocks.map((b, blockIndex) => (
-                  <div key={b.id} className="rounded bg-gray-50 p-3 text-sm">
+                  <div
+                    key={b.id}
+                    className="rounded-lg border border-[#dfe5d8] bg-white p-3 text-sm"
+                  >
                     <div className="flex items-center justify-between gap-3">
                       <p>
                         <b>{b.type} block:</b>{" "}
@@ -306,12 +307,10 @@ function ModuleFields({
   onSave: (v: Partial<Module>) => Promise<void>;
 }) {
   const [title, setTitle] = useState(module.title);
-  const [description, setDescription] = useState(module.description);
-  const [overview, setOverview] = useState(module.overview);
+  const [content, setContent] = useState(module.content);
   useEffect(() => {
     setTitle(module.title);
-    setDescription(module.description);
-    setOverview(module.overview);
+    setContent(module.content);
   }, [module]);
   return (
     <div className="grid gap-3">
@@ -321,22 +320,17 @@ function ModuleFields({
         onChange={(e) => setTitle(e.target.value)}
         aria-label="Module title"
       />
-      <input
-        className={input}
-        value={description}
-        onChange={(e) => setDescription(e.target.value)}
-        placeholder="Short description"
-      />
       <textarea
         className={input}
-        value={overview}
-        onChange={(e) => setOverview(e.target.value)}
-        placeholder="Student overview"
+        value={content}
+        onChange={(e) => setContent(e.target.value)}
+        placeholder="Module introduction shown to students"
+        rows={4}
       />
       <button
         className={`${button} w-fit`}
         disabled={saving}
-        onClick={() => void onSave({ title, description, overview })}
+        onClick={() => void onSave({ title, content })}
       >
         {saving ? "Saving…" : "Save details"}
       </button>
@@ -357,7 +351,7 @@ function PositionControls({
   onMove: (direction: -1 | 1) => void;
 }) {
   const control =
-    "rounded border px-2 py-1 text-xs disabled:cursor-not-allowed disabled:opacity-50";
+    "rounded-lg border border-[#dfe5d8] bg-white px-2 py-1 text-xs text-[#40513b] transition hover:bg-[#f4f7f0] focus:outline-none focus:ring-2 focus:ring-[#b7ee89] disabled:cursor-not-allowed disabled:opacity-50";
   return (
     <div className="flex shrink-0 gap-1">
       <button
@@ -402,7 +396,7 @@ function QuestionSummary({
   ) => Promise<void>;
 }) {
   return (
-    <div className="rounded bg-gray-50 p-3 text-sm">
+    <div className="rounded-lg border border-[#dfe5d8] bg-white p-3 text-sm">
       <div className="flex items-center justify-between gap-3">
         <p>
           <b>{question.kind.toUpperCase()}:</b> {question.prompt}
@@ -426,19 +420,11 @@ function QuestionSummary({
         />
       )}
       {question.codeExercise && (
-        <div className="mt-2 flex flex-col gap-2 text-xs text-gray-600">
+        <div className="mt-2 flex flex-col gap-2 text-xs text-[#697266]">
           <p>
             {question.codeExercise.language}:{" "}
             {question.codeExercise.instructions}
           </p>
-          <OrderedChildren
-            label="hint"
-            items={question.codeExercise.hints}
-            saving={saving}
-            update={api.updateHint}
-            move={move}
-            render={(hint) => hint.text}
-          />
           <OrderedChildren
             label="reference answer"
             items={question.codeExercise.referenceAnswers}
@@ -502,13 +488,13 @@ function OrderedChildren<T extends { id: string; position: number }>({
 }
 function Preview({ module }: { module: TeacherModule }) {
   return (
-    <details className="rounded border border-blue-200 bg-blue-50 p-4">
+    <details className="rounded-xl border border-[#d6e7ca] bg-[#f4f7f0] p-4">
       <summary className="cursor-pointer font-medium">
         Student preview (read-only)
       </summary>
       <div className="mt-3 flex flex-col gap-3">
         <h3 className="text-lg font-semibold">{module.title}</h3>
-        <p>{module.overview || module.description}</p>
+        <p>{module.content}</p>
         {module.sections.map((s) => (
           <div key={s.id}>
             <h4 className="font-medium">{s.title}</h4>

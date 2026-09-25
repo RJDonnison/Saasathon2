@@ -2,7 +2,7 @@ import type { Server as HttpServer } from "node:http";
 import { Server, type Socket } from "socket.io";
 import { findProfile, verifyToken, type AuthUser } from "./auth.js";
 import { CLIENT_ORIGIN } from "./config.js";
-import { publishedModuleInClassroom } from "./access.js";
+import { moduleInClassroom } from "./access.js";
 import type {
   ClientToServerEvents,
   PresenceUpdatePayload,
@@ -102,8 +102,7 @@ export function attachSockets(httpServer: HttpServer): AppServer {
       if (!statuses.has(payload.status) || typeof payload.moduleId !== "string")
         return;
       if (Date.now() - lastStatus < 500) return;
-      if (!(await publishedModuleInClassroom(payload.moduleId, classroomId)))
-        return;
+      if (!(await moduleInClassroom(payload.moduleId, classroomId))) return;
       lastStatus = Date.now();
       io.to(classroomId).emit("student_status_update", {
         type: "student_status_update",
