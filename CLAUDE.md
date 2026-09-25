@@ -142,7 +142,8 @@ Check work by running the app and by type-checking (see above) instead.
 
 ## Frontend styling
 
-- Tailwind v4 utility classes only — no separate CSS files, no CSS-in-JS, no inline `style={}` for
+- Tailwind v4 utility classes only — no separate CSS files, the current ones we have should be how 
+  the app is based on and styled, no CSS-in-JS, no inline `style={}` for
   layout. If a one-off value is truly needed, use Tailwind's arbitrary-value syntax (`w-[123px]`)
   rather than a `style` attribute.
 - Layout is done with **flex and grid utilities** (`flex`, `grid`, `gap-*`, `items-*`, `justify-*`,
