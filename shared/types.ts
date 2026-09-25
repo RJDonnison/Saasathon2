@@ -312,12 +312,44 @@ export interface RunCodeResponse {
   stderr: string;
   exitCode: number;
 }
+/** One turn of an AI conversation. The AI endpoints are stateless: the client re-sends the transcript each call. */
+export interface AiChatMessage {
+  role: "user" | "assistant";
+  text: string;
+}
+
+/**
+ * POST /api/ai/hint (student only) — "I'm stuck" tutor. Gives hints, never the solution, scoped to `moduleId`.
+ * The server loads the module itself (student-safe view: no answer keys/reference answers/checks).
+ * Limits: question <= 2000 chars, history <= 20 turns of <= 2000 chars, code <= 8000 chars.
+ * Errors: 503 if the server has no OPENAI_API_KEY, 502 if OpenAI fails, 429 if rate limited.
+ */
 export interface AiHintRequest {
   moduleId: string;
+  /** Must be the caller's own id. */
   studentId: string;
   question: string;
+  /** Earlier turns of this chat, oldest first (not including `question`). */
+  history?: AiChatMessage[];
+  /** The student's current code, if relevant to the question. */
+  code?: string;
 }
 export interface AiHintResponse {
+  reply: string;
+}
+
+/**
+ * POST /api/ai/draft (teacher only, stretch) — helps draft or plan modules. Replies in Markdown.
+ * `moduleId` supplies the saved module as context (including answer keys — it's the teacher's own material);
+ * `draft` is optional in-progress text not yet saved. Same limits/errors as /api/ai/hint (request <= 4000, draft <= 20000).
+ */
+export interface AiDraftRequest {
+  request: string;
+  moduleId?: string;
+  draft?: string;
+  history?: AiChatMessage[];
+}
+export interface AiDraftResponse {
   reply: string;
 }
 export interface ApiError {
