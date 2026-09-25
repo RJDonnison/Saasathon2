@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Router } from "express";
-import { moduleInClassroom, studentInClassroom } from "../access.js";
+import { moduleInClassroom } from "../access.js";
 import { supabase } from "../supabase.js";
 import {
   toComment,
