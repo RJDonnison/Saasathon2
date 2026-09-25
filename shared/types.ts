@@ -302,7 +302,7 @@ export type CreateSubmissionResponse = CodeSubmission;
 export type ListSubmissionCommentsResponse = Comment[];
 export type GetTeacherStudentAggregateResponse = TeacherStudentAggregate;
 
-/** POST /api/code/run remains mocked; it never executes supplied code. */
+/** POST /api/code/run executes an allowlisted runtime through the backend's private Piston service. */
 export interface RunCodeRequest {
   code: string;
   language: string;

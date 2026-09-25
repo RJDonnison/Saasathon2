@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { api } from '../api.ts'
 
-// PLACEHOLDER: plain textarea. "Run" hits the MOCKED /api/code/run (nothing is actually executed).
+// PLACEHOLDER: plain textarea. "Run" is sent to the authenticated backend, which proxies Piston.
 export default function CodeEditor() {
   const [code, setCode] = useState('console.log(1 + 2)')
   const [output, setOutput] = useState('')

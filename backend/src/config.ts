@@ -11,3 +11,6 @@ dotenv.config({ path: path.resolve(backendDir, '../.env'), quiet: true });
 
 export const PORT = Number(process.env.PORT ?? 4000);
 export const CLIENT_ORIGIN = 'http://localhost:5173';
+// Keep this server-only. Piston should be bound to localhost or an internal network,
+// never exposed through a VITE_ variable or called directly by the browser.
+export const PISTON_BASE_URL = process.env.PISTON_BASE_URL?.replace(/\/$/, '');
