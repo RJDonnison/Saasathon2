@@ -33,12 +33,14 @@ first**; never fork or redeclare these types locally in frontend or backend.
 ## Current stub status
 
 REAL (backed by Supabase / real socket broadcasts):
+
 - `POST /api/auth/join`, `GET /api/auth/me`
 - Classroom, module (create/read/update/delete, teacher-only writes), progress and comment endpoints
 - Socket.io: presence (`presence_update`), `raise_hand`, `student_status_update`, broadcast to a
   classroom-scoped room (`io.to(classroomId)`). The server trusts the JWT, not the client payload.
 
 MOCKED — don't "fix" these into real implementations unless explicitly asked; that is follow-up feature work:
+
 - `POST /api/code/run` — returns `"mock output for: " + code` after a fake 300ms delay. Nothing is executed.
 - `POST /api/ai/hint` — returns a canned placeholder reply. A commented-out block in
   `backend/src/routes/ai.ts` shows where a real OpenAI call would go.
@@ -48,6 +50,7 @@ MOCKED — don't "fix" these into real implementations unless explicitly asked; 
 ## Database: Supabase only
 
 **Supabase (Postgres) is the only database.** There is no SQLite and no local DB file — don't add one.
+
 - All data access goes through the client in `backend/src/supabase.ts`, using the **service-role key**
   (server-side only; it bypasses RLS, and RLS is enabled with no policies so the anon key can access nothing).
   It throws at startup if `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` are unset, and the backend
@@ -94,3 +97,17 @@ Type-check: `cd backend && npx tsc --noEmit`, `cd frontend && npx tsc -b`.
 Don't add test files, test runners or frameworks (Jest, Vitest, Playwright, Cypress, Testing Library, etc.),
 test scripts in any `package.json`, or CI test steps, even if asked to "verify" or "cover" a change.
 Check work by running the app and by type-checking (see above) instead.
+
+## Frontend styling
+
+- Tailwind v4 utility classes only — no separate CSS files, no CSS-in-JS, no inline `style={}` for
+  layout. If a one-off value is truly needed, use Tailwind's arbitrary-value syntax (`w-[123px]`)
+  rather than a `style` attribute.
+- Layout is done with **flex and grid utilities** (`flex`, `grid`, `gap-*`, `items-*`, `justify-*`,
+  `grid-cols-*`, etc.) — not `position: absolute`/`fixed`, not manual `top/left/margin` offsets to
+  place elements. Reach for `absolute`/`relative` only for genuine overlay cases (badges, tooltips,
+  modals), not general page layout.
+- Responsive behavior uses Tailwind's breakpoint prefixes (`sm:`, `md:`, `lg:`) rather than custom
+  media queries.
+- Don't hand-roll spacing with arbitrary margins on every element — prefer `gap-*` on the flex/grid
+  parent so spacing lives in one place.

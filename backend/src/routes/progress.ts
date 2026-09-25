@@ -1,65 +1,119 @@
-import { Router } from 'express';
-import { supabase } from '../supabase.js';
-import { toProgress, unwrap, type ModuleRow, type ProgressRow, type UserRow } from '../rows.js';
+import { randomUUID } from "node:crypto";
+import { Router } from "express";
+import {
+  isStudentOwner,
+  moduleInClassroom,
+  studentInClassroom,
+} from "../access.js";
+import { supabase } from "../supabase.js";
+import {
+  toModuleProgress,
+  toSectionProgress,
+  unwrap,
+  type ModuleProgressRow,
+  type SectionProgressRow,
+  type SectionRow,
+} from "../rows.js";
 import type {
-  GetStudentProgressResponse,
   ProgressStatus,
-  UpsertProgressRequest,
-  UpsertProgressResponse,
-} from '../../../shared/types.js';
-
-const STATUSES: ProgressStatus[] = ['not_started', 'in_progress', 'completed'];
-
-// Mounted at /api (paths are /students/:id/progress and /progress).
+  UpsertModuleProgressRequest,
+  UpsertSectionProgressRequest,
+} from "../../../shared/types.js";
+const statuses: ProgressStatus[] = ["not_started", "in_progress", "completed"];
 export const progressRouter = Router();
-
-/** Students may act on themselves; teachers on any student in their classroom. */
-async function canActOnStudent(user: NonNullable<Express.Request['user']>, studentId: string): Promise<UserRow | null> {
-  if (user.role === 'student' && user.userId !== studentId) return null;
-  const student = unwrap(
-    await supabase.from('users').select('*').eq('id', studentId).eq('role', 'student').maybeSingle(),
-  ) as UserRow | null;
-  return student && student.classroom_id === user.classroomId ? student : null;
+async function permitted(req: any, studentId: string) {
+  return (
+    isStudentOwner(req.user!, studentId) ||
+    (req.user!.role === "teacher" &&
+      !!(await studentInClassroom(studentId, req.user!.classroomId)))
+  );
 }
 
-progressRouter.get('/students/:id/progress', async (req, res) => {
-  if (!(await canActOnStudent(req.user!, req.params.id))) {
-    res.status(404).json({ error: 'Student not found' });
-    return;
-  }
-  const rows = unwrap(await supabase.from('progress').select('*').eq('student_id', req.params.id)) as ProgressRow[];
-  const body: GetStudentProgressResponse = rows.map(toProgress);
-  res.json(body);
+progressRouter.get("/students/:id/progress", async (req, res) => {
+  if (!(await permitted(req, req.params.id)))
+    return res.status(404).json({ error: "Student not found" });
+  const rows = unwrap(
+    await supabase
+      .from("module_progress")
+      .select("*")
+      .eq("student_id", req.params.id),
+  ) as ModuleProgressRow[];
+  res.json(rows.map(toModuleProgress));
 });
-
-progressRouter.put('/progress', async (req, res) => {
-  const { studentId, moduleId, status } = (req.body ?? {}) as Partial<UpsertProgressRequest>;
-  if (typeof studentId !== 'string' || typeof moduleId !== 'string' || !STATUSES.includes(status as ProgressStatus)) {
-    res.status(400).json({ error: `studentId, moduleId and status (${STATUSES.join('|')}) are required` });
-    return;
-  }
-  if (!(await canActOnStudent(req.user!, studentId))) {
-    res.status(404).json({ error: 'Student not found' });
-    return;
-  }
-  const mod = unwrap(
-    await supabase.from('modules').select('*').eq('id', moduleId).maybeSingle(),
-  ) as ModuleRow | null;
-  if (!mod || mod.classroom_id !== req.user!.classroomId) {
-    res.status(404).json({ error: 'Module not found' });
-    return;
-  }
-
-  // Atomic upsert on (student_id, module_id); the id is derived so it stays stable across updates.
+progressRouter.get("/students/:id/section-progress", async (req, res) => {
+  if (!(await permitted(req, req.params.id)))
+    return res.status(404).json({ error: "Student not found" });
+  const rows = unwrap(
+    await supabase
+      .from("section_progress")
+      .select("*")
+      .eq("student_id", req.params.id),
+  ) as SectionProgressRow[];
+  res.json(rows.map(toSectionProgress));
+});
+progressRouter.put("/progress", async (req, res) => {
+  const b = (req.body ?? {}) as Partial<UpsertModuleProgressRequest>;
+  const studentId = b.studentId ?? req.user!.userId;
+  if (
+    typeof b.moduleId !== "string" ||
+    !statuses.includes(b.status as ProgressStatus) ||
+    !(await permitted(req, studentId)) ||
+    !(await moduleInClassroom(b.moduleId, req.user!.classroomId))
+  )
+    return res.status(400).json({ error: "Invalid module progress request" });
   const row = unwrap(
     await supabase
-      .from('progress')
-      .upsert({ id: `${studentId}:${moduleId}`, student_id: studentId, module_id: moduleId, status }, {
-        onConflict: 'student_id,module_id',
-      })
-      .select('*')
+      .from("module_progress")
+      .upsert(
+        {
+          id: `${studentId}:${b.moduleId}`,
+          student_id: studentId,
+          module_id: b.moduleId,
+          status: b.status,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "student_id,module_id" },
+      )
+      .select("*")
       .single(),
-  ) as ProgressRow;
-  const body: UpsertProgressResponse = toProgress(row);
-  res.json(body);
+  ) as ModuleProgressRow;
+  res.json(toModuleProgress(row));
+});
+progressRouter.put("/section-progress", async (req, res) => {
+  const b = (req.body ?? {}) as Partial<UpsertSectionProgressRequest>;
+  const studentId = b.studentId ?? req.user!.userId;
+  const section =
+    typeof b.sectionId === "string"
+      ? (unwrap(
+          await supabase
+            .from("sections")
+            .select("*")
+            .eq("id", b.sectionId)
+            .maybeSingle(),
+        ) as SectionRow | null)
+      : null;
+  if (
+    !section ||
+    !statuses.includes(b.status as ProgressStatus) ||
+    !(await permitted(req, studentId)) ||
+    !(await moduleInClassroom(section.module_id, req.user!.classroomId))
+  )
+    return res.status(400).json({ error: "Invalid section progress request" });
+  const row = unwrap(
+    await supabase
+      .from("section_progress")
+      .upsert(
+        {
+          id: `${studentId}:${section.id}`,
+          student_id: studentId,
+          section_id: section.id,
+          status: b.status,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "student_id,section_id" },
+      )
+      .select("*")
+      .single(),
+  ) as SectionProgressRow;
+  res.json(toSectionProgress(row));
 });

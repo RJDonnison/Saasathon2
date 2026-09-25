@@ -1,22 +1,27 @@
 // Single source of truth for entities and REST contracts.
-// Plain file (not an npm package) — imported by relative path from backend and frontend.
-
-export type Role = 'student' | 'teacher';
-export type ProgressStatus = 'not_started' | 'in_progress' | 'completed';
-
-// ---------- Entities ----------
+export type Role = "student" | "teacher";
+export type ProgressStatus = "not_started" | "in_progress" | "completed";
+export type QuestionKind = "mcq" | "short" | "code";
 
 export interface Classroom {
   id: string;
   name: string;
   roomCode: string;
 }
-
+/** A user projected into the currently selected classroom for auth compatibility. */
 export interface User {
   id: string;
   name: string;
   role: Role;
   classroomId: string;
+  membershipId: string;
+}
+export interface Membership {
+  id: string;
+  userId: string;
+  classroomId: string;
+  role: Role;
+  createdAt: string;
 }
 
 export interface Module {
@@ -24,26 +29,136 @@ export interface Module {
   classroomId: string;
   title: string;
   content: string;
+  position: number;
+}
+export interface Section {
+  id: string;
+  moduleId: string;
+  title: string;
+  position: number;
+}
+export interface SectionBlock {
+  id: string;
+  sectionId: string;
+  type: string;
+  content: unknown;
+  position: number;
+}
+export interface QuestionOption {
+  id: string;
+  questionId: string;
+  text: string;
+  position: number;
+}
+export interface Question {
+  id: string;
+  sectionId: string;
+  prompt: string;
+  kind: QuestionKind;
+  position: number;
+  options: QuestionOption[];
+}
+export interface CodeExercise {
+  id: string;
+  questionId: string;
+  language: string;
+  starterCode: string;
+  instructions: string;
+}
+export interface ReferenceAnswer {
+  id: string;
+  codeExerciseId: string;
+  title: string;
+  answer: string;
+  position: number;
+}
+export interface CodeCheck {
+  id: string;
+  codeExerciseId: string;
+  name: string;
+  description: string;
+  position: number;
 }
 
-export interface ProgressRecord {
+/** Teacher aggregate. Includes answer keys, reference answers and checks. */
+export interface TeacherQuestion extends Question {
+  answerKey: string | null;
+  codeExercise?: CodeExercise & {
+    referenceAnswers: ReferenceAnswer[];
+    checks: CodeCheck[];
+  };
+}
+export interface TeacherSection extends Section {
+  blocks: SectionBlock[];
+  questions: TeacherQuestion[];
+}
+export interface TeacherModule extends Module {
+  sections: TeacherSection[];
+}
+/** Student aggregate. Deliberately excludes answer keys, reference answers and checks. */
+export interface StudentQuestion extends Question {
+  codeExercise?: CodeExercise;
+}
+export interface StudentSection extends Section {
+  blocks: SectionBlock[];
+  questions: StudentQuestion[];
+}
+export interface StudentModule extends Module {
+  sections: StudentSection[];
+}
+
+export interface ModuleProgress {
   id: string;
   studentId: string;
   moduleId: string;
   status: ProgressStatus;
+  updatedAt: string;
 }
-
-export interface Comment {
+export interface SectionProgress {
   id: string;
   studentId: string;
-  moduleId: string;
+  sectionId: string;
+  status: ProgressStatus;
+  updatedAt: string;
+}
+/** Legacy name retained for existing clients. */
+export type ProgressRecord = ModuleProgress;
+export interface Attempt {
+  id: string;
+  studentId: string;
+  questionId: string;
+  answer: string;
+  isCorrect: boolean | null;
+  createdAt: string;
+}
+export interface CodeSubmission {
+  id: string;
+  studentId: string;
+  codeExerciseId: string;
+  code: string;
+  stdout: string;
+  stderr: string;
+  passed: boolean | null;
+  createdAt: string;
+}
+export interface Comment {
+  id: string;
+  submissionId: string;
+  authorId: string;
   text: string;
-  createdAt: string; // ISO 8601
+  lineStart: number | null;
+  lineEnd: number | null;
+  createdAt: string;
+}
+export interface TeacherStudentAggregate {
+  studentId: string;
+  moduleProgress: ModuleProgress[];
+  sectionProgress: SectionProgress[];
+  attempts: Attempt[];
+  submissions: CodeSubmission[];
+  comments: Comment[];
 }
 
-// ---------- REST contracts ----------
-
-/** POST /api/auth/join */
 export interface JoinRequest {
   roomCode: string;
   name: string;
@@ -53,63 +168,131 @@ export interface JoinResponse {
   token: string;
   user: User;
 }
-
-/** GET /api/auth/me (authed) */
 export interface MeResponse {
   user: User;
 }
 
-/** GET /api/modules/:id -> Module */
-export type GetModuleResponse = Module;
-
-/** GET /api/classrooms/:id/students -> User[] */
-export type GetClassroomStudentsResponse = User[];
-
-/** GET /api/classrooms/:id -> Classroom */
-export type GetClassroomResponse = Classroom;
-
-/** GET /api/classrooms/:id/modules -> Module[] */
-export type ListModulesResponse = Module[];
-
-/** POST /api/modules (teacher only; classroom taken from the auth token) */
+export interface CreateClassroomRequest {
+  name: string;
+  roomCode: string;
+}
 export interface CreateModuleRequest {
   title: string;
-  content: string;
+  content?: string;
+  position?: number;
 }
-export type CreateModuleResponse = Module;
-
-/** PATCH /api/modules/:id (teacher only) */
 export interface UpdateModuleRequest {
   title?: string;
   content?: string;
+  position?: number;
 }
-export type UpdateModuleResponse = Module;
+export interface CreateSectionRequest {
+  title: string;
+  position?: number;
+}
+export interface UpdateSectionRequest {
+  title?: string;
+  position?: number;
+}
+export interface CreateBlockRequest {
+  type: string;
+  content: unknown;
+  position?: number;
+}
+export interface UpdateBlockRequest {
+  type?: string;
+  content?: unknown;
+  position?: number;
+}
+export interface CreateQuestionRequest {
+  prompt: string;
+  kind: QuestionKind;
+  answerKey?: string | null;
+  position?: number;
+}
+export interface UpdateQuestionRequest {
+  prompt?: string;
+  kind?: QuestionKind;
+  answerKey?: string | null;
+  position?: number;
+}
+export interface CreateOptionRequest {
+  text: string;
+  position?: number;
+}
+export interface UpdateOptionRequest {
+  text?: string;
+  position?: number;
+}
+export interface UpsertCodeExerciseRequest {
+  language: string;
+  starterCode: string;
+  instructions: string;
+}
+export interface CreateReferenceAnswerRequest {
+  title: string;
+  answer: string;
+  position?: number;
+}
+export interface UpdateReferenceAnswerRequest {
+  title?: string;
+  answer?: string;
+  position?: number;
+}
+export interface CreateCodeCheckRequest {
+  name: string;
+  description: string;
+  position?: number;
+}
+export interface UpdateCodeCheckRequest {
+  name?: string;
+  description?: string;
+  position?: number;
+}
 
-/** DELETE /api/modules/:id (teacher only) -> 204 No Content */
-
-/** GET /api/modules/:id/comments -> Comment[] (teachers see all, students see their own) */
-export type ListCommentsResponse = Comment[];
-
-/** GET /api/students/:id/progress -> ProgressRecord[] (the student themself, or a teacher) */
-export type GetStudentProgressResponse = ProgressRecord[];
-
-/** PUT /api/progress (the student themself, or a teacher) — upserts one record */
-export interface UpsertProgressRequest {
-  studentId: string;
+export interface UpsertModuleProgressRequest {
+  studentId?: string;
   moduleId: string;
   status: ProgressStatus;
 }
-export type UpsertProgressResponse = ProgressRecord;
-
-/** POST /api/comments */
-export interface CreateCommentRequest {
-  studentId: string;
-  moduleId: string;
-  text: string;
+export interface UpsertSectionProgressRequest {
+  studentId?: string;
+  sectionId: string;
+  status: ProgressStatus;
 }
-export type CreateCommentResponse = Comment;
+export interface CreateAttemptRequest {
+  questionId: string;
+  answer: string;
+}
+/** The caller/sandbox supplies execution results; this API never executes code. */
+export interface CreateSubmissionRequest {
+  codeExerciseId: string;
+  code: string;
+  stdout?: string;
+  stderr?: string;
+  passed?: boolean | null;
+}
+export interface CreateCommentRequest {
+  submissionId: string;
+  text: string;
+  lineStart?: number | null;
+  lineEnd?: number | null;
+}
 
-/** POST /api/code/run (MOCKED on the backend) */
+export type GetModuleResponse = StudentModule | TeacherModule;
+export type ListModulesResponse = Module[];
+export type GetClassroomResponse = Classroom;
+export type GetClassroomStudentsResponse = User[];
+export type GetStudentProgressResponse = ModuleProgress[];
+export type UpsertProgressRequest = UpsertModuleProgressRequest;
+export type UpsertProgressResponse = ModuleProgress;
+export type CreateCommentResponse = Comment;
+export type CreateAttemptResponse = Attempt;
+export type CreateSubmissionResponse = CodeSubmission;
+export type ListSubmissionCommentsResponse = Comment[];
+export type GetTeacherStudentAggregateResponse = TeacherStudentAggregate;
+
+/** POST /api/code/run remains mocked; it never executes supplied code. */
 export interface RunCodeRequest {
   code: string;
   language: string;
@@ -119,8 +302,6 @@ export interface RunCodeResponse {
   stderr: string;
   exitCode: number;
 }
-
-/** POST /api/ai/hint (MOCKED on the backend) */
 export interface AiHintRequest {
   moduleId: string;
   studentId: string;
@@ -129,8 +310,6 @@ export interface AiHintRequest {
 export interface AiHintResponse {
   reply: string;
 }
-
-/** Error body returned by the backend for any non-2xx response. */
 export interface ApiError {
   error: string;
 }
