@@ -17,8 +17,9 @@ root/
   (Postgres); the schema and demo seed are in `backend/schema.sql`.
 - **Frontend** — one app. After joining, users are routed to `/student` or `/teacher` by role; visiting
   the other role's route redirects you back to your own.
-- **Auth** — room code + name + role, no passwords. The backend issues a JWT used for both REST
-  (`Authorization: Bearer`) and the socket handshake.
+- **Auth** — Supabase Auth with Google sign-in, then a room code + role to enter a classroom. The browser's
+  Supabase access token authenticates both REST (`Authorization: Bearer`) and the socket handshake; the
+  backend issues no tokens of its own.
 - **Contract** — `shared/types.ts` and `shared/events.ts` are the source of truth. Edit them first.
   See [CLAUDE.md](CLAUDE.md) for details and what is real vs. mocked.
 
@@ -44,11 +45,17 @@ npm install --prefix frontend
 Then set up Supabase (the only database):
 
 1. Create a project at [supabase.com](https://supabase.com).
-2. `cp .env.example .env` and fill in `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`
-   (dashboard → Project Settings → API). `JWT_SECRET` is optional for local dev (insecure fallback).
+2. `cp .env.example .env` and fill in `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` and the two `VITE_SUPABASE_*`
+   values (dashboard → Project Settings → API; the frontend gets the *publishable* key only).
 3. In the dashboard SQL editor, paste and run [`backend/schema.sql`](backend/schema.sql) once. It creates
    the tables and seeds the demo data.
-4. `npm run dev` — boots both apps. The backend exits with a clear message if Supabase is unreachable or
+4. Enable Google sign-in:
+   - Google Cloud Console → APIs & Services → Credentials → create an OAuth client ID (Web application) with
+     the authorized redirect URI `https://<project-ref>.supabase.co/auth/v1/callback`.
+   - Supabase dashboard → Authentication → Sign In / Providers → Google: enable it and paste the client ID and secret.
+   - Authentication → URL Configuration: set Site URL to `http://localhost:5173` and add
+     `http://localhost:5173/**` to Redirect URLs.
+5. `npm run dev` — boots both apps. The backend exits with a clear message if Supabase is unreachable or
    the schema hasn't been run.
 
 ## Demo data
@@ -59,8 +66,9 @@ Then set up Supabase (the only database):
 - Teacher: `Ms. Rivera` · Students: `Alex`, `Sam`
 - Two modules: "Variables and Types", "Loops"
 
-Join as a student and as a teacher (two browser windows) to try the raise-hand flow. Joining with any new
-name creates a new user in that classroom.
+Sign in with Google, then join with `DEMO123` as a student in one browser window and as a teacher in another
+(use two Google accounts, or a normal window plus a private one) to try the raise-hand flow. Your name comes
+from your Google profile. Alex and Sam are demo rows with no login; they just populate the teacher's grid.
 
 ## What's stubbed
 

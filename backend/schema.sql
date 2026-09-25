@@ -11,6 +11,8 @@ create table if not exists classrooms (
   room_code text not null unique
 );
 
+-- id = the Supabase auth user id (auth.users.id) for real, signed-in users; the seeded demo
+-- users below have no auth account (they just populate the teacher's grid).
 create table if not exists users (
   id           text primary key,
   name         text not null,
@@ -18,9 +20,6 @@ create table if not exists users (
   classroom_id text not null references classrooms(id),
   created_at   timestamptz not null default now()
 );
--- One user per (classroom, name, role); names compare case-insensitively.
-create unique index if not exists users_classroom_name_role_key
-  on users (classroom_id, lower(name), role);
 
 create table if not exists modules (
   id           text primary key,

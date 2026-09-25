@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api.ts'
-import { useAuth } from '../auth/AuthContext.tsx'
+import { useAuth } from '../auth/useAuth.ts'
 import { onPresenceUpdate } from '../socket.ts'
 import type { User } from '../../../shared/types'
 

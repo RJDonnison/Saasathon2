@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { api } from '../api.ts'
-import { useAuth } from '../auth/AuthContext.tsx'
+import { useAuth } from '../auth/useAuth.ts'
 
 // PLACEHOLDER: hits the MOCKED /api/ai/hint (returns a canned reply; no AI is called).
 export default function AiChatPanel() {

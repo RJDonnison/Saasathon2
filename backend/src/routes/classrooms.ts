@@ -15,7 +15,7 @@ import type {
   ListModulesResponse,
 } from '../../../shared/types.js';
 
-// Mounted behind requireAuth. A user can only see their own classroom.
+// Mounted behind requireMember. A user can only see their own classroom.
 export const classroomsRouter = Router();
 
 classroomsRouter.use('/:id', (req, res, next) => {

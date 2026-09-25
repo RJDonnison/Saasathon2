@@ -6,18 +6,24 @@ import type {
   ServerToClientEvents,
   StudentStatusUpdatePayload,
 } from '../../shared/events'
+import { supabase } from './supabase.ts'
 
 type AppSocket = Socket<ServerToClientEvents, ClientToServerEvents>
 
 // One long-lived socket that does NOT connect on its own (autoConnect: false).
 // Listeners can be attached at any time (even before login); the connection itself is opened
-// by connectSocket() only once the user is authenticated. Same origin — Vite proxies /socket.io.
-const socket: AppSocket = io({ autoConnect: false })
+// by connectSocket() only once the user is signed in and in a classroom. Same origin — Vite proxies
+// /socket.io. `auth` is a function so every (re)connect sends the current, auto-refreshed Supabase token.
+const socket: AppSocket = io({
+  autoConnect: false,
+  auth: (cb) => {
+    void supabase.auth.getSession().then(({ data }) => cb({ token: data.session?.access_token ?? '' }))
+  },
+})
 socket.on('connect_error', (err) => console.warn('[socket] connect_error:', err.message))
 
-/** Open the connection. Call only once authenticated — the server rejects handshakes without a valid JWT. */
-export function connectSocket(token: string) {
-  socket.auth = { token }
+/** Open the connection. Call only once signed in and in a classroom — the server rejects the handshake otherwise. */
+export function connectSocket() {
   if (!socket.connected) socket.connect()
 }
 

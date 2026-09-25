@@ -15,14 +15,7 @@ import type {
   UpsertProgressRequest,
   UpsertProgressResponse,
 } from '../../shared/types'
-
-const TOKEN_KEY = 'auth_token'
-
-export const tokenStore = {
-  get: (): string | null => localStorage.getItem(TOKEN_KEY),
-  set: (token: string) => localStorage.setItem(TOKEN_KEY, token),
-  clear: () => localStorage.removeItem(TOKEN_KEY),
-}
+import { supabase } from './supabase.ts'
 
 export class ApiClientError extends Error {
   status: number
@@ -35,7 +28,9 @@ export class ApiClientError extends Error {
 
 async function request<T>(path: string, init: RequestInit & { json?: unknown } = {}): Promise<T> {
   const headers = new Headers(init.headers)
-  const token = tokenStore.get()
+  // The Supabase access token (auto-refreshed by supabase-js) authenticates every API call.
+  const { data } = await supabase.auth.getSession()
+  const token = data.session?.access_token
   if (token) headers.set('Authorization', `Bearer ${token}`)
   if (init.json !== undefined) headers.set('Content-Type', 'application/json')
 

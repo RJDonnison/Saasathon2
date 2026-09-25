@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { Navigate } from 'react-router-dom'
-import { useAuth } from './AuthContext.tsx'
+import { useAuth } from './useAuth.ts'
 import type { Role } from '../../../shared/types'
 
 /**

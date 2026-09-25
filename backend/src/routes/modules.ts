@@ -10,7 +10,7 @@ import type {
   UpdateModuleRequest,
 } from '../../../shared/types.js';
 
-// Mounted behind requireAuth. Modules are scoped to the caller's classroom.
+// Mounted behind requireMember. Modules are scoped to the caller's classroom.
 export const modulesRouter = Router();
 
 async function findModule(id: string, classroomId: string): Promise<ModuleRow | null> {

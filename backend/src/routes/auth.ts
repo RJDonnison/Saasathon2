@@ -1,23 +1,18 @@
-import { randomUUID } from 'node:crypto';
 import { Router } from 'express';
 import { supabase } from '../supabase.js';
+import { findProfile, requireIdentity } from '../auth.js';
 import { toUser, unwrap, type ClassroomRow, type UserRow } from '../rows.js';
-import { requireAuth, signToken } from '../auth.js';
 import type { JoinRequest, JoinResponse, MeResponse } from '../../../shared/types.js';
 
-/** Escape LIKE wildcards so a name is matched literally by ilike (case-insensitive equality). */
-const escapeLike = (s: string) => s.replace(/[\\%_]/g, '\\$&');
+// Both routes need a valid Supabase session but NOT a classroom (that is what /join creates).
+export const authRouter = Router();
 
-/** Public: POST /api/auth/join */
-export const publicAuthRouter = Router();
-
-publicAuthRouter.post('/join', async (req, res) => {
-  const { roomCode, name, role } = (req.body ?? {}) as Partial<JoinRequest>;
-  const cleanName = typeof name === 'string' ? name.trim() : '';
+/** POST /api/auth/join — enter a classroom by room code with a chosen role. Re-joining switches classroom/role. */
+authRouter.post('/join', requireIdentity, async (req, res) => {
+  const { roomCode, role } = (req.body ?? {}) as Partial<JoinRequest>;
   const cleanCode = typeof roomCode === 'string' ? roomCode.trim().toUpperCase() : '';
-
-  if (!cleanName || !cleanCode || (role !== 'student' && role !== 'teacher')) {
-    res.status(400).json({ error: 'roomCode, name and role (student|teacher) are required' });
+  if (!cleanCode || (role !== 'student' && role !== 'teacher')) {
+    res.status(400).json({ error: 'roomCode and role (student|teacher) are required' });
     return;
   }
 
@@ -29,53 +24,21 @@ publicAuthRouter.post('/join', async (req, res) => {
     return;
   }
 
-  // Reuse an existing user with the same (classroom, name, role); otherwise create one.
-  const findUser = async () =>
-    unwrap(
-      await supabase
-        .from('users')
-        .select('*')
-        .eq('classroom_id', classroom.id)
-        .eq('role', role)
-        .ilike('name', escapeLike(cleanName))
-        .maybeSingle(),
-    ) as UserRow | null;
-
-  let row = await findUser();
-  if (!row) {
-    const created = await supabase
+  const { authId, name } = req.identity!;
+  const row = unwrap(
+    await supabase
       .from('users')
-      .insert({ id: randomUUID(), name: cleanName, role, classroom_id: classroom.id })
+      .upsert({ id: authId, name, role, classroom_id: classroom.id }, { onConflict: 'id' })
       .select('*')
-      .single();
-    if (created.error?.code === '23505') {
-      // Lost a race with a concurrent join of the same name: use the row that won.
-      row = await findUser();
-    } else {
-      row = unwrap(created) as UserRow;
-    }
-  }
-  if (!row) throw new Error('Could not create or find user');
+      .single(),
+  ) as UserRow;
 
-  const user = toUser(row);
-  const body: JoinResponse = {
-    token: signToken({ userId: user.id, role: user.role, classroomId: user.classroomId }),
-    user,
-  };
+  const body: JoinResponse = { user: toUser(row) };
   res.json(body);
 });
 
-/** Protected: GET /api/auth/me */
-export const meRouter = Router();
-
-meRouter.get('/me', requireAuth, async (req, res) => {
-  const row = unwrap(
-    await supabase.from('users').select('*').eq('id', req.user!.userId).maybeSingle(),
-  ) as UserRow | null;
-  if (!row) {
-    res.status(401).json({ error: 'User no longer exists' });
-    return;
-  }
-  const body: MeResponse = { user: toUser(row) };
+/** GET /api/auth/me — the signed-in user's classroom profile, or null if they haven't joined yet. */
+authRouter.get('/me', requireIdentity, async (req, res) => {
+  const body: MeResponse = { user: await findProfile(req.identity!.authId) };
   res.json(body);
 });
