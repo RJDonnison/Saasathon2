@@ -5,6 +5,9 @@ import { defineConfig } from 'vite'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  // Read the single root .env. Only VITE_-prefixed vars reach the browser; server secrets
+  // (SUPABASE_SERVICE_ROLE_KEY etc.) stay out. Don't change envPrefix.
+  envDir: '..',
   server: {
     port: 5173,
     strictPort: true,

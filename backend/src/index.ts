@@ -3,8 +3,8 @@ import cors from "cors";
 import express, { type ErrorRequestHandler } from "express";
 import { CLIENT_ORIGIN, PORT } from "./config.js";
 import { assertDatabaseReady } from "./supabase.js";
-import { requireAuth } from "./auth.js";
-import { publicAuthRouter, meRouter } from "./routes/auth.js";
+import { requireMember } from "./auth.js";
+import { authRouter } from "./routes/auth.js";
 import { classroomsRouter } from "./routes/classrooms.js";
 import { modulesRouter } from "./routes/modules.js";
 import { commentsRouter } from "./routes/comments.js";
@@ -21,14 +21,14 @@ app.use(express.json());
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok" });
 });
-app.use("/api/auth", publicAuthRouter); // POST /join
+// Signed in with Google (Supabase session), no classroom needed yet: POST /join, GET /me
+app.use("/api/auth", authRouter);
 
-// Everything below requires a valid Bearer token (attaches req.user)
-app.use("/api", requireAuth);
-app.use("/api/auth", meRouter); // GET /me
+// Everything below requires a signed-in user who has joined a classroom (attaches req.user)
+app.use("/api", requireMember);
 app.use("/api/classrooms", classroomsRouter);
 app.use("/api/modules", modulesRouter);
-app.use("/api", commentsRouter);
+app.use("/api/comments", commentsRouter);
 app.use("/api", progressRouter);
 app.use("/api/code", codeRouter);
 app.use("/api/ai", aiRouter);
@@ -41,14 +41,12 @@ app.use("/api", (_req, res) => {
 const onError: ErrorRequestHandler = (err, _req, res, _next) => {
   const status = typeof err?.status === "number" ? err.status : 500;
   if (status >= 500) console.error(err);
-  res
-    .status(status)
-    .json({
-      error:
-        status >= 500
-          ? "Internal server error"
-          : String(err.message ?? "Bad request"),
-    });
+  res.status(status).json({
+    error:
+      status >= 500
+        ? "Internal server error"
+        : String(err.message ?? "Bad request"),
+  });
 };
 app.use(onError);
 

@@ -14,10 +14,7 @@ A classroom coding platform (hackathon project): one backend, one frontend. Stud
 - The repo is flat: no `apps/` or `packages/` wrapper, and **no npm workspaces**. Root, `backend/` and
   `frontend/` each have their own `package.json` and `node_modules`. The root only holds the `dev` script
   (`concurrently`).
-- Auth is intentionally simple (hackathon): `POST /api/auth/join` with a room code + name + role, no
-  passwords. It returns a JWT `{ userId, role, classroomId }`, which is sent as `Authorization: Bearer …`
-  and also as the socket handshake `auth.token`. Anyone with a room code can join as a teacher — that is
-  by design for now.
+- Auth is **Supabase Auth with Google OAuth** (see "Auth" below). The backend issues no tokens of its own.
 
 ## The contract rule
 
@@ -30,14 +27,31 @@ first**; never fork or redeclare these types locally in frontend or backend.
   `import type { User } from '../../shared/types.js'`
 - Keep `shared/` free of runtime code and dependencies (types only) so it needs no build step.
 
+## Auth
+
+- The browser signs in with Google via `supabase.auth.signInWithOAuth` (`frontend/src/supabase.ts`, public
+  publishable key, **auth only** — data still goes through our backend's `/api`, never straight from the
+  browser). supabase-js stores and auto-refreshes the session.
+- Every API call sends `Authorization: Bearer <Supabase access token>`; the socket handshake sends the same
+  token as `auth.token` (`frontend/src/api.ts`, `frontend/src/socket.ts`). Do **not** hand-roll JWT
+  signing/verification or add a login/logout endpoint — the backend validates tokens with
+  `supabase.auth.getUser(token)` (`backend/src/auth.ts`, briefly cached).
+- Two levels of access: `requireIdentity` = valid Google session (used by `/api/auth/join` and
+  `/api/auth/me`); `requireMember` = identity that has also joined a classroom (everything else).
+- Signing in is not enough to use the app: the user then enters a **room code + role** on the join page
+  (`POST /api/auth/join`), which upserts their global `users` row (`users.id` = the Supabase auth user id; name
+  from their Google profile) and creates or updates a classroom membership. Role and classroom are read from
+  the most recently joined membership on every request — not from the token.
+  Anyone with a room code can pick the teacher role — by design for now.
+- Sign-out is `supabase.auth.signOut()`.
+
 ## Current stub status
 
 REAL (backed by Supabase / real socket broadcasts):
-
-- `POST /api/auth/join`, `GET /api/auth/me`
+- `POST /api/auth/join`, `GET /api/auth/me` (Supabase Auth + Google)
 - Classroom, module (create/read/update/delete, teacher-only writes), progress and comment endpoints
 - Socket.io: presence (`presence_update`), `raise_hand`, `student_status_update`, broadcast to a
-  classroom-scoped room (`io.to(classroomId)`). The server trusts the JWT, not the client payload.
+  classroom-scoped room (`io.to(classroomId)`). The server trusts the authenticated user (from the Supabase token), not the client payload.
 
 MOCKED — don't "fix" these into real implementations unless explicitly asked; that is follow-up feature work:
 
@@ -58,6 +72,8 @@ MOCKED — don't "fix" these into real implementations unless explicitly asked; 
 - The schema **and** the demo seed live in `backend/schema.sql`. Supabase has no migration runner here:
   when you change a table, update `backend/schema.sql` (and the row types/mappers in `backend/src/rows.ts`)
   and re-run the SQL in the Supabase SQL editor. Add fields to `shared/types.ts` first.
+- The seeded demo users (Ms. Rivera, Alex, Sam) have no auth account; they only populate the teacher's
+  grid. Real users are created by `POST /api/auth/join`.
 - DB columns are snake_case; `rows.ts` maps them to the camelCase entities in `shared/types.ts`.
   Wrap queries in `unwrap()` so database errors become JSON 500s.
 
@@ -77,14 +93,25 @@ npm install --prefix frontend
 # or, all at once:
 npm run install-all
 
-cp .env.example .env            # then fill in SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (required)
+cp .env.example .env            # fill in the SUPABASE_* and VITE_SUPABASE_* values (all required)
 # one-time: paste backend/schema.sql into the Supabase dashboard SQL editor and run it
+# one-time: enable Google sign-in (see below)
 npm run dev                     # from root: boots backend :4000 and frontend :5173
 ```
 
+**Google sign-in setup (one-time, dashboard only):**
+1. Google Cloud Console -> APIs & Services -> Credentials -> Create OAuth client ID (Web application). Add
+   the authorized redirect URI `https://<project-ref>.supabase.co/auth/v1/callback`.
+2. Supabase dashboard -> Authentication -> Sign In / Providers -> Google: enable, paste the client ID + secret.
+3. Supabase dashboard -> Authentication -> URL Configuration: set Site URL to `http://localhost:5173` and
+   add `http://localhost:5173/**` to Redirect URLs.
+
+`VITE_SUPABASE_*` are read from the root `.env` (`envDir: '..'` in `frontend/vite.config.ts`). Only
+`VITE_`-prefixed vars reach the browser, so `SUPABASE_SERVICE_ROLE_KEY` never does — don't change
+`envPrefix`, and never put the service-role key in a `VITE_` var. Restart the dev server after editing `.env`.
+
 `backend/schema.sql` creates the tables and seeds the demo data: room code **`DEMO123`**, teacher
-"Ms. Rivera", students "Alex" and "Sam", two modules. `JWT_SECRET` falls back to an insecure dev default
-(with a warning) outside production.
+"Ms. Rivera", students "Alex" and "Sam", two modules.
 
 The backend resolves `.env` (repo root) from its working directory, so run it via its npm scripts
 (cwd = `backend/`), not `node backend/dist/...` from elsewhere.

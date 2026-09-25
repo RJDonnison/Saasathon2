@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useAuth } from '../auth/AuthContext.tsx'
+import { useAuth } from '../auth/useAuth.ts'
 import { emitRaiseHand } from '../socket.ts'
 
 // REAL: emits raise_hand over the socket; the server broadcasts it to the classroom room.

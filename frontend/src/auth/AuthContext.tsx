@@ -1,68 +1,92 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { api, ApiClientError, tokenStore } from '../api.ts'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import type { Session } from '@supabase/supabase-js'
+import { api, ApiClientError } from '../api.ts'
+import { supabase } from '../supabase.ts'
 import { connectSocket, disconnectSocket } from '../socket.ts'
+import { AuthContext, type AuthState } from './useAuth.ts'
 import type { JoinRequest, User } from '../../../shared/types'
 
-interface AuthState {
-  user: User | null
-  /** true while the stored token is being validated on app start */
-  loading: boolean
-  join: (req: JoinRequest) => Promise<User>
-  logout: () => void
-}
-
-const AuthContext = createContext<AuthState | null>(null)
-
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null)
-  const [loading, setLoading] = useState<boolean>(() => tokenStore.get() !== null)
+  const [session, setSession] = useState<Session | null>(null)
+  const [sessionReady, setSessionReady] = useState(false)
+  // The classroom profile, tagged with the Supabase user it belongs to (null user = not joined yet).
+  const [profile, setProfile] = useState<{ authId: string; user: User | null } | null>(null)
 
-  // Hydrate from a stored token on app start.
+  // Track the Supabase session. getSession() also finishes the OAuth redirect (tokens in the URL).
+  // Keep the callback synchronous: calling other supabase methods inside it can deadlock.
   useEffect(() => {
-    if (!tokenStore.get()) return
+    let active = true
+    void supabase.auth.getSession().then(({ data }) => {
+      if (!active) return
+      setSession(data.session)
+      setSessionReady(true)
+    })
+    const { data } = supabase.auth.onAuthStateChange((_event, next) => {
+      setSession(next)
+      setSessionReady(true)
+    })
+    return () => {
+      active = false
+      data.subscription.unsubscribe()
+    }
+  }, [])
+
+  // Load the classroom profile whenever the signed-in identity changes (not on token refreshes).
+  const authId = session?.user.id ?? null
+  useEffect(() => {
+    if (!sessionReady || !authId) return
     let cancelled = false
     api
       .me()
       .then(({ user }) => {
-        if (!cancelled) setUser(user)
+        if (!cancelled) setProfile({ authId, user })
       })
       .catch((err) => {
-        // Only a rejected token means "logged out"; a network blip shouldn't wipe the session.
-        if (err instanceof ApiClientError && err.status === 401) tokenStore.clear()
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
+        console.warn('[auth] could not load profile:', err)
+        // The backend rejected the session outright (e.g. the account was removed): drop it locally.
+        if (err instanceof ApiClientError && err.status === 401) void supabase.auth.signOut({ scope: 'local' })
+        if (!cancelled) setProfile({ authId, user: null })
       })
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [sessionReady, authId])
 
-  // Socket lives exactly as long as there is an authenticated user.
+  // Derived: a profile only counts if it belongs to the currently signed-in Supabase user.
+  const resolved = authId !== null && profile?.authId === authId
+  const user = resolved ? profile.user : null
+  const loading = !sessionReady || (authId !== null && !resolved)
+
+  // The socket lives exactly as long as there is a signed-in user in a classroom.
   useEffect(() => {
-    const token = tokenStore.get()
-    if (user && token) connectSocket(token)
+    if (user) connectSocket()
     else disconnectSocket()
   }, [user])
 
-  const join = useCallback(async (req: JoinRequest) => {
-    const res = await api.join(req)
-    tokenStore.set(res.token)
-    setUser(res.user)
-    return res.user
+  const signInWithGoogle = useCallback(async () => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: window.location.origin },
+    })
+    if (error) throw error
   }, [])
 
-  const logout = useCallback(() => {
-    tokenStore.clear()
-    setUser(null)
+  const joinClassroom = useCallback(
+    async (req: JoinRequest) => {
+      const { user } = await api.join(req)
+      if (authId) setProfile({ authId, user })
+      return user
+    },
+    [authId],
+  )
+
+  const signOut = useCallback(async () => {
+    await supabase.auth.signOut()
   }, [])
 
-  const value = useMemo(() => ({ user, loading, join, logout }), [user, loading, join, logout])
+  const value = useMemo<AuthState>(
+    () => ({ session, user, loading, signInWithGoogle, joinClassroom, signOut }),
+    [session, user, loading, signInWithGoogle, joinClassroom, signOut],
+  )
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
-}
-
-export function useAuth(): AuthState {
-  const ctx = useContext(AuthContext)
-  if (!ctx) throw new Error('useAuth must be used inside <AuthProvider>')
-  return ctx
 }

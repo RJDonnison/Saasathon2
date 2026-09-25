@@ -159,17 +159,27 @@ export interface TeacherStudentAggregate {
   comments: Comment[];
 }
 
+// ---------- REST contracts ----------
+
+/**
+ * Auth is Supabase Auth (Google OAuth) in the browser. Every /api request carries the Supabase access
+ * token as `Authorization: Bearer <access_token>`; the backend never issues its own tokens.
+ */
+
+/**
+ * POST /api/auth/join (signed in, not yet in a classroom — or switching classroom/role)
+ * The user's name comes from their Google profile. Their User.id is their Supabase auth user id.
+ */
 export interface JoinRequest {
   roomCode: string;
-  name: string;
   role: Role;
 }
 export interface JoinResponse {
-  token: string;
   user: User;
 }
+/** GET /api/auth/me (signed in) — `user` is null until they have joined a classroom. */
 export interface MeResponse {
-  user: User;
+  user: User | null;
 }
 
 export interface CreateClassroomRequest {

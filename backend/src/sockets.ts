@@ -1,6 +1,6 @@
 import type { Server as HttpServer } from 'node:http';
 import { Server, type Socket } from 'socket.io';
-import { verifyToken, type AuthUser } from './auth.js';
+import { findProfile, verifyToken, type AuthUser } from './auth.js';
 import { CLIENT_ORIGIN } from './config.js';
 import type {
   ClientToServerEvents,
@@ -26,13 +26,19 @@ function presencePayload(classroomId: string): PresenceUpdatePayload {
 export function attachSockets(httpServer: HttpServer): AppServer {
   const io: AppServer = new Server(httpServer, { cors: { origin: CLIENT_ORIGIN } });
 
-  // Authenticate the handshake with the same JWT used for REST: io(url, { auth: { token } }).
-  io.use((socket, next) => {
-    const token = (socket.handshake.auth as { token?: unknown }).token;
-    const user = typeof token === 'string' ? verifyToken(token) : null;
-    if (!user) return next(new Error('unauthorized'));
-    socket.data.user = user;
-    next();
+  // Authenticate the handshake with the same Supabase access token used for REST:
+  // io(url, { auth: { token } }). The user must also have joined a classroom.
+  io.use(async (socket, next) => {
+    try {
+      const token = (socket.handshake.auth as { token?: unknown }).token;
+      const identity = typeof token === 'string' ? await verifyToken(token) : null;
+      const profile = identity ? await findProfile(identity.authId) : null;
+      if (!profile) return next(new Error('unauthorized'));
+      socket.data.user = { userId: profile.id, role: profile.role, classroomId: profile.classroomId };
+      next();
+    } catch {
+      next(new Error('unauthorized'));
+    }
   });
 
   io.on('connection', (socket: AppSocket) => {

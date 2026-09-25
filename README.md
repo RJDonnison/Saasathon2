@@ -17,8 +17,9 @@ root/
   (Postgres); the schema and demo seed are in `backend/schema.sql`.
 - **Frontend** — one app. After joining, users are routed to `/student` or `/teacher` by role; visiting
   the other role's route redirects you back to your own.
-- **Auth** — room code + name + role, no passwords. The backend issues a JWT used for both REST
-  (`Authorization: Bearer`) and the socket handshake.
+- **Auth** — Supabase Auth with Google sign-in, then a room code + role to enter a classroom. The browser's
+  Supabase access token authenticates both REST (`Authorization: Bearer`) and the socket handshake; the
+  backend issues no tokens of its own.
 - **Contract** — `shared/types.ts` and `shared/events.ts` are the source of truth. Edit them first.
   See [CLAUDE.md](CLAUDE.md) for details and what is real vs. mocked.
 
@@ -44,13 +45,17 @@ npm install --prefix frontend
 Then set up Supabase (the only database):
 
 1. Create a project at [supabase.com](https://supabase.com).
-2. `cp .env.example .env` and fill in `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`
-   (dashboard → Project Settings → API). `JWT_SECRET` is optional for local dev (insecure fallback).
-3. In the dashboard SQL editor, paste and run [`backend/schema.sql`](backend/schema.sql). It creates
-   the tables and seeds the demo data. Reapplying it is supported. When upgrading the original skeleton,
-   it creates memberships from the old user classroom/role columns and preserves module progress; legacy
-   module comments are removed because they have no truthful submission target (back them up first).
-4. `npm run dev` — boots both apps. The backend exits with a clear message if Supabase is unreachable or
+2. `cp .env.example .env` and fill in `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` and the two `VITE_SUPABASE_*`
+   values (dashboard → Project Settings → API; the frontend gets the *publishable* key only).
+3. In the dashboard SQL editor, paste and run [`backend/schema.sql`](backend/schema.sql) once. It creates
+   the tables and seeds the demo data.
+4. Enable Google sign-in:
+   - Google Cloud Console → APIs & Services → Credentials → create an OAuth client ID (Web application) with
+     the authorized redirect URI `https://<project-ref>.supabase.co/auth/v1/callback`.
+   - Supabase dashboard → Authentication → Sign In / Providers → Google: enable it and paste the client ID and secret.
+   - Authentication → URL Configuration: set Site URL to `http://localhost:5173` and add
+     `http://localhost:5173/**` to Redirect URLs.
+5. `npm run dev` — boots both apps. The backend exits with a clear message if Supabase is unreachable or
    the schema hasn't been run.
 
 ## Demo data
@@ -62,8 +67,9 @@ Then set up Supabase (the only database):
 - One ordered module with two sections, markdown content, MCQ/short/code questions, a code exercise,
   two teacher reference answers/checks, progress, an attempt, a sandbox result, and a line comment.
 
-Join as a student and as a teacher (two browser windows) to try the raise-hand flow. Joining with any new
-name creates a new user in that classroom.
+Sign in with Google, then join with `DEMO123` as a student in one browser window and as a teacher in another
+(use two Google accounts, or a normal window plus a private one) to try the raise-hand flow. Your name comes
+from your Google profile. Alex and Sam are demo rows with no login; they just populate the teacher's grid.
 
 ## What's stubbed
 
@@ -72,13 +78,14 @@ client is scaffolded in `backend/src/openai.ts` but not wired into any route.
 
 ## Core API
 
-All endpoints except `POST /api/auth/join` require `Authorization: Bearer <token>`. A JWT selects one
-classroom membership, so the compatible room-code join flow can still be used to switch classrooms. Users
-are global; role is stored on `memberships`, scoped to each classroom.
+All endpoints require a Supabase access token in `Authorization: Bearer <token>`. `POST /api/auth/join` and
+`GET /api/auth/me` only require a signed-in identity; all other endpoints also require a classroom membership.
+Users are global and role is stored on `memberships`, scoped to each classroom. Joining a classroom selects its
+membership for subsequent requests.
 
 ### Auth and classroom reads
 
-- `POST /api/auth/join` — `{ roomCode, name, role }`; finds/creates the matching classroom membership.
+- `POST /api/auth/join` — `{ roomCode, role }`; creates or updates the caller's classroom membership.
 - `GET /api/auth/me`
 - `POST /api/classrooms` (teacher) — `{ name, roomCode }`; adds the caller as its teacher.
 - `GET /api/classrooms/:id`, `GET /api/classrooms/:id/modules` (members)
