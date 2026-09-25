@@ -1,4 +1,6 @@
 import type {
+  AiDraftRequest,
+  AiDraftResponse,
   AiHintRequest,
   AiHintResponse,
   ApiError,
@@ -121,4 +123,7 @@ export const api = {
   runCode: (body: RunCodeRequest) =>
     post<RunCodeResponse>("/api/code/run", body),
   aiHint: (body: AiHintRequest) => post<AiHintResponse>("/api/ai/hint", body),
+  /** Teacher-only drafting/planning assistant (for the teacher dashboard to call). */
+  aiDraft: (body: AiDraftRequest) =>
+    post<AiDraftResponse>("/api/ai/draft", body),
 };

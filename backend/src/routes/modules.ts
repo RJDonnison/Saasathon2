@@ -98,15 +98,15 @@ const moveWithinSiblings = async (
   return siblings.findIndex((sibling) => sibling.id === id);
 };
 
-async function aggregate(
+export async function aggregate(
   module: ModuleRow,
   teacher: true,
 ): Promise<GetTeacherModuleResponse>;
-async function aggregate(
+export async function aggregate(
   module: ModuleRow,
   teacher: false,
 ): Promise<GetStudentModuleResponse>;
-async function aggregate(
+export async function aggregate(
   module: ModuleRow,
   teacher: boolean,
 ): Promise<GetTeacherModuleResponse | GetStudentModuleResponse> {

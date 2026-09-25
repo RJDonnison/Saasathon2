@@ -1,14 +1,17 @@
-// PLACEHOLDER: static content. Real version loads the module via api.getModule().
-export default function ModuleView() {
+import type { Module } from "../../../shared/types";
+
+// PLACEHOLDER: shows the module's title and intro only (no sections/questions yet).
+export default function ModuleView({ module }: { module: Module | null }) {
   return (
     <section className="rounded-2xl border border-[#dfe5d8] bg-white p-5 shadow-sm">
       <h2 className="mb-2 font-semibold text-[#20271f]">
-        Module: Variables and Types
+        {module ? `Module: ${module.title}` : "No module selected"}
       </h2>
-      <p className="text-sm text-[#697266]">
-        Declare a variable with <code>let</code> or <code>const</code>. Try
-        printing the sum of two numbers.
-      </p>
+      {module && (
+        <p className="whitespace-pre-wrap text-sm text-[#697266]">
+          {module.content}
+        </p>
+      )}
     </section>
   );
 }
