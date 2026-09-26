@@ -59,7 +59,8 @@ MOCKED — don't "fix" these into real implementations unless explicitly asked; 
 
 - `POST /api/code/run` — returns `"mock output for: " + code` after a fake 300ms delay. Nothing is executed.
 - Most frontend components under `frontend/src/student/` and `frontend/src/teacher/` are placeholders
-  with static/mock content.
+  with static/mock content. The student's multiple-choice / short-answer questions are local-only (no attempts
+  endpoint is wired up).
 
 ## Database: Supabase only
 
@@ -84,7 +85,10 @@ A thin, **stateless** wrapper over the OpenAI chat API inside the backend (`back
 module itself (scoped to the caller's classroom), so clients can't inject or swap the context.
 - `POST /api/ai/hint` — **student only**. A tutor scoped to `moduleId` that gives **hints, never answers**
   (a deliberate design choice — this project pushes back against AI doing students' work). Optional
-  `history` (the client re-sends the transcript) and `code`. `studentId` must be the caller.
+  `history` (the client re-sends the transcript), `code` (the editor the student last touched), `exerciseId` and
+  `error` (a failed run's output). `studentId` must be the caller. When `code` is sent the model replies in JSON
+  and the response may carry a `highlight` (`{line, endLine?, note}`, 1-based, validated server-side to lie inside
+  the submitted code) that the editor marks and scrolls to. The tutor only *locates* a problem, never fixes it.
 - `POST /api/ai/draft` — **teacher only** (stretch). Helps draft/plan modules; optional `moduleId` and
   unsaved `draft` as context. Replies in Markdown. No UI yet: the teacher dashboard calls `api.aiDraft`.
 - **Never give the student prompt answer material.** The student context is built only from the
@@ -98,6 +102,18 @@ module itself (scoped to the caller's classroom), so clients can't inject or swa
 - Guards: per-user rate limit (20/min, in-memory), input size caps, and OpenAI errors are mapped to a generic
   502 (never leaked). Known limit: chat history is client-supplied, so a determined student could forge
   "assistant" turns; the system prompt tells the model to hold the line, but it isn't a hard guarantee.
+
+## Student dashboard
+
+Two columns: the lesson on the left, the tutor (`AiChatPanel`) on the right, `sticky` under the top bar so it
+stays on screen while the lesson scrolls (stacked on phones). A lesson (`ModuleView`) renders its sections in
+order; each section is its Markdown content blocks followed by its questions, so teachers interleave reading and
+work by ordering sections (read -> practice -> read -> practice). Blocks and questions have separate `position`
+sequences, so they can't be mixed *within* a section without a contract change. Each code exercise gets its own
+`CodeEditor`; there is also a free playground at the end. `WorkspaceContext` shares editor text, the active
+editor and the tutor's highlight between the columns. The editor is a textarea over a line-by-line mirror that
+shares its font and line height (so a line can be tinted and scrolled to exactly) — keep those in sync if you
+restyle it.
 
 ## Run commands
 

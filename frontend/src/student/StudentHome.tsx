@@ -2,10 +2,9 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { api } from '../api.ts'
 import { useAuth } from '../auth/useAuth.ts'
 import ModuleView from './ModuleView.tsx'
-import CodeEditor from './CodeEditor.tsx'
-import ScratchPad from './ScratchPad.tsx'
 import AiChatPanel from './AiChatPanel.tsx'
 import RaiseHandButton from './RaiseHandButton.tsx'
+import { WorkspaceProvider } from './WorkspaceContext.tsx'
 import Button from '../ui/Button.tsx'
 import Eyebrow from '../ui/Eyebrow.tsx'
 import Heading from '../ui/Heading.tsx'
@@ -129,16 +128,20 @@ export default function StudentHome() {
             </ol>
           </nav>
 
-          <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_23rem]">
-            <div className="flex min-w-0 flex-col gap-6">
-              <ModuleView module={current} index={Math.max(currentIndex, 0)} total={modules.length} />
-              <CodeEditor />
+          {/* Left: the lesson (reading and work interleaved, each exercise with its own editor). Right: the tutor,
+              pinned under the top bar so it stays on screen while the lesson scrolls. */}
+          <WorkspaceProvider moduleId={currentId}>
+            <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
+              <div className="min-w-0">
+                <ModuleView module={current} index={Math.max(currentIndex, 0)} total={modules.length} />
+              </div>
+              {current && (
+                <aside aria-label="Tutor" className="min-w-0 lg:sticky lg:top-24 lg:h-[calc(100dvh-7rem)]">
+                  <AiChatPanel key={current.id} moduleId={current.id} />
+                </aside>
+              )}
             </div>
-            <div className="flex min-w-0 flex-col gap-6 lg:sticky lg:top-24">
-              {current && <AiChatPanel key={current.id} moduleId={current.id} />}
-              <ScratchPad />
-            </div>
-          </div>
+          </WorkspaceProvider>
         </>
       )}
 

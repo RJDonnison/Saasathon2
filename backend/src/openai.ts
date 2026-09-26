@@ -38,10 +38,13 @@ export async function complete(opts: {
   history: ChatTurn[];
   message: string;
   maxTokens: number;
+  /** Ask for a JSON object reply (the system prompt must describe the shape and mention JSON). */
+  json?: boolean;
 }): Promise<string> {
   const res = await getClient().chat.completions.create({
     model: AI_MODEL,
     max_completion_tokens: opts.maxTokens,
+    ...(opts.json ? { response_format: { type: "json_object" as const } } : {}),
     messages: [
       { role: "system", content: opts.system },
       ...opts.history.map((t) => ({ role: t.role, content: t.text })),

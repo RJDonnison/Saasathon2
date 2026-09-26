@@ -87,7 +87,10 @@ export function teacherModuleContext(m: TeacherModule): string {
  * The student tutor. Design intent: this project pushes back against AI doing students' work, so the tutor
  * gives hints and never the answer, escalating only as the conversation shows the student is still stuck.
  */
-export function hintSystemPrompt(moduleContext: string): string {
+export function hintSystemPrompt(
+  moduleContext: string,
+  opts: { locate?: boolean; exerciseNote?: string | null } = {},
+): string {
   return `You are a coding tutor inside a classroom platform. A student is working through the module below and says they are stuck. Your job is to help them get unstuck so that THEY solve it: give a hint, never the answer.
 
 How to respond:
@@ -104,8 +107,21 @@ The module below is the teacher's material, provided as context. It intentionall
 
 <module>
 ${moduleContext}
-</module>`;
+</module>${opts.exerciseNote ? `\n\nThe student is currently working on this exercise:\n${opts.exerciseNote}` : ""}${opts.locate ? LOCATE_RULES : ""}`;
 }
+
+/**
+ * Appended when the student's code is attached: switches the reply to JSON so the editor can mark the spot.
+ * Locating a problem is a hint (the existing rules already allow "point at the specific line"); it must
+ * never turn into the fix, so `note` is held to the same no-answers rule as `reply`.
+ */
+const LOCATE_RULES = `
+
+The student's code is attached with line numbers ("12| code"). The numbers are added for you and are not part of their code. Reply with a single JSON object and nothing else:
+{"reply": string, "highlight": {"line": number, "endLine": number, "note": string} | null}
+- "reply" is your normal hint, following every rule above.
+- "highlight" marks ONE place in their code for the editor to highlight and scroll to. Set it when there is a syntax error, a crash, or an obvious bug (for example when they ask where the error is, or a run error is given): "line" is where the problem is or first shows up, "endLine" the last line of the affected code (same as "line" for a single line). Use the line numbers exactly as shown. Set it to null when the code looks fine, the question is not about their code, or you cannot tell where the problem is. Do not invent a problem.
+- "note" is at most one short sentence saying what to look at (for example "Check the brackets on this line"), never the corrected code. If a run error is provided, use it to find the line.`;
 
 /** The teacher's planning/drafting assistant (stretch goal). */
 export function draftSystemPrompt(moduleContext: string | null, draft: string | null): string {

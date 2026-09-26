@@ -321,8 +321,10 @@ export interface AiChatMessage {
 /**
  * POST /api/ai/hint (student only) — "I'm stuck" tutor. Gives hints, never the solution, scoped to `moduleId`.
  * The server loads the module itself (student-safe view: no answer keys/reference answers/checks).
- * Limits: question <= 2000 chars, history <= 20 turns of <= 2000 chars, code <= 8000 chars.
+ * Limits: question <= 2000 chars, history <= 20 turns of <= 2000 chars, code <= 8000 chars, error <= 2000 chars.
  * Errors: 503 if the server has no OPENAI_API_KEY, 502 if OpenAI fails, 429 if rate limited.
+ * When `code` is sent and the tutor can point at the problem (a syntax error, a crash), the response carries a
+ * `highlight` so the editor can mark and scroll to that spot. It only locates the problem; it never fixes it.
  */
 export interface AiHintRequest {
   moduleId: string;
@@ -333,9 +335,22 @@ export interface AiHintRequest {
   history?: AiChatMessage[];
   /** The student's current code, if relevant to the question. */
   code?: string;
+  /** The code exercise `code` belongs to (must be in `moduleId`); lets the tutor see the task they are on. */
+  exerciseId?: string;
+  /** Output (stderr / message) from the student's last failed run of `code`. */
+  error?: string;
+}
+/** A spot in the submitted `code` for the editor to mark and scroll to. Lines are 1-based and inclusive. */
+export interface AiCodeHighlight {
+  line: number;
+  endLine?: number;
+  /** Short, hint-style note (what to look at, not the fix). */
+  note: string;
 }
 export interface AiHintResponse {
   reply: string;
+  /** Present only when `code` was sent and the tutor located a specific problem in it. */
+  highlight?: AiCodeHighlight;
 }
 
 /**

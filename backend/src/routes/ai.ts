@@ -16,6 +16,7 @@ import {
 } from "../ai/prompts.js";
 import { aggregate } from "./modules.js";
 import type {
+  AiCodeHighlight,
   AiDraftRequest,
   AiDraftResponse,
   AiHintRequest,
@@ -32,6 +33,8 @@ const MAX_QUESTION = 2000;
 const MAX_TURN_TEXT = 2000;
 const MAX_HISTORY_TURNS = 20;
 const MAX_CODE = 8000;
+const MAX_RUN_ERROR = 2000;
+const MAX_NOTE = 200;
 const MAX_DRAFT_REQUEST = 4000;
 const MAX_DRAFT = 20000;
 
@@ -52,19 +55,61 @@ const rateLimit: RequestHandler = (req, res, next) => {
   next();
 };
 
-// Loading a module is several sequential DB queries (~1s), so the student-safe context is cached briefly.
-// Only the *text* is cached; the caller's classroom check still runs on every request. Teacher drafting
-// is deliberately uncached so edits show up immediately.
+// Loading a module is several sequential DB queries (~1s), so the student-safe view is cached briefly.
+// Only that view (no answer keys, reference answers or checks) is cached; the caller's classroom check
+// still runs on every request. Teacher drafting is deliberately uncached so edits show up immediately.
 const CONTEXT_TTL_MS = 60_000;
-const contextCache = new Map<string, { text: string; expires: number }>();
-async function studentContextFor(row: ModuleRow): Promise<string> {
+const contextCache = new Map<string, { text: string; module: StudentModule; expires: number }>();
+async function studentViewFor(row: ModuleRow): Promise<{ text: string; module: StudentModule }> {
   const hit = contextCache.get(row.id);
-  if (hit && hit.expires > Date.now()) return hit.text;
+  if (hit && hit.expires > Date.now()) return hit;
   // teacher=false: the aggregate is loaded WITHOUT answer keys, reference answers or checks.
-  const text = studentModuleContext((await aggregate(row, false)) as StudentModule);
+  const module = (await aggregate(row, false)) as StudentModule;
+  const entry = { text: studentModuleContext(module), module, expires: Date.now() + CONTEXT_TTL_MS };
   if (contextCache.size > 200) contextCache.clear();
-  contextCache.set(row.id, { text, expires: Date.now() + CONTEXT_TTL_MS });
-  return text;
+  contextCache.set(row.id, entry);
+  return entry;
+}
+
+/** The prompt + starter task of one code exercise, from the student-safe view only. */
+function exerciseNote(module: StudentModule, exerciseId: string): string | null {
+  for (const s of module.sections) {
+    for (const q of s.questions) {
+      if (q.codeExercise?.id === exerciseId) {
+        return `${q.prompt}\n${q.codeExercise.instructions}`.trim();
+      }
+    }
+  }
+  return null;
+}
+
+/** Lines shown to the model as "12| code" so it can cite them; the editor uses the same 1-based numbers. */
+const numbered = (code: string) =>
+  code
+    .split("\n")
+    .map((l, i) => `${i + 1}| ${l}`)
+    .join("\n");
+
+/**
+ * Parses the model's JSON reply. The highlight is only trusted if it lands inside the submitted code;
+ * anything malformed degrades to a plain reply rather than an error.
+ */
+function parseLocated(raw: string, lineCount: number): AiHintResponse {
+  let data: unknown;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    return { reply: raw };
+  }
+  const obj = (data && typeof data === "object" ? data : {}) as { reply?: unknown; highlight?: unknown };
+  const text = typeof obj.reply === "string" && obj.reply.trim() ? obj.reply.trim() : raw;
+  const h = obj.highlight as Partial<AiCodeHighlight> | null | undefined;
+  if (!h || typeof h !== "object" || !Number.isInteger(h.line)) return { reply: text };
+  const line = h.line as number;
+  if (line < 1 || line > lineCount) return { reply: text };
+  const end = Number.isInteger(h.endLine) ? Math.min(Math.max(h.endLine as number, line), lineCount) : line;
+  const note = typeof h.note === "string" ? h.note.trim().slice(0, MAX_NOTE) : "";
+  return { reply: text, highlight: { line, ...(end > line ? { endLine: end } : {}), note } };
 }
 
 /** undefined -> []; malformed -> null. Keeps only the most recent turns and trims each. */
@@ -80,10 +125,9 @@ function parseHistory(raw: unknown): ChatTurn[] | null {
 }
 
 /** Runs the completion and maps failures to clean JSON errors (never leaks OpenAI's error text or status). */
-async function reply(res: Response, run: () => Promise<string>): Promise<void> {
+async function reply(res: Response, run: () => Promise<AiHintResponse | AiDraftResponse>): Promise<void> {
   try {
-    const body: AiHintResponse | AiDraftResponse = { reply: await run() };
-    res.json(body);
+    res.json(await run());
   } catch (err) {
     if (err instanceof AiNotConfiguredError) {
       res.status(503).json({ error: err.message });
@@ -98,7 +142,7 @@ const notConfigured = (res: Response) =>
   res.status(503).json({ error: new AiNotConfiguredError().message });
 
 aiRouter.post("/hint", requireRole("student"), rateLimit, async (req, res) => {
-  const { moduleId, studentId, question, code } = (req.body ?? {}) as Partial<AiHintRequest>;
+  const { moduleId, studentId, question, code, exerciseId, error } = (req.body ?? {}) as Partial<AiHintRequest>;
   const history = parseHistory(req.body?.history);
   if (
     typeof moduleId !== "string" ||
@@ -107,10 +151,12 @@ aiRouter.post("/hint", requireRole("student"), rateLimit, async (req, res) => {
     !question.trim() ||
     question.length > MAX_QUESTION ||
     !history ||
-    (code !== undefined && (typeof code !== "string" || code.length > MAX_CODE))
+    (code !== undefined && (typeof code !== "string" || code.length > MAX_CODE)) ||
+    (exerciseId !== undefined && typeof exerciseId !== "string") ||
+    (error !== undefined && (typeof error !== "string" || error.length > MAX_RUN_ERROR))
   ) {
     res.status(400).json({
-      error: `moduleId, studentId and a question (max ${MAX_QUESTION} chars) are required; history and code must be well-formed`,
+      error: `moduleId, studentId and a question (max ${MAX_QUESTION} chars) are required; history, code, exerciseId and error must be well-formed`,
     });
     return;
   }
@@ -125,19 +171,30 @@ aiRouter.post("/hint", requireRole("student"), rateLimit, async (req, res) => {
     res.status(404).json({ error: "Module not found" });
     return;
   }
-  const context = await studentContextFor(row);
+  const { text: context, module } = await studentViewFor(row);
+  const note = exerciseId ? exerciseNote(module, exerciseId) : null;
+  if (exerciseId && !note) {
+    res.status(404).json({ error: "Exercise not found" });
+    return;
+  }
 
-  const message = code?.trim()
-    ? `${question.trim()}\n\nMy current code:\n\`\`\`\n${code}\n\`\`\``
-    : question.trim();
-  await reply(res, () =>
-    complete({
-      system: hintSystemPrompt(context),
+  // With code attached the tutor replies in JSON so it can also point at a line (see LOCATE_RULES).
+  const hasCode = Boolean(code?.trim());
+  const parts = [question.trim()];
+  if (error?.trim()) parts.push(`My last run failed with:\n${error.trim()}`);
+  if (hasCode) parts.push(`My current code:\n${numbered(code!)}`);
+  const message = parts.join("\n\n");
+
+  await reply(res, async () => {
+    const text = await complete({
+      system: hintSystemPrompt(context, { locate: hasCode, exerciseNote: note }),
       history,
       message,
-      maxTokens: 400, // hints are short by design
-    }),
-  );
+      maxTokens: hasCode ? 500 : 400, // hints are short by design
+      json: hasCode,
+    });
+    return hasCode ? parseLocated(text, code!.split("\n").length) : { reply: text };
+  });
 });
 
 // Stretch: teacher-facing drafting/planning assistant.
@@ -169,12 +226,12 @@ aiRouter.post("/draft", requireRole("teacher"), rateLimit, async (req, res) => {
     moduleContext = teacherModuleContext((await aggregate(row, true)) as TeacherModule);
   }
 
-  await reply(res, () =>
-    complete({
+  await reply(res, async () => ({
+    reply: await complete({
       system: draftSystemPrompt(moduleContext, draft?.trim() || null),
       history,
       message: request.trim(),
       maxTokens: 1500,
     }),
-  );
+  }));
 });
