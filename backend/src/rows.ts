@@ -4,6 +4,7 @@ import type {
   Classroom,
   CodeCheck,
   CodeExercise,
+  CodeTest,
   CodeSubmission,
   Comment,
   Membership,
@@ -13,6 +14,7 @@ import type {
   QuestionOption,
   ReferenceAnswer,
   Section,
+  SectionItem,
   SectionBlock,
   SectionProgress,
   User,
@@ -33,6 +35,8 @@ export type ModuleRow = {
   title: string;
   content: string;
   position: number;
+  status: "draft" | "published";
+  revision: number;
 };
 export type SectionRow = {
   id: string;
@@ -45,6 +49,13 @@ export type BlockRow = {
   section_id: string;
   type: string;
   content: unknown;
+  position: number;
+};
+export type SectionItemRow = {
+  id: string;
+  section_id: string;
+  item_type: "block" | "question";
+  item_id: string;
   position: number;
 };
 export type QuestionRow = {
@@ -69,6 +80,16 @@ export type ExerciseRow = {
   language: string;
   starter_code: string;
   instructions: string;
+  function_name: string;
+  hidden_code: string;
+};
+export type TestRow = {
+  id: string;
+  code_exercise_id: string;
+  name: string;
+  args: unknown;
+  expected: unknown;
+  position: number;
 };
 export type ReferenceRow = {
   id: string;
@@ -152,6 +173,8 @@ export const toModule = (r: ModuleRow): Module => ({
   title: r.title,
   content: r.content,
   position: r.position,
+  status: r.status,
+  revision: r.revision,
 });
 export const toSection = (r: SectionRow): Section => ({
   id: r.id,
@@ -164,6 +187,13 @@ export const toBlock = (r: BlockRow): SectionBlock => ({
   sectionId: r.section_id,
   type: r.type,
   content: r.content,
+  position: r.position,
+});
+export const toSectionItem = (r: SectionItemRow): SectionItem => ({
+  id: r.id,
+  sectionId: r.section_id,
+  itemType: r.item_type,
+  itemId: r.item_id,
   position: r.position,
 });
 export const toOption = (r: OptionRow): QuestionOption => ({
@@ -186,6 +216,15 @@ export const toExercise = (r: ExerciseRow): CodeExercise => ({
   language: r.language,
   starterCode: r.starter_code,
   instructions: r.instructions,
+  functionName: r.function_name,
+});
+export const toTest = (r: TestRow): CodeTest => ({
+  id: r.id,
+  codeExerciseId: r.code_exercise_id,
+  name: r.name,
+  args: r.args as unknown[],
+  expected: r.expected,
+  position: r.position,
 });
 export const toReference = (r: ReferenceRow): ReferenceAnswer => ({
   id: r.id,

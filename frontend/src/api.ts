@@ -3,9 +3,17 @@ import type {
   AiDraftResponse,
   AiHintRequest,
   AiHintResponse,
+  AiCodeTestCandidatesRequest,
+  AiCodeTestCandidatesResponse,
+  AiModuleSuggestionsRequest,
+  AiModuleSuggestionsResponse,
+  ModuleBuilderDocument,
+  SaveModuleBuilderResponse,
   ApiError,
   Comment,
+  Attempt,
   CreateCommentRequest,
+  CreateAttemptRequest,
   GetClassroomResponse,
   GetClassroomStudentsResponse,
   GetModuleResponse,
@@ -15,6 +23,14 @@ import type {
   MeResponse,
   RunCodeRequest,
   RunCodeResponse,
+  GradeCodeExerciseRequest,
+  GradeCodeExerciseResponse,
+  CodeExercise,
+  CodeTest,
+  CreateCodeTestRequest,
+  UpdateCodeTestRequest,
+  UpdateCodeExerciseRequest,
+  UpdateQuestionRequest,
   ValidateMathRequest,
   ValidateMathResponse,
   UpsertProgressRequest,
@@ -77,6 +93,8 @@ export const api = {
     ),
   createComment: (body: CreateCommentRequest) =>
     post<Comment>("/api/comments", body),
+  createAttempt: (body: CreateAttemptRequest) =>
+    post<Attempt>("/api/comments/attempts", body),
   upsertProgress: (body: UpsertProgressRequest) =>
     request<UpsertProgressResponse>("/api/progress", {
       method: "PUT",
@@ -84,10 +102,43 @@ export const api = {
     }),
   runCode: (body: RunCodeRequest) =>
     post<RunCodeResponse>("/api/code/run", body),
+  gradeCode: (body: GradeCodeExerciseRequest) =>
+    post<GradeCodeExerciseResponse>("/api/code/grade", body),
+  updateExercise: (id: string, body: UpdateCodeExerciseRequest) =>
+    request<CodeExercise>(`/api/modules/exercises/${id}`, {
+      method: "PATCH",
+      json: body,
+    }),
+  updateQuestion: (id: string, body: UpdateQuestionRequest) =>
+    request(`/api/modules/questions/${id}`, { method: "PATCH", json: body }),
+  createCodeTest: (exerciseId: string, body: CreateCodeTestRequest) =>
+    post<CodeTest>(`/api/modules/exercises/${exerciseId}/tests`, body),
+  updateCodeTest: (id: string, body: UpdateCodeTestRequest) =>
+    request<CodeTest>(`/api/modules/tests/${id}`, {
+      method: "PATCH",
+      json: body,
+    }),
+  deleteCodeTest: (id: string) =>
+    request<void>(`/api/modules/tests/${id}`, { method: "DELETE" }),
   validateMath: (body: ValidateMathRequest) =>
     post<ValidateMathResponse>("/api/math/validate", body),
   aiHint: (body: AiHintRequest) => post<AiHintResponse>("/api/ai/hint", body),
   /** Teacher-only drafting/planning assistant (for the teacher dashboard to call). */
   aiDraft: (body: AiDraftRequest) =>
     post<AiDraftResponse>("/api/ai/draft", body),
+  aiCodeTestCandidates: (body: AiCodeTestCandidatesRequest) =>
+    post<AiCodeTestCandidatesResponse>("/api/ai/code-test-candidates", body),
+  createBuilderModule: (document: ModuleBuilderDocument) =>
+    post<SaveModuleBuilderResponse>("/api/modules/builder", { document }),
+  saveBuilderModule: (
+    id: string,
+    revision: number,
+    document: ModuleBuilderDocument,
+  ) =>
+    request<SaveModuleBuilderResponse>(`/api/modules/${id}/builder`, {
+      method: "PUT",
+      json: { revision, document },
+    }),
+  aiModuleSuggestions: (body: AiModuleSuggestionsRequest) =>
+    post<AiModuleSuggestionsResponse>("/api/ai/module-suggestions", body),
 };

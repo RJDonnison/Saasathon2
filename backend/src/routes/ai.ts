@@ -1,6 +1,5 @@
 import { Router, type RequestHandler, type Response } from "express";
 import { moduleInClassroom } from "../access.js";
-import type { ModuleRow } from "../rows.js";
 import { requireRole } from "../auth.js";
 import {
   AiNotConfiguredError,
@@ -9,21 +8,31 @@ import {
   type ChatTurn,
 } from "../openai.js";
 import {
+  builderSystemPrompt,
   draftSystemPrompt,
   hintSystemPrompt,
   studentModuleContext,
   teacherModuleContext,
+  codeTestSystemPrompt,
 } from "../ai/prompts.js";
-import { aggregate } from "./modules.js";
+import { aggregate, validBuilderDocument } from "./modules.js";
 import type {
   AiCodeHighlight,
   AiDraftRequest,
   AiDraftResponse,
   AiHintRequest,
   AiHintResponse,
+  AiCodeTestCandidate,
+  AiCodeTestCandidatesRequest,
+  AiCodeTestCandidatesResponse,
   StudentModule,
   TeacherModule,
+  AiModuleSuggestionsRequest,
+  AiModuleSuggestionsResponse,
+  AiModuleSuggestion,
 } from "../../../shared/types.js";
+import { supabase } from "../supabase.js";
+import { unwrap, type ExerciseRow, type ModuleRow } from "../rows.js";
 
 // Both endpoints are stateless: the module is loaded server-side (scoped to the caller's classroom),
 // the client re-sends the chat history, and nothing is stored. Mounted behind requireMember.
@@ -37,6 +46,37 @@ const MAX_RUN_ERROR = 2000;
 const MAX_NOTE = 200;
 const MAX_DRAFT_REQUEST = 4000;
 const MAX_DRAFT = 20000;
+const FUNCTION_NAME = /^[A-Za-z_$][A-Za-z0-9_$]{0,63}$/;
+function jsonValue(value: unknown): boolean {
+  if (value === null || typeof value === "string" || typeof value === "boolean")
+    return true;
+  if (typeof value === "number") return Number.isFinite(value);
+  if (Array.isArray(value)) return value.every(jsonValue);
+  return (
+    !!value &&
+    typeof value === "object" &&
+    Object.values(value).every(jsonValue)
+  );
+}
+function candidate(value: unknown): AiCodeTestCandidate | null {
+  if (!value || typeof value !== "object") return null;
+  const c = value as Partial<AiCodeTestCandidate>;
+  if (
+    !FUNCTION_NAME.test(c.functionName ?? "") ||
+    !Array.isArray(c.args) ||
+    c.args.length > 10 ||
+    !jsonValue(c.args) ||
+    !jsonValue(c.expected)
+  )
+    return null;
+  try {
+    return JSON.stringify(c).length <= 8000
+      ? { functionName: c.functionName!, args: c.args, expected: c.expected }
+      : null;
+  } catch {
+    return null;
+  }
+}
 
 // Protects the OpenAI bill: a small per-user sliding window (in-memory, per server process).
 const RATE_WINDOW_MS = 60_000;
@@ -48,11 +88,9 @@ const rateLimit: RequestHandler = (req, res, next) => {
     (t) => now - t < RATE_WINDOW_MS,
   );
   if (recent.length >= RATE_MAX) {
-    res
-      .status(429)
-      .json({
-        error: "Too many AI requests. Please wait a minute and try again.",
-      });
+    res.status(429).json({
+      error: "Too many AI requests. Please wait a minute and try again.",
+    });
     return;
   }
   recent.push(now);
@@ -173,7 +211,12 @@ function parseHistory(raw: unknown): ChatTurn[] | null {
 /** Runs the completion and maps failures to clean JSON errors (never leaks OpenAI's error text or status). */
 async function reply(
   res: Response,
-  run: () => Promise<AiHintResponse | AiDraftResponse>,
+  run: () => Promise<
+    | AiHintResponse
+    | AiDraftResponse
+    | AiCodeTestCandidatesResponse
+    | AiModuleSuggestionsResponse
+  >,
 ): Promise<void> {
   try {
     res.json(await run());
@@ -186,16 +229,48 @@ async function reply(
       "[ai] completion failed:",
       err instanceof Error ? err.message : err,
     );
-    res
-      .status(502)
-      .json({
-        error: "The AI service is unavailable right now. Please try again.",
-      });
+    res.status(502).json({
+      error: "The AI service is unavailable right now. Please try again.",
+    });
   }
 }
 
 const notConfigured = (res: Response) =>
   res.status(503).json({ error: new AiNotConfiguredError().message });
+
+function builderSuggestion(
+  raw: string,
+  sourceStatus: "draft" | "published",
+): AiModuleSuggestion | null {
+  try {
+    const value: unknown = JSON.parse(raw);
+    if (!value || typeof value !== "object") return null;
+    const { label, reply, document } = value as Record<string, unknown>;
+    if (
+      typeof label !== "string" ||
+      !label.trim() ||
+      typeof reply !== "string" ||
+      !reply.trim()
+    )
+      return null;
+    if (document === null || document === undefined)
+      return {
+        id: "ai-builder",
+        label: label.trim().slice(0, 160),
+        reply: reply.trim().slice(0, 4000),
+      };
+    if (!validBuilderDocument(document) || !document.title.trim()) return null;
+    // A suggestion must never silently publish or unpublish the teacher's module.
+    return {
+      id: "ai-builder",
+      label: label.trim().slice(0, 160),
+      reply: reply.trim().slice(0, 4000),
+      document: { ...document, status: sourceStatus },
+    };
+  } catch {
+    return null;
+  }
+}
 
 aiRouter.post("/hint", requireRole("student"), rateLimit, async (req, res) => {
   const { moduleId, studentId, question, code, exerciseId, questionId, error } =
@@ -310,3 +385,101 @@ aiRouter.post("/draft", requireRole("teacher"), rateLimit, async (req, res) => {
     }),
   }));
 });
+
+aiRouter.post(
+  "/code-test-candidates",
+  requireRole("teacher"),
+  rateLimit,
+  async (req, res) => {
+    const { exerciseId, request } = (req.body ??
+      {}) as Partial<AiCodeTestCandidatesRequest>;
+    if (
+      typeof exerciseId !== "string" ||
+      typeof request !== "string" ||
+      !request.trim() ||
+      request.length > MAX_DRAFT_REQUEST
+    ) {
+      res.status(400).json({ error: "exerciseId and a request are required" });
+      return;
+    }
+    if (!isAiConfigured()) return notConfigured(res);
+    const exercise = unwrap(
+      await supabase
+        .from("code_exercises")
+        .select("*, questions!inner(section_id, sections!inner(module_id))")
+        .eq("id", exerciseId)
+        .maybeSingle(),
+    ) as
+      (ExerciseRow & { questions: { sections: { module_id: string } } }) | null;
+    if (!exercise) {
+      res.status(404).json({ error: "Exercise not found" });
+      return;
+    }
+    const module = (await moduleInClassroom(
+      exercise.questions.sections.module_id,
+      req.user!.classroomId,
+    )) as ModuleRow | null;
+    if (!module) {
+      res.status(404).json({ error: "Exercise not found" });
+      return;
+    }
+    const context = teacherModuleContext(
+      (await aggregate(module, true)) as TeacherModule,
+    );
+    await reply(res, async () => {
+      const raw = await complete({
+        system: codeTestSystemPrompt(context),
+        history: [],
+        message: request.trim(),
+        maxTokens: 900,
+        json: true,
+      });
+      let parsed: { candidates?: unknown } = {};
+      try {
+        parsed = JSON.parse(raw) as { candidates?: unknown };
+      } catch {}
+      const candidates = Array.isArray(parsed.candidates)
+        ? parsed.candidates
+            .map(candidate)
+            .filter((c): c is AiCodeTestCandidate => c !== null)
+            .slice(0, 5)
+        : [];
+      return { candidates } satisfies AiCodeTestCandidatesResponse;
+    });
+  },
+);
+
+/** Builder suggestions use the teacher's in-progress document, so they also work before first save. */
+aiRouter.post(
+  "/module-suggestions",
+  requireRole("teacher"),
+  rateLimit,
+  async (req, res) => {
+    const { request, document, selectedItemId } = (req.body ??
+      {}) as Partial<AiModuleSuggestionsRequest>;
+    if (
+      typeof request !== "string" ||
+      !request.trim() ||
+      request.length > MAX_DRAFT_REQUEST ||
+      !validBuilderDocument(document) ||
+      !document.title.trim() ||
+      JSON.stringify(document).length > MAX_DRAFT ||
+      (selectedItemId !== undefined && typeof selectedItemId !== "string")
+    )
+      return res
+        .status(400)
+        .json({ error: "A valid module document and a request are required" });
+    if (!isAiConfigured()) return notConfigured(res);
+    await reply(res, async () => {
+      const raw = await complete({
+        system: builderSystemPrompt(document, selectedItemId ?? null),
+        history: [],
+        message: request.trim(),
+        maxTokens: 4000,
+        json: true,
+      });
+      const suggestion = builderSuggestion(raw, document.status);
+      return { suggestions: suggestion ? [suggestion] : [] };
+    });
+  },
+);

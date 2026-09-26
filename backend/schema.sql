@@ -30,10 +30,25 @@ create unique index if not exists memberships_classroom_name_role_key
 create table if not exists modules (
   id text primary key, classroom_id text not null references classrooms(id) on delete cascade,
   title text not null, content text not null default '', position integer not null default 0,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(), status text not null default 'published' check (status in ('draft','published')),
+  revision integer not null default 0
 );
+-- Earlier deployed versions named this column publication_status and required revisions to start at 1.
+-- The builder contract uses status and creates documents at revision 0.
+do $$ begin
+  if not exists (select 1 from information_schema.columns where table_name = 'modules' and column_name = 'status')
+    and exists (select 1 from information_schema.columns where table_name = 'modules' and column_name = 'publication_status') then
+    alter table modules rename column publication_status to status;
+  end if;
+end $$;
 alter table modules add column if not exists position integer not null default 0;
 alter table modules alter column content set default '';
+alter table modules add column if not exists status text not null default 'published' check (status in ('draft','published'));
+alter table modules add column if not exists revision integer not null default 0;
+alter table modules alter column status set default 'published';
+alter table modules alter column revision set default 0;
+alter table modules drop constraint if exists modules_revision_check;
+alter table modules add constraint modules_revision_check check (revision >= 0);
 
 create table if not exists sections (
   id text primary key, module_id text not null references modules(id) on delete cascade,
@@ -48,6 +63,58 @@ create table if not exists questions (
   prompt text not null, kind text not null check (kind in ('mcq','short','code','math')),
   answer_key text, math_expected_result double precision, math_tolerance double precision, position integer not null default 0
 );
+-- This is the canonical sequence used by new module-builder reads. It allows blocks and
+-- questions to be truly interleaved while leaving the old per-table positions compatible.
+create table if not exists section_items (
+  id text primary key, section_id text not null references sections(id) on delete cascade,
+  item_type text not null check (item_type in ('block','question')), item_id text not null,
+  position integer not null, unique(section_id, item_type, item_id), unique(section_id, position)
+);
+-- Convert the original typed foreign-key representation to the generic item reference used by the builder.
+do $$
+declare constraint_name text;
+begin
+  if exists (select 1 from information_schema.columns where table_name = 'section_items' and column_name = 'kind') then
+    alter table section_items add column if not exists item_type text;
+    alter table section_items add column if not exists item_id text;
+    update section_items
+      set item_type = kind,
+          item_id = case when kind = 'block' then block_id else question_id end
+      where item_type is null or item_id is null;
+    alter table section_items alter column item_type set not null;
+    alter table section_items alter column item_id set not null;
+    for constraint_name in
+      select conname
+      from pg_constraint
+      where conrelid = 'section_items'::regclass
+        and (contype = 'c' or conkey && array[
+          (select attnum from pg_attribute where attrelid = 'section_items'::regclass and attname = 'kind'),
+          (select attnum from pg_attribute where attrelid = 'section_items'::regclass and attname = 'block_id'),
+          (select attnum from pg_attribute where attrelid = 'section_items'::regclass and attname = 'question_id')
+        ]::smallint[])
+    loop
+      execute format('alter table section_items drop constraint %I', constraint_name);
+    end loop;
+    alter table section_items drop column kind, drop column block_id, drop column question_id;
+  end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conrelid = 'section_items'::regclass and conname = 'section_items_item_type_check') then
+    alter table section_items add constraint section_items_item_type_check check (item_type in ('block','question'));
+  end if;
+end $$;
+create unique index if not exists section_items_section_item_key on section_items (section_id, item_type, item_id);
+create unique index if not exists section_items_section_position_key on section_items (section_id, position);
+-- Deterministic legacy backfill: old blocks first, then old questions, each by legacy position/id.
+insert into section_items (id, section_id, item_type, item_id, position)
+select 'legacy-block-' || b.id, b.section_id, 'block', b.id,
+       row_number() over (partition by b.section_id order by b.position, b.id) - 1
+from section_blocks b on conflict (section_id, item_type, item_id) do nothing;
+insert into section_items (id, section_id, item_type, item_id, position)
+select 'legacy-question-' || q.id, q.section_id, 'question', q.id,
+       coalesce((select max(position) + 1 from section_items i where i.section_id=q.section_id), 0) +
+       row_number() over (partition by q.section_id order by q.position, q.id) - 1
+from questions q on conflict (section_id, item_type, item_id) do nothing;
 -- Upgrade the original kind check and add the math configuration constraints.
 alter table questions drop constraint if exists questions_kind_check;
 alter table questions add column if not exists math_expected_result double precision;
@@ -69,8 +136,18 @@ create table if not exists question_options (
 );
 create table if not exists code_exercises (
   id text primary key, question_id text not null unique references questions(id) on delete cascade,
-  language text not null, starter_code text not null default '', instructions text not null default ''
+  language text not null, starter_code text not null default '', instructions text not null default '',
+  function_name text not null default '', hidden_code text not null default ''
 );
+alter table code_exercises add column if not exists function_name text not null default '';
+create table if not exists code_tests (
+  id text primary key, code_exercise_id text not null references code_exercises(id) on delete cascade,
+  name text not null default 'Untitled check', args jsonb not null, expected jsonb not null, position integer not null default 0
+);
+alter table code_tests add column if not exists name text not null default 'Untitled check';
+create index if not exists code_tests_exercise_position_idx on code_tests (code_exercise_id, position, id);
+-- Existing projects have this table already, so the additive upgrade must follow the create statement.
+alter table code_exercises add column if not exists hidden_code text not null default '';
 create table if not exists reference_answers (
   id text primary key, code_exercise_id text not null references code_exercises(id) on delete cascade,
   title text not null, answer text not null, position integer not null default 0
@@ -122,9 +199,11 @@ create table if not exists comments (
 alter table classrooms enable row level security; alter table users enable row level security;
 alter table memberships enable row level security; alter table modules enable row level security;
 alter table sections enable row level security; alter table section_blocks enable row level security;
+alter table section_items enable row level security;
 alter table questions enable row level security; alter table question_options enable row level security;
 alter table code_exercises enable row level security; alter table reference_answers enable row level security;
 alter table code_checks enable row level security; alter table module_progress enable row level security;
+alter table code_tests enable row level security;
 alter table section_progress enable row level security; alter table attempts enable row level security;
 alter table code_submissions enable row level security; alter table comments enable row level security;
 
@@ -138,7 +217,7 @@ insert into sections values ('section-1','module-1','Variables',1),('section-2',
 insert into section_blocks values ('block-1','section-1','markdown','"Use const for values that do not change."',1) on conflict do nothing;
 insert into questions values ('question-1','section-1','Which keyword declares a block-scoped variable?','mcq','let',1),('question-2','section-1','What is the type of true?','short','boolean',2),('question-3','section-2','Write a function that adds two numbers.','code',null,1) on conflict do nothing;
 insert into question_options values ('option-1','question-1','var',1),('option-2','question-1','let',2),('option-3','question-1','goto',3) on conflict do nothing;
-insert into code_exercises values ('exercise-1','question-3','javascript','function add(a, b) {\n  // your code\n}','Return the sum of a and b.') on conflict do nothing;
+insert into code_exercises values ('exercise-1','question-3','javascript','function add(a, b) {\n  // your code\n}','Return the sum of a and b.','') on conflict do nothing;
 insert into reference_answers values ('reference-1','exercise-1','Concise solution','function add(a, b) { return a + b; }',1),('reference-2','exercise-1','Arrow function','const add = (a, b) => a + b;',2) on conflict do nothing;
 insert into code_checks values ('check-1','exercise-1','Adds positives','add(2, 3) returns 5',1),('check-2','exercise-1','Adds negatives','add(-2, 3) returns 1',2) on conflict do nothing;
 insert into module_progress values ('module-progress-1','student-1','module-1','in_progress',now()) on conflict do nothing;
@@ -584,3 +663,21 @@ insert into code_checks (id, code_exercise_id, name, description, position) valu
   ('py-x6-c2', 'py-x6', 'One', 'sum_to(1) returns 1', 2),
   ('py-x6-c3', 'py-x6', 'Zero', 'sum_to(0) returns 0', 3)
 on conflict do nothing;
+
+-- A runnable example for the Functions module. Preserve any teacher-selected function name.
+update code_exercises
+set function_name = 'double'
+where id = 'fn-x4' and function_name = '';
+insert into code_tests (id, code_exercise_id, args, expected, position) values
+  ('fn-x4-t1', 'fn-x4', '[4]'::jsonb, '8'::jsonb, 1),
+  ('fn-x4-t2', 'fn-x4', '[0]'::jsonb, '0'::jsonb, 2),
+  ('fn-x4-t3', 'fn-x4', '[-3]'::jsonb, '-6'::jsonb, 3)
+on conflict do nothing;
+update code_tests
+set name = case id
+  when 'fn-x4-t1' then 'Positive number'
+  when 'fn-x4-t2' then 'Zero'
+  when 'fn-x4-t3' then 'Negative number'
+  else name
+end
+where id in ('fn-x4-t1', 'fn-x4-t2', 'fn-x4-t3') and name = 'Untitled check';
