@@ -104,6 +104,9 @@ export default function TeacherLessonFeedback() {
     <Card title="How the class went" eyebrow="AI class summary" icon={<UsersIcon className="size-4" />}>
       <div className="flex flex-col gap-4"><p className="m-0 text-sm leading-relaxed text-ink">{report.aiSummary}</p><div className="flex flex-wrap gap-2"><Flag good>{`${report.independentCount} worked without recorded helper use`}</Flag>{report.strengths.map((strength, index) => <Flag key={`${index}-${strength}`} good>{strength}</Flag>)}</div></div>
     </Card>
+    <Card title="What to try next" eyebrow="AI teaching suggestions" icon={<BookIcon className="size-4" />}>
+      {report.teachingSuggestions.length ? <ol className="m-0 flex list-none flex-col gap-3 p-0">{report.teachingSuggestions.map((suggestion, index) => <li key={`${index}-${suggestion}`} className="flex gap-3 rounded-xl border border-border p-4"><span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-surface-soft text-xs font-semibold text-mint-ink">{index + 1}</span><p className="m-0 text-sm leading-relaxed text-ink">{suggestion}</p></li>)}</ol> : <p className="m-0 text-sm text-muted">No additional teaching suggestions were generated for this lesson.</p>}
+    </Card>
     <Card title="Students to check in with" eyebrow="Suggested attention">
       {report.attentionSuggestions.length ? <ul className="m-0 flex list-none flex-col gap-3 p-0">{report.attentionSuggestions.map((suggestion) => <li key={suggestion.studentId} className="flex flex-col gap-1 rounded-xl p-3 sm:flex-row sm:items-center sm:justify-between"><span className="text-sm font-semibold text-ink">{suggestion.studentName}</span><span className="text-sm text-muted">{suggestion.reason}</span></li>)}</ul> : <p className="m-0 text-sm text-muted">No specific follow-up was suggested from the recorded activity.</p>}
     </Card>
