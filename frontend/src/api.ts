@@ -51,6 +51,7 @@ const post = <T>(path: string, json: unknown) => request<T>(path, { method: 'POS
 
 export const api = {
   join: (body: JoinRequest) => post<JoinResponse>('/api/auth/join', body),
+  createClassroom: (name: string, roomCode: string) => post<{ id: string; name: string; roomCode: string }>('/api/classrooms', { name, roomCode }),
   me: () => request<MeResponse>('/api/auth/me'),
   getModule: (id: string) => request<GetModuleResponse>(`/api/modules/${id}`),
   listModules: (classroomId: string) => request<ListModulesResponse>(`/api/classrooms/${classroomId}/modules`),
