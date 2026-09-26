@@ -81,6 +81,7 @@ export type CheckRow = {
   name: string;
   description: string;
   position: number;
+  code: string;
 };
 export type ModuleProgressRow = {
   id: string;
@@ -198,6 +199,7 @@ export const toCheck = (r: CheckRow): CodeCheck => ({
   name: r.name,
   description: r.description,
   position: r.position,
+  code: r.code,
 });
 export const toModuleProgress = (r: ModuleProgressRow): ModuleProgress => ({
   id: r.id,

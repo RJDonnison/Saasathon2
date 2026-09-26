@@ -1,13 +1,24 @@
-import { Outlet } from 'react-router-dom'
-import { useAuth } from '../auth/useAuth.ts'
+import { Link, Outlet } from "react-router-dom";
+import { useAuth } from "../auth/useAuth.ts";
 
 export default function TeacherLayout() {
-  const { user, signOut } = useAuth()
+  const { user, signOut } = useAuth();
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="flex items-center justify-between border-b bg-white px-6 py-3">
-        <h1 className="font-semibold">Teacher — {user?.name}</h1>
-        <button onClick={() => void signOut()} className="text-sm text-blue-600 underline">
+        <div className="flex items-center gap-4">
+          <h1 className="font-semibold">Teacher — {user?.name}</h1>
+          <Link
+            to="/teacher/modules"
+            className="text-sm text-blue-600 underline"
+          >
+            Modules
+          </Link>
+        </div>
+        <button
+          onClick={() => void signOut()}
+          className="text-sm text-blue-600 underline"
+        >
           Sign out
         </button>
       </header>
@@ -15,5 +26,5 @@ export default function TeacherLayout() {
         <Outlet />
       </main>
     </div>
-  )
+  );
 }

@@ -64,6 +64,7 @@ create table if not exists code_checks (
   id text primary key, code_exercise_id text not null references code_exercises(id) on delete cascade,
   name text not null, description text not null, position integer not null default 0
 );
+alter table code_checks add column if not exists code text not null default '';
 
 -- The old comments table has no submission target, so remove its rows during upgrade.
 do $$ begin
@@ -125,7 +126,10 @@ insert into questions values ('question-1','section-1','Which keyword declares a
 insert into question_options values ('option-1','question-1','var',1),('option-2','question-1','let',2),('option-3','question-1','goto',3) on conflict do nothing;
 insert into code_exercises values ('exercise-1','question-3','javascript','function add(a, b) {\n  // your code\n}','Return the sum of a and b.') on conflict do nothing;
 insert into reference_answers values ('reference-1','exercise-1','Concise solution','function add(a, b) { return a + b; }',1),('reference-2','exercise-1','Arrow function','const add = (a, b) => a + b;',2) on conflict do nothing;
-insert into code_checks values ('check-1','exercise-1','Adds positives','add(2, 3) returns 5',1),('check-2','exercise-1','Adds negatives','add(-2, 3) returns 1',2) on conflict do nothing;
+insert into code_checks (id, code_exercise_id, name, description, position, code) values
+ ('check-1','exercise-1','Adds positives','add(2, 3) returns 5',1,'expect(add(2, 3)).toBe(5);'),
+ ('check-2','exercise-1','Adds negatives','add(-2, 3) returns 1',2,'expect(add(-2, 3)).toBe(1);')
+on conflict (id) do update set code = excluded.code;
 insert into module_progress values ('module-progress-1','student-1','module-1','in_progress',now()) on conflict do nothing;
 insert into section_progress values ('section-progress-1','student-1','section-1','completed',now()) on conflict do nothing;
 insert into attempts values ('attempt-1','student-1','question-1','let',true,now()) on conflict do nothing;

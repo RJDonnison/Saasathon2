@@ -64,6 +64,8 @@ export interface CodeExercise {
   language: string;
   starterCode: string;
   instructions: string;
+  /** Test code, shipped to the browser by design: checks execute client-side in a Web Worker. */
+  checks?: CodeCheck[];
 }
 export interface ReferenceAnswer {
   id: string;
@@ -78,6 +80,8 @@ export interface CodeCheck {
   name: string;
   description: string;
   position: number;
+  /** Assertion statements, e.g. expect(add(2, 3)).toBe(5); */
+  code: string;
 }
 
 /** Teacher aggregate. Includes answer keys, reference answers and checks. */
@@ -95,7 +99,7 @@ export interface TeacherSection extends Section {
 export interface TeacherModule extends Module {
   sections: TeacherSection[];
 }
-/** Student aggregate. Deliberately excludes answer keys, reference answers and checks. */
+/** Student aggregate. Excludes answer keys and reference answers; checks ship to the browser by design. */
 export interface StudentQuestion extends Question {
   codeExercise?: CodeExercise;
 }
@@ -252,11 +256,13 @@ export interface UpdateReferenceAnswerRequest {
 export interface CreateCodeCheckRequest {
   name: string;
   description: string;
+  code: string;
   position?: number;
 }
 export interface UpdateCodeCheckRequest {
   name?: string;
   description?: string;
+  code?: string;
   position?: number;
 }
 
@@ -274,7 +280,10 @@ export interface CreateAttemptRequest {
   questionId: string;
   answer: string;
 }
-/** The caller/sandbox supplies execution results; this API never executes code. */
+/**
+ * Submissions are recorded from in-browser runs via POST /api/code/check; the backend never
+ * executes student code itself.
+ */
 export interface CreateSubmissionRequest {
   codeExerciseId: string;
   code: string;
@@ -302,15 +311,34 @@ export type CreateSubmissionResponse = CodeSubmission;
 export type ListSubmissionCommentsResponse = Comment[];
 export type GetTeacherStudentAggregateResponse = TeacherStudentAggregate;
 
-/** POST /api/code/run executes an allowlisted runtime through the backend's private Piston service. */
-export interface RunCodeRequest {
-  code: string;
-  language: string;
+/** One check outcome, re-attached server-side from its own DB list of checks. */
+export interface CheckResult {
+  checkId: string;
+  name: string;
+  description: string;
+  passed: boolean;
+  message: string | null;
 }
-export interface RunCodeResponse {
+/** One client-run check outcome, submitted to POST /api/code/check. */
+export interface SubmitCheckResult {
+  checkId: string;
+  passed: boolean;
+  message: string | null;
+}
+/** POST /api/code/check records the results of an in-browser run of the student's code. */
+export interface SubmitChecksRequest {
+  codeExerciseId: string;
+  code: string;
+  results: SubmitCheckResult[];
   stdout: string;
   stderr: string;
-  exitCode: number;
+}
+export interface RunChecksResponse {
+  passed: boolean;
+  results: CheckResult[];
+  stdout: string;
+  stderr: string;
+  submissionId: string;
 }
 export interface AiHintRequest {
   moduleId: string;

@@ -108,23 +108,28 @@ async function aggregate(
       ]).then((r) => r.map(unwrap))) as [OptionRow[], ExerciseRow[]])
     : [[], []];
   const exerciseIds = exercises.map((e) => e.id);
-  const [references, checks] =
+  // Checks ship to every client (they run in the browser); references stay teacher-only.
+  const checks: CheckRow[] = exerciseIds.length
+    ? (unwrap(
+        await supabase
+          .from("code_checks")
+          .select("*")
+          .in("code_exercise_id", exerciseIds)
+          .order("position")
+          .order("id"),
+      ) as CheckRow[])
+    : [];
+  const references: ReferenceRow[] =
     teacher && exerciseIds.length
-      ? ((await Promise.all([
-          supabase
+      ? (unwrap(
+          await supabase
             .from("reference_answers")
             .select("*")
             .in("code_exercise_id", exerciseIds)
             .order("position")
             .order("id"),
-          supabase
-            .from("code_checks")
-            .select("*")
-            .in("code_exercise_id", exerciseIds)
-            .order("position")
-            .order("id"),
-        ]).then((r) => r.map(unwrap))) as [ReferenceRow[], CheckRow[]])
-      : [[], []];
+        ) as ReferenceRow[])
+      : [];
   const result = {
     ...toModule(module),
     sections: sections.map((section) => ({
@@ -152,7 +157,12 @@ async function aggregate(
                           .filter((c) => c.code_exercise_id === exercise.id)
                           .map(toCheck),
                       }
-                    : toExercise(exercise),
+                    : {
+                        ...toExercise(exercise),
+                        checks: checks
+                          .filter((c) => c.code_exercise_id === exercise.id)
+                          .map(toCheck),
+                      },
                 }
               : {}),
           };
@@ -741,11 +751,13 @@ childCrud(
     code_exercise_id: id,
     name: b.name,
     description: b.description,
+    code: b.code,
     position,
   }),
   (b: UpdateCodeCheckRequest, old) => ({
     name: b.name ?? old.name,
     description: b.description ?? old.description,
+    code: b.code ?? old.code,
     position: b.position ?? old.position,
   }),
 );
