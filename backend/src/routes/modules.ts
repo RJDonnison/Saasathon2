@@ -63,7 +63,7 @@ const nextPosition = async (
   return (rows[0]?.position ?? -1) + 1;
 };
 
-async function aggregate(
+export async function aggregate(
   module: ModuleRow,
   teacher: boolean,
 ): Promise<GetModuleResponse> {

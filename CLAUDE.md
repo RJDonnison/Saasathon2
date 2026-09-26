@@ -50,14 +50,14 @@ first**; never fork or redeclare these types locally in frontend or backend.
 REAL (backed by Supabase / real socket broadcasts):
 - `POST /api/auth/join`, `GET /api/auth/me` (Supabase Auth + Google)
 - Classroom, module (create/read/update/delete, teacher-only writes), progress and comment endpoints
+- AI (OpenAI): `POST /api/ai/hint` (student "I'm stuck" tutor) and `POST /api/ai/draft` (teacher module
+  drafting/planning) — see "AI service" below. Needs `OPENAI_API_KEY`; without it they return 503.
 - Socket.io: presence (`presence_update`), `raise_hand`, `student_status_update`, broadcast to a
   classroom-scoped room (`io.to(classroomId)`). The server trusts the authenticated user (from the Supabase token), not the client payload.
 
 MOCKED — don't "fix" these into real implementations unless explicitly asked; that is follow-up feature work:
 
 - `POST /api/code/run` — returns `"mock output for: " + code` after a fake 300ms delay. Nothing is executed.
-- `POST /api/ai/hint` — returns a canned placeholder reply. A commented-out block in
-  `backend/src/routes/ai.ts` shows where a real OpenAI call would go.
 - Most frontend components under `frontend/src/student/` and `frontend/src/teacher/` are placeholders
   with static/mock content.
 
@@ -77,12 +77,27 @@ MOCKED — don't "fix" these into real implementations unless explicitly asked; 
 - DB columns are snake_case; `rows.ts` maps them to the camelCase entities in `shared/types.ts`.
   Wrap queries in `unwrap()` so database errors become JSON 500s.
 
-## OpenAI is scaffolded, NOT wired in
+## AI service (OpenAI)
 
-`openai` is installed and a client exists at `backend/src/openai.ts`, but **no route uses it**. The OpenAI
-client existing does **not** mean AI hints are real. `openai.ts` deliberately throws at import time if
-`OPENAI_API_KEY` is unset; because nothing imports it yet, the app boots without a key. Importing it from
-a route makes the key mandatory at startup.
+A thin, **stateless** wrapper over the OpenAI chat API inside the backend (`backend/src/openai.ts`,
+`backend/src/ai/prompts.ts`, `backend/src/routes/ai.ts`). Callers send a question; the server loads the
+module itself (scoped to the caller's classroom), so clients can't inject or swap the context.
+- `POST /api/ai/hint` — **student only**. A tutor scoped to `moduleId` that gives **hints, never answers**
+  (a deliberate design choice — this project pushes back against AI doing students' work). Optional
+  `history` (the client re-sends the transcript) and `code`. `studentId` must be the caller.
+- `POST /api/ai/draft` — **teacher only** (stretch). Helps draft/plan modules; optional `moduleId` and
+  unsaved `draft` as context. Replies in Markdown. No UI yet: the teacher dashboard calls `api.aiDraft`.
+- **Never give the student prompt answer material.** The student context is built only from the
+  student-safe module aggregate (`aggregate(module, false)` → `studentModuleContext`), which excludes
+  answer keys, reference answers and checks. Keep it that way; don't add those fields to it. (The teacher
+  prompt does include them — it's the teacher's own material.)
+- The hint behaviour lives in `hintSystemPrompt`; change tutoring style there. Prompt quality is best judged
+  against a real model — tune it with real conversations.
+- Config: `OPENAI_API_KEY` (no key -> the AI routes return 503 with a clear message; the rest of the app
+  still boots), optional `OPENAI_MODEL` (default `gpt-4o-mini`), and the SDK's `OPENAI_BASE_URL`.
+- Guards: per-user rate limit (20/min, in-memory), input size caps, and OpenAI errors are mapped to a generic
+  502 (never leaked). Known limit: chat history is client-supplied, so a determined student could forge
+  "assistant" turns; the system prompt tells the model to hold the line, but it isn't a hard guarantee.
 
 ## Run commands
 
@@ -127,7 +142,8 @@ Check work by running the app and by type-checking (see above) instead.
 
 ## Frontend styling
 
-- Tailwind v4 utility classes only — no separate CSS files, no CSS-in-JS, no inline `style={}` for
+- Tailwind v4 utility classes only — no separate CSS files, the current ones we have should be how 
+  the app is based on and styled, no CSS-in-JS, no inline `style={}` for
   layout. If a one-off value is truly needed, use Tailwind's arbitrary-value syntax (`w-[123px]`)
   rather than a `style` attribute.
 - Layout is done with **flex and grid utilities** (`flex`, `grid`, `gap-*`, `items-*`, `justify-*`,

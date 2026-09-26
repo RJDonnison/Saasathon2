@@ -73,8 +73,14 @@ from your Google profile. Alex and Sam are demo rows with no login; they just po
 
 ## What's stubbed
 
-Code execution (`POST /api/code/run`) and AI hints (`POST /api/ai/hint`) return mock responses. The OpenAI
-client is scaffolded in `backend/src/openai.ts` but not wired into any route.
+Code execution (`POST /api/code/run`) returns a mock response.
+
+## AI
+
+`POST /api/ai/hint` is a student "I'm stuck" tutor that gives hints (never answers) scoped to the student's current
+module, and `POST /api/ai/draft` is a teacher assistant for drafting/planning modules. Both call OpenAI and need
+`OPENAI_API_KEY` in `.env` (optionally `OPENAI_MODEL`); without a key they return 503 and the rest of the app works.
+See [CLAUDE.md](CLAUDE.md#ai-service-openai).
 
 ## Core API
 
