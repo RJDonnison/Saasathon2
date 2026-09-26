@@ -1,9 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api.ts";
 import { useAuth } from "../auth/useAuth.ts";
 import { useLiveSession } from "../useLiveSession.ts";
-import { emitAcknowledgeHand, onStudentActivityUpdate } from "../socket.ts";
+import {
+  emitAcknowledgeHand,
+  onModuleProgressUpdate,
+  onStudentActivityUpdate,
+} from "../socket.ts";
 import { useClassroomPresence } from "../hooks/useClassroomPresence.ts";
 import { useModuleRefresh } from "../hooks/useModuleRefresh.ts";
 import { useRaisedHands } from "../hooks/useRaisedHands.ts";
@@ -24,6 +28,7 @@ import type {
   Classroom,
   ClassroomInvitation,
   Module,
+  ProgressStatus,
   StudentActivitySnapshot,
   User,
 } from "../../../shared/types";
@@ -52,6 +57,14 @@ export default function TeacherHome() {
   const [activity, setActivity] = useState<
     Record<string, StudentActivitySnapshot>
   >({});
+  const [liveProgress, setLiveProgress] = useState<
+    Record<string, ProgressStatus>
+  >({});
+  const liveProgressSession = useRef<{
+    classroomId: string;
+    sessionId: string;
+    moduleId: string;
+  } | null>(null);
 
   const classroomId = user?.classroomId;
   const refreshStudentsFromPresence = useCallback(() => {
@@ -75,6 +88,55 @@ export default function TeacherHome() {
       .catch(() => {});
   }, [classroomId]);
   useModuleRefresh(classroomId, refreshModules);
+
+  useEffect(() => {
+    if (!classroomId || session === null) {
+      setLiveProgress({});
+      liveProgressSession.current = null;
+      return;
+    }
+    if (!session) return;
+    const activeSession = session;
+    const previousSession = liveProgressSession.current;
+    if (
+      previousSession &&
+      (previousSession.classroomId !== classroomId ||
+        previousSession.sessionId !== activeSession.id ||
+        previousSession.moduleId !== activeSession.moduleId)
+    )
+      setLiveProgress({});
+    liveProgressSession.current = {
+      classroomId,
+      sessionId: activeSession.id,
+      moduleId: activeSession.moduleId,
+    };
+    let cancelled = false;
+    const load = () => {
+      void api
+        .getLiveModuleProgress(classroomId)
+        .then((snapshot) => {
+          if (
+            cancelled ||
+            snapshot.sessionId !== activeSession.id ||
+            snapshot.moduleId !== activeSession.moduleId
+          )
+            return;
+          setLiveProgress(
+            Object.fromEntries(
+              snapshot.progress.map((item) => [item.studentId, item.status]),
+            ),
+          );
+        })
+        .catch(() => {});
+    };
+    load();
+    // Socket updates keep this prompt; a slow reload recovers from a reconnect or missed event.
+    const interval = window.setInterval(load, 30_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [classroomId, session]);
 
   useEffect(() => {
     if (!user) return;
@@ -171,6 +233,24 @@ export default function TeacherHome() {
         });
       }),
     [user],
+  );
+  useEffect(
+    () =>
+      onModuleProgressUpdate((update) => {
+        if (
+          !user ||
+          !session ||
+          update.classroomId !== user.classroomId ||
+          update.moduleId !== session.moduleId ||
+          update.sessionId !== session.id
+        )
+          return;
+        setLiveProgress((current) => ({
+          ...current,
+          [update.progress.studentId]: update.progress.status,
+        }));
+      }),
+    [session, user],
   );
   async function createClassroom() {
     const name = await prompt({
@@ -353,6 +433,7 @@ export default function TeacherHome() {
               selectedId={selectedId}
               onSelect={setSelectedId}
               activity={activity}
+              liveProgress={liveProgress}
             />
           </div>
           <div className="order-5 min-w-0">

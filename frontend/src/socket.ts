@@ -10,6 +10,7 @@ import type {
   ModuleChangedPayload,
   QuestionCommentCreatedPayload,
   ModuleDeletedPayload,
+  ModuleProgressUpdatePayload,
 } from "../../shared/events";
 import { supabase } from "./supabase.ts";
 
@@ -102,9 +103,18 @@ export function onStudentActivityUpdate(
   return () => void socket.off("student_activity_update", cb);
 }
 
-export function onSessionUpdate(cb: (p: SessionUpdatePayload) => void): () => void {
+export function onSessionUpdate(
+  cb: (p: SessionUpdatePayload) => void,
+): () => void {
   socket.on("session_update", cb);
   return () => void socket.off("session_update", cb);
+}
+
+export function onModuleProgressUpdate(
+  cb: (p: ModuleProgressUpdatePayload) => void,
+): () => void {
+  socket.on("module_progress_update", cb);
+  return () => void socket.off("module_progress_update", cb);
 }
 
 export function onPresenceUpdate(
