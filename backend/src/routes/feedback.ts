@@ -47,6 +47,7 @@ type Context = {
 type ClassAiSummary = {
   completedCount: number;
   summary: string;
+  teachingSuggestions: string[];
   strengths: string[];
   studentNotes: Array<Record<string, unknown>>;
   attention: Array<{ studentId: string; studentName: string; reason: string }>;
@@ -198,9 +199,18 @@ function averageQuizMinutes(context: Context): number | null {
 
 function classFallback(context: Context, students: LessonFeedbackStudentSummary[]): ClassAiSummary {
   const completedCount = students.filter((s) => s.progress === "completed").length;
+  const helperCount = students.filter((s) => s.usedHelper).length;
+  const followingAverage = students.length ? Math.round(students.reduce((sum, student) => sum + student.followedPercent, 0) / students.length) : 0;
+  const activeCount = students.filter((student) => student.trackedActionCount > 0).length;
+  const suggestions: string[] = [];
+  if (completedCount < students.length) suggestions.push(`${students.length - completedCount} students did not have a completion recorded. Start the next lesson with a short recap and check who needs help resuming.`);
+  if (helperCount > 0) suggestions.push(`${helperCount} students used the AI helper. Review a few of their questions and model how to turn a hint into the next coding step.`);
+  if (followingAverage < 70) suggestions.push(`Recorded teacher-screen following averaged ${followingAverage}%. Add a brief pause after each demonstration so students can catch up before moving on.`);
+  if (!suggestions.length) suggestions.push("The recorded activity shows broad lesson completion and no strong follow-up pattern. Ask students to explain one choice they made in their code to check understanding.");
   return {
     completedCount,
-    summary: `${completedCount} of ${students.length} students have a recorded completion. ${students.filter((s) => s.usedHelper).length} used the AI helper, and ${students.filter((s) => s.detachCount > 0).length} stepped away from the teacher's screen at least once.`,
+    summary: `${context.classroomName} worked on “${context.moduleTitle}” for ${context.sessionView.durationMinutes} minutes. ${activeCount} of ${students.length} students had recorded lesson activity, and ${completedCount} have a completion recorded. ${helperCount} used the AI helper; the class average for following the teacher's screen was ${followingAverage}%. The activity log contains ${context.activities.length} learning actions and ${context.events.filter((event) => event.event_type === "ai_hint").length} AI-helper turns. These figures describe what the app recorded, so missing activity may reflect missing tracking.`,
+    teachingSuggestions: suggestions,
     strengths: students.filter((s) => s.progress === "completed").slice(0, 3).map((s) => `${s.studentName} completed the lesson.`),
     studentNotes: [],
     attention: students.filter((s) => s.progress !== "completed" || s.redFlag).filter((s) => s.progress !== "completed" ? true : !!s.redFlag).slice(0, 8).map((s) => ({ studentId: s.studentId, studentName: s.studentName, reason: s.redFlag ?? "Lesson completion was not recorded." })),
@@ -212,16 +222,28 @@ async function makeClassAi(context: Context, students: LessonFeedbackStudentSumm
   if (!isAiConfigured()) return fallback;
   try {
     const raw = await complete({
-      system: "You summarize observed classroom coding lesson data for a teacher. Return JSON only with keys: summary (string), strengths (array of short strings), studentNotes (array of {studentId, summary, greenFlag, redFlag}), attentionSuggestions (array of {studentId, reason}). Do not infer ability, effort, intent, emotion, diagnoses, or misconduct beyond the provided events. A safety flag is an automated signal for teacher review, not proof. Distinguish missing tracking from a student doing nothing. Keep the class summary practical and brief.",
+      system: "You write a useful end-of-lesson debrief for a teacher using observed classroom coding data. Return JSON only with keys: summary (2-4 sentences describing what happened across the class), teachingSuggestions (2-4 specific next teaching moves grounded in these records), strengths (array of short strings), studentNotes (array of {studentId, summary, greenFlag, redFlag}), attentionSuggestions (array of {studentId, reason}). Mention the lesson topic/modules, participation, completion, helper questions/themes, and teacher-screen following where data exists. Do not infer ability, effort, intent, emotion, diagnoses, or misconduct beyond the provided events. A safety flag is an automated signal for teacher review, not proof. Distinguish missing tracking from a student doing nothing. Do not repeat potentially harmful student wording.",
       history: [],
-      message: JSON.stringify({ durationMinutes: context.sessionView.durationMinutes, students: students.map(({ studentId, progress, activeMinutes, aiHintCount, aiUsePercent, usedHelper, followedPercent, detachCount, taskCount, quizCount, safetyFlags, redFlag }) => ({ studentId, progress, activeMinutes, aiHintCount, aiUsePercent, usedHelper, followedPercent, detachCount, taskCount, quizCount, safetyFlags, redFlag })) }),
-      maxTokens: 1800,
+      message: JSON.stringify({
+        classroom: context.classroomName,
+        lesson: context.moduleTitle,
+        durationMinutes: context.sessionView.durationMinutes,
+        students: students.map(({ studentId, progress, activeMinutes, aiHintCount, aiUsePercent, usedHelper, followedPercent, detachCount, taskCount, quizCount, safetyFlags, redFlag }) => ({ studentId, progress, activeMinutes, aiHintCount, aiUsePercent, usedHelper, followedPercent, detachCount, taskCount, quizCount, safetyFlags, redFlag })),
+        modules: [...new Set([context.moduleTitle, ...context.events.filter((event) => event.event_type === "lesson_module").map((event) => String(eventPayload(event).title ?? "")).filter(Boolean)])],
+        learningActivityCounts: Object.fromEntries([...new Set(context.activities.map((activity) => activity.type))].map((type) => [type, context.activities.filter((activity) => activity.type === type).length])),
+        helperQuestionThemes: context.events.filter((event) => event.event_type === "ai_hint").slice(-24).map((event) => {
+          const payload = eventPayload(event);
+          return { studentId: event.student_id, question: String(payload.question ?? "").slice(0, 240), flags: allFlagsFrom(payload) };
+        }),
+      }),
+      maxTokens: 2400,
       json: true,
     });
-    const parsed = JSON.parse(raw) as { summary?: unknown; strengths?: unknown; studentNotes?: unknown; attentionSuggestions?: unknown };
+    const parsed = JSON.parse(raw) as { summary?: unknown; teachingSuggestions?: unknown; strengths?: unknown; studentNotes?: unknown; attentionSuggestions?: unknown };
     return {
       completedCount: fallback.completedCount,
       summary: typeof parsed.summary === "string" ? parsed.summary.slice(0, 1200) : fallback.summary,
+      teachingSuggestions: Array.isArray(parsed.teachingSuggestions) ? parsed.teachingSuggestions.filter((v): v is string => typeof v === "string").slice(0, 4) : fallback.teachingSuggestions,
       strengths: Array.isArray(parsed.strengths) ? parsed.strengths.filter((v): v is string => typeof v === "string").slice(0, 5) : fallback.strengths,
       studentNotes: Array.isArray(parsed.studentNotes) ? parsed.studentNotes as Array<Record<string, unknown>> : [],
       attention: Array.isArray(parsed.attentionSuggestions) ? parsed.attentionSuggestions : fallback.attention,
@@ -289,6 +311,7 @@ feedbackRouter.get("/sessions/:sessionId", requireRole("teacher"), async (req, r
     averageQuizMinutes: averageQuizMinutes(context),
     completedCount: completed.length,
     aiSummary: typeof ai.summary === "string" ? ai.summary : classFallback(context, students).summary,
+    teachingSuggestions: Array.isArray(ai.teachingSuggestions) ? ai.teachingSuggestions.filter((v): v is string => typeof v === "string") : classFallback(context, students).teachingSuggestions,
     strengths: Array.isArray(ai.strengths) ? ai.strengths.filter((v): v is string => typeof v === "string") : [],
     attentionSuggestions,
     students: studentsWithAi,

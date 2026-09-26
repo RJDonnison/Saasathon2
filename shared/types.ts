@@ -119,6 +119,7 @@ export interface LessonFeedbackReport {
   averageQuizMinutes: number | null;
   completedCount: number;
   aiSummary: string;
+  teachingSuggestions: string[];
   strengths: string[];
   attentionSuggestions: Array<{ studentId: string; studentName: string; reason: string }>;
   students: LessonFeedbackStudentSummary[];
