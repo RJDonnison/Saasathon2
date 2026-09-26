@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Navigate, useLocation, useParams } from "react-router-dom";
+import { Navigate, Outlet, useLocation, useParams } from "react-router-dom";
 import { useAuth } from "../auth/useAuth.ts";
 import TeacherHome from "./TeacherHome.tsx";
 
@@ -38,5 +38,7 @@ export default function TeacherClass() {
     );
   if (location.pathname === `/teacher/class/${classroomId}`)
     return <Navigate to="live" replace />;
+  if (location.pathname === `/teacher/class/${classroomId}/plan`)
+    return <Outlet />;
   return <TeacherHome />;
 }

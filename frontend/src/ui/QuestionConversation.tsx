@@ -217,15 +217,20 @@ function Conversation({
       )}
       {!loading && (
         <form onSubmit={send} className="flex flex-col gap-2">
-          <label className="sr-only" htmlFor={`question-comment-${questionId}`}>
+          <label className="sr-only" htmlFor={`question-comment-input-${questionId}`}>
             Message
           </label>
           <textarea
-            id={`question-comment-${questionId}`}
+            id={`question-comment-input-${questionId}`}
             className={`${INPUT} min-h-20 resize-y py-2.5`}
             value={text}
             maxLength={4000}
             onChange={(event) => setText(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
+              event.preventDefault();
+              event.currentTarget.form?.requestSubmit();
+            }}
             placeholder={
               user?.role === "teacher"
                 ? "Leave feedback or a helpful prompt…"
@@ -233,7 +238,7 @@ function Conversation({
             }
           />
           <div className="flex items-center justify-between gap-3">
-            <span className="text-xs text-muted">Messages update live.</span>
+            <span className="text-xs text-muted">Enter to send · Shift+Enter for a new line</span>
             <Button
               type="submit"
               size="sm"

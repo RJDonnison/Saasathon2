@@ -188,9 +188,11 @@ Document rules:
 - A section is exactly {"id":string,"title":string,"items":array}. Keep lesson items in teaching
   order. A reading item is exactly
   {"id":string,"type":"block","blockType":"markdown","content":string}.
-- A question is exactly {"id":string,"type":"question","prompt":string,"kind":"mcq"|"short"|"code"|"math","answerKey":string|null,"options":string[]} plus the fields required below.
+- A question is exactly {"id":string,"type":"question","prompt":string,"kind":"mcq"|"short"|"long"|"code"|"math","answerKey":string|null,"options":string[]} plus the fields required below.
 - For an MCQ, include 3-4 plausible options and set answerKey to the exact text of one correct
   option. For a short-answer question, use options:[] and a concise model answer as answerKey.
+- For a long-answer question, use options:[] and answerKey:null. Ask for explanation, evidence,
+  reflection, or a worked response. These are saved for the teacher, not auto-marked.
 - For a math question, use options:[], an answerKey string, a finite numeric mathExpectedResult,
   and a non-negative numeric mathTolerance.
 - For a code question, use options:[] and include all of: language (only "javascript",

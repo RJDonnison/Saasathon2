@@ -25,9 +25,15 @@ export const CARD =
 /** More distinct success/failure elevation for a question after it has been graded. */
 export const GRADED_CARD_SHADOW = {
   correct:
-    '!shadow-[0_2px_5px_color-mix(in_srgb,var(--color-mint-ink)_16%,transparent),0_18px_38px_-14px_color-mix(in_srgb,var(--color-mint-ink)_38%,transparent),0_0_30px_-4px_color-mix(in_srgb,var(--color-mint)_92%,transparent)]',
+    '!border-mint-ink/35 !bg-mint/20 !shadow-[0_2px_5px_color-mix(in_srgb,var(--color-mint-ink)_12%,transparent),0_16px_32px_-18px_color-mix(in_srgb,var(--color-mint-ink)_32%,transparent)]',
   incorrect:
-    '!shadow-[0_2px_5px_color-mix(in_srgb,var(--color-peach-ink)_16%,transparent),0_18px_38px_-14px_color-mix(in_srgb,var(--color-peach-ink)_38%,transparent),0_0_30px_-4px_color-mix(in_srgb,var(--color-peach)_92%,transparent)]',
+    '!border-peach-ink/20 !bg-peach/10 !shadow-[0_1px_3px_color-mix(in_srgb,var(--color-peach-ink)_8%,transparent),0_8px_18px_-18px_color-mix(in_srgb,var(--color-peach-ink)_16%,transparent)]',
+} as const
+
+/** Shared, low-pressure feedback colours for graded student work. */
+export const GRADED_FEEDBACK = {
+  correct: 'border border-mint-ink/20 bg-mint/70 text-mint-ink',
+  incorrect: 'border border-peach-ink/15 bg-peach/30 text-peach-ink',
 } as const
 
 const FOCUS = 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent'

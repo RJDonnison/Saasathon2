@@ -31,6 +31,24 @@ end $$;
 create unique index if not exists memberships_classroom_name_role_key
   on memberships (classroom_id, role, user_id);
 
+-- Teacher-owned planning records stay separate from the student-facing coding modules.
+create table if not exists teacher_lesson_plans (
+  id text primary key,
+  classroom_id text not null references classrooms(id) on delete cascade,
+  teacher_id text not null references users(id) on delete cascade,
+  title text not null check (length(title) between 1 and 200),
+  document jsonb not null,
+  status text not null default 'draft' check (status in ('draft','planned','taught')),
+  lesson_date date,
+  taught_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists teacher_lesson_plans_class_teacher_updated_idx
+  on teacher_lesson_plans (classroom_id, teacher_id, updated_at desc);
+create index if not exists teacher_lesson_plans_teacher_idx
+  on teacher_lesson_plans (teacher_id);
+
 -- Teacher invitations, addressed to a Google email. Inviting enrols nobody: the student sees the invitation after
 -- signing in and accepts (creates the student membership) or declines. One row per (classroom, email).
 create table if not exists classroom_invitations (
@@ -114,6 +132,11 @@ alter table modules drop constraint if exists modules_window_check;
 alter table modules drop column if exists opens_at;
 alter table modules drop column if exists closes_at;
 
+-- A planned teacher lesson may seed a student-facing module. Modules are created later
+-- in this schema file, so add the link only after that table exists.
+alter table teacher_lesson_plans add column if not exists module_id text references modules(id) on delete set null;
+create index if not exists teacher_lesson_plans_module_idx on teacher_lesson_plans (module_id);
+
 -- Classroom collaboration tables already present in the deployed project.
 create table if not exists classroom_invitations (
   id text primary key, classroom_id text not null references classrooms(id) on delete cascade,
@@ -177,7 +200,7 @@ create table if not exists section_blocks (
 );
 create table if not exists questions (
   id text primary key, section_id text not null references sections(id) on delete cascade,
-  prompt text not null, kind text not null check (kind in ('mcq','short','code','math')),
+  prompt text not null, kind text not null check (kind in ('mcq','short','long','code','math')),
   answer_key text, math_expected_result double precision, math_tolerance double precision, position integer not null default 0
 );
 -- This is the canonical sequence used by new module-builder reads. It allows blocks and
@@ -238,7 +261,7 @@ alter table questions add column if not exists math_expected_result double preci
 alter table questions add column if not exists math_tolerance double precision;
 do $$ begin
   if not exists (select 1 from pg_constraint where conname = 'questions_kind_check') then
-    alter table questions add constraint questions_kind_check check (kind in ('mcq','short','code','math'));
+    alter table questions add constraint questions_kind_check check (kind in ('mcq','short','long','code','math'));
   end if;
   if not exists (select 1 from pg_constraint where conname = 'questions_math_configuration_check') then
     alter table questions add constraint questions_math_configuration_check check (
@@ -385,6 +408,7 @@ alter table code_submissions enable row level security; alter table comments ena
 alter table question_comments enable row level security;
 alter table student_work enable row level security; alter table student_activities enable row level security;
 alter table student_activity_state enable row level security;
+alter table teacher_lesson_plans enable row level security;
 
 -- Demo: a complete small lesson with authored checks and student activity.
 insert into classrooms (id, name) values ('classroom-demo','Demo Classroom') on conflict do nothing;
