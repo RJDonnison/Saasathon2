@@ -81,7 +81,27 @@ function validDocument(value: unknown): value is ModuleBuilderDocument {
                 (i.starterCode === undefined ||
                   typeof i.starterCode === "string") &&
                 (i.instructions === undefined ||
-                  typeof i.instructions === "string")),
+                  typeof i.instructions === "string") &&
+                (i.hiddenCode === undefined ||
+                  typeof i.hiddenCode === "string") &&
+                (i.referenceAnswers === undefined ||
+                  (Array.isArray(i.referenceAnswers) &&
+                    i.referenceAnswers.every(
+                      (reference) =>
+                        reference &&
+                        typeof reference.id === "string" &&
+                        typeof reference.title === "string" &&
+                        typeof reference.answer === "string",
+                    ))) &&
+                (i.checks === undefined ||
+                  (Array.isArray(i.checks) &&
+                    i.checks.every(
+                      (check) =>
+                        check &&
+                        typeof check.id === "string" &&
+                        typeof check.name === "string" &&
+                        typeof check.description === "string",
+                    )))),
         ),
     )
   );
@@ -191,16 +211,51 @@ async function saveBuilder(
                 position: optionPosition,
               }),
             );
-        if (item.kind === "code")
+        if (item.kind === "code") {
+          const exerciseId = `exercise-${item.id}`;
           unwrap(
             await supabase.from("code_exercises").insert({
-              id: `exercise-${item.id}`,
+              id: exerciseId,
               question_id: item.id,
               language: item.language || "javascript",
               starter_code: item.starterCode || "",
               instructions: item.instructions || "",
+              hidden_code: item.hiddenCode || "",
             }),
           );
+          for (
+            let referencePosition = 0;
+            referencePosition < (item.referenceAnswers?.length ?? 0);
+            referencePosition++
+          ) {
+              const reference = item.referenceAnswers![referencePosition];
+              unwrap(
+                await supabase.from("reference_answers").insert({
+                  id: reference.id,
+                  code_exercise_id: exerciseId,
+                  title: reference.title,
+                  answer: reference.answer,
+                  position: referencePosition,
+                }),
+              );
+          }
+          for (
+            let checkPosition = 0;
+            checkPosition < (item.checks?.length ?? 0);
+            checkPosition++
+          ) {
+            const check = item.checks![checkPosition];
+            unwrap(
+              await supabase.from("code_checks").insert({
+                id: check.id,
+                code_exercise_id: exerciseId,
+                name: check.name,
+                description: check.description,
+                position: checkPosition,
+              }),
+            );
+          }
+        }
       }
     }
   }
@@ -314,6 +369,7 @@ export async function aggregate(
                   codeExercise: teacher
                     ? {
                         ...toExercise(exercise),
+                        hiddenCode: exercise.hidden_code,
                         referenceAnswers: references
                           .filter((r) => r.code_exercise_id === exercise.id)
                           .map(toReference),
@@ -875,7 +931,8 @@ modulesRouter.put(
       q.kind !== "code" ||
       typeof b?.language !== "string" ||
       typeof b.starterCode !== "string" ||
-      typeof b.instructions !== "string"
+      typeof b.instructions !== "string" ||
+      (b.hiddenCode !== undefined && typeof b.hiddenCode !== "string")
     )
       return res
         .status(400)
@@ -890,6 +947,7 @@ modulesRouter.put(
             language: b.language,
             starter_code: b.starterCode,
             instructions: b.instructions,
+            hidden_code: b.hiddenCode ?? "",
           },
           { onConflict: "question_id" },
         )

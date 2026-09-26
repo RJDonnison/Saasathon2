@@ -77,6 +77,7 @@ export type ExerciseRow = {
   language: string;
   starter_code: string;
   instructions: string;
+  hidden_code: string;
 };
 export type ReferenceRow = {
   id: string;

@@ -84,7 +84,11 @@ export default function CodeEditor({
     setActive(editor)
     setRunning(true)
     try {
-      const res = await api.runCode({ code, language })
+      const res = await api.runCode({
+        code,
+        language,
+        ...(editor.exerciseId ? { exerciseId: editor.exerciseId } : {}),
+      })
       const failed = res.exitCode !== 0
       const output =
         [res.stdout, res.stderr].filter(Boolean).join('\n') ||

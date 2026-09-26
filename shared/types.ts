@@ -95,6 +95,8 @@ export interface CodeCheck {
 export interface TeacherQuestion extends Question {
   answerKey: string | null;
   codeExercise?: CodeExercise & {
+    /** Appended by the server at run time; deliberately absent from student aggregates. */
+    hiddenCode: string;
     referenceAnswers: ReferenceAnswer[];
     checks: CodeCheck[];
   };
@@ -224,6 +226,10 @@ export interface ModuleBuilderDocument {
           language?: string;
           starterCode?: string;
           instructions?: string;
+          /** Teacher-only test harness appended on the server when this exercise runs. */
+          hiddenCode?: string;
+          referenceAnswers?: Array<{ id: string; title: string; answer: string }>;
+          checks?: Array<{ id: string; name: string; description: string }>;
         }
     >;
   }>;
@@ -300,6 +306,7 @@ export interface UpsertCodeExerciseRequest {
   language: string;
   starterCode: string;
   instructions: string;
+  hiddenCode?: string;
 }
 export interface CreateReferenceAnswerRequest {
   title: string;
@@ -368,6 +375,8 @@ export type GetTeacherStudentAggregateResponse = TeacherStudentAggregate;
 export interface RunCodeRequest {
   code: string;
   language: string;
+  /** A lesson exercise whose teacher-only harness is loaded server-side. Omit for the playground. */
+  exerciseId?: string;
 }
 export interface RunCodeResponse {
   stdout: string;
