@@ -11,7 +11,8 @@ import { useAuth } from "../auth/useAuth.ts";
 import Button from "../ui/Button.tsx";
 import Card from "../ui/Card.tsx";
 import Heading from "../ui/Heading.tsx";
-import { INPUT, TINT } from "../ui/styles.ts";
+import { ChevronLeftIcon } from "../ui/icons.tsx";
+import { FOCUS_RING, INPUT, TINT } from "../ui/styles.ts";
 import { useDialog } from "../ui/DialogContext.tsx";
 import { onModuleDeleted } from "../socket.ts";
 import AvailabilityCard from "./AvailabilityCard.tsx";
@@ -365,6 +366,13 @@ export default function ModuleBuilder() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex flex-col gap-2">
+          <Link
+            className={`inline-flex h-9 self-start items-center gap-1.5 rounded-[9px] border border-border bg-surface pr-3 pl-2 text-[13px]! font-semibold! text-ink hover:bg-surface-soft ${FOCUS_RING}`}
+            to={classPath}
+          >
+            <ChevronLeftIcon className="size-4" />
+            Back to classroom
+          </Link>
           <Heading as="h1" variant="title">
             Build a lesson
           </Heading>
@@ -375,13 +383,7 @@ export default function ModuleBuilder() {
               : "Published"}
           </p>
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          <Link
-            className="text-sm! font-semibold! text-muted hover:text-ink"
-            to={classPath}
-          >
-            Back to classroom
-          </Link>
+        <div className="flex flex-wrap items-center justify-end gap-2 lg:gap-5">
           {document.status === "draft" && (
             <Button
               variant="default"
