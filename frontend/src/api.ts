@@ -3,6 +3,10 @@ import type {
   AiDraftResponse,
   AiHintRequest,
   AiHintResponse,
+  AiModuleSuggestionsRequest,
+  AiModuleSuggestionsResponse,
+  ModuleBuilderDocument,
+  SaveModuleBuilderResponse,
   ApiError,
   Comment,
   CreateCommentRequest,
@@ -90,4 +94,17 @@ export const api = {
   /** Teacher-only drafting/planning assistant (for the teacher dashboard to call). */
   aiDraft: (body: AiDraftRequest) =>
     post<AiDraftResponse>("/api/ai/draft", body),
+  createBuilderModule: (document: ModuleBuilderDocument) =>
+    post<SaveModuleBuilderResponse>("/api/modules/builder", { document }),
+  saveBuilderModule: (
+    id: string,
+    revision: number,
+    document: ModuleBuilderDocument,
+  ) =>
+    request<SaveModuleBuilderResponse>(`/api/modules/${id}/builder`, {
+      method: "PUT",
+      json: { revision, document },
+    }),
+  aiModuleSuggestions: (body: AiModuleSuggestionsRequest) =>
+    post<AiModuleSuggestionsResponse>("/api/ai/module-suggestions", body),
 };

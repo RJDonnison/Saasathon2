@@ -4,6 +4,7 @@ import { findProfile, verifyToken, type AuthUser } from "./auth.js";
 import { CLIENT_ORIGIN } from "./config.js";
 import type {
   ClientToServerEvents,
+  ModuleChangedPayload,
   PresenceUpdatePayload,
   ServerToClientEvents,
 } from "../../shared/events.js";
@@ -24,6 +25,10 @@ type AppSocket = Socket<
 
 // In-memory presence: classroomId -> studentId -> number of open sockets (handles multiple tabs).
 const online = new Map<string, Map<string, number>>();
+let appIo: AppServer | null = null;
+export function emitModuleChanged(payload: ModuleChangedPayload) {
+  appIo?.to(payload.classroomId).emit("module_changed", payload);
+}
 
 function onlineStudentIds(classroomId: string): string[] {
   return [...(online.get(classroomId)?.keys() ?? [])];
@@ -41,6 +46,7 @@ export function attachSockets(httpServer: HttpServer): AppServer {
   const io: AppServer = new Server(httpServer, {
     cors: { origin: CLIENT_ORIGIN },
   });
+  appIo = io;
 
   // Authenticate the handshake with the same Supabase access token used for REST:
   // io(url, { auth: { token } }). The user must also have joined a classroom.

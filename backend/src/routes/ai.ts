@@ -23,6 +23,9 @@ import type {
   AiHintResponse,
   StudentModule,
   TeacherModule,
+  AiModuleSuggestionsRequest,
+  AiModuleSuggestionsResponse,
+  AiModuleSuggestion,
 } from "../../../shared/types.js";
 
 // Both endpoints are stateless: the module is loaded server-side (scoped to the caller's classroom),
@@ -48,11 +51,9 @@ const rateLimit: RequestHandler = (req, res, next) => {
     (t) => now - t < RATE_WINDOW_MS,
   );
   if (recent.length >= RATE_MAX) {
-    res
-      .status(429)
-      .json({
-        error: "Too many AI requests. Please wait a minute and try again.",
-      });
+    res.status(429).json({
+      error: "Too many AI requests. Please wait a minute and try again.",
+    });
     return;
   }
   recent.push(now);
@@ -173,7 +174,9 @@ function parseHistory(raw: unknown): ChatTurn[] | null {
 /** Runs the completion and maps failures to clean JSON errors (never leaks OpenAI's error text or status). */
 async function reply(
   res: Response,
-  run: () => Promise<AiHintResponse | AiDraftResponse>,
+  run: () => Promise<
+    AiHintResponse | AiDraftResponse | AiModuleSuggestionsResponse
+  >,
 ): Promise<void> {
   try {
     res.json(await run());
@@ -186,16 +189,29 @@ async function reply(
       "[ai] completion failed:",
       err instanceof Error ? err.message : err,
     );
-    res
-      .status(502)
-      .json({
-        error: "The AI service is unavailable right now. Please try again.",
-      });
+    res.status(502).json({
+      error: "The AI service is unavailable right now. Please try again.",
+    });
   }
 }
 
 const notConfigured = (res: Response) =>
   res.status(503).json({ error: new AiNotConfiguredError().message });
+
+function suggestionPatch(value: unknown): AiModuleSuggestion["patch"] | null {
+  if (!value || typeof value !== "object") return null;
+  const { title, content } = value as Record<string, unknown>;
+  if (title === undefined && content === undefined) return null;
+  if (
+    (title !== undefined && typeof title !== "string") ||
+    (content !== undefined && typeof content !== "string")
+  )
+    return null;
+  return {
+    ...(title !== undefined ? { title } : {}),
+    ...(content !== undefined ? { content } : {}),
+  };
+}
 
 aiRouter.post("/hint", requireRole("student"), rateLimit, async (req, res) => {
   const { moduleId, studentId, question, code, exerciseId, questionId, error } =
@@ -310,3 +326,64 @@ aiRouter.post("/draft", requireRole("teacher"), rateLimit, async (req, res) => {
     }),
   }));
 });
+
+/** Builder suggestions intentionally use only teacher-owned context. They are never available to students. */
+aiRouter.post(
+  "/module-suggestions",
+  requireRole("teacher"),
+  rateLimit,
+  async (req, res) => {
+    const { moduleId, request, itemId } = (req.body ??
+      {}) as Partial<AiModuleSuggestionsRequest>;
+    if (
+      typeof moduleId !== "string" ||
+      typeof request !== "string" ||
+      !request.trim() ||
+      request.length > MAX_DRAFT_REQUEST ||
+      (itemId !== undefined && typeof itemId !== "string")
+    )
+      return res
+        .status(400)
+        .json({ error: "moduleId and a request are required" });
+    if (!isAiConfigured()) return notConfigured(res);
+    const row = await moduleInClassroom(moduleId, req.user!.classroomId);
+    if (!row) return res.status(404).json({ error: "Module not found" });
+    const module = (await aggregate(row, true)) as TeacherModule;
+    await reply(res, async () => {
+      const raw = await complete({
+        system: `${draftSystemPrompt(teacherModuleContext(module), null)}\nReturn JSON only: {"suggestions":[{"id":"short-id","label":"short label","patch":{"title":"optional title","content":"optional intro"}}]}. Give up to three safe, small editorial suggestions. ${itemId ? `The selected item id is ${itemId}; put its replacement in patch only when it can be represented as a module title/content change.` : ""}`,
+        history: [],
+        message: request.trim(),
+        maxTokens: 900,
+        json: true,
+      });
+      try {
+        const parsed: unknown = JSON.parse(raw);
+        if (
+          parsed &&
+          typeof parsed === "object" &&
+          Array.isArray((parsed as AiModuleSuggestionsResponse).suggestions)
+        )
+          return {
+            suggestions: (parsed as AiModuleSuggestionsResponse).suggestions
+              .flatMap((suggestion) => {
+                if (
+                  !suggestion ||
+                  typeof suggestion.id !== "string" ||
+                  typeof suggestion.label !== "string"
+                )
+                  return [];
+                const patch = suggestionPatch(suggestion.patch);
+                return patch
+                  ? [{ id: suggestion.id, label: suggestion.label, patch }]
+                  : [];
+              })
+              .slice(0, 3),
+          };
+      } catch {
+        /* generic fallback below */
+      }
+      return { suggestions: [] };
+    });
+  },
+);

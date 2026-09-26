@@ -1,10 +1,14 @@
 import { Router } from 'express';
+import { moduleInClassroom } from '../access.js';
 import { PISTON_API_URL, PISTON_AUTH_TOKEN } from '../config.js';
+import { supabase } from '../supabase.js';
+import { unwrap, type ExerciseRow, type SectionRow } from '../rows.js';
 import type { RunCodeRequest, RunCodeResponse } from '../../../shared/types.js';
 
 export const codeRouter = Router();
 
 const MAX_CODE_LENGTH = 25_000;
+const MAX_HIDDEN_CODE_LENGTH = 25_000;
 const REQUEST_TIMEOUT_MS = 10_000;
 const RUN_TIMEOUT_MS = 3_000;
 const MAX_RUNS_PER_MINUTE = 12;
@@ -43,11 +47,49 @@ function stageText(stage: PistonStage | undefined, key: 'stdout' | 'stderr'): st
   return typeof stage?.[key] === 'string' ? stage[key] : '';
 }
 
+/** Loads an exercise only when it belongs to the caller's current classroom. Hidden code never leaves this route. */
+async function exerciseInClassroom(
+  exerciseId: string,
+  classroomId: string,
+  isStudent: boolean,
+): Promise<ExerciseRow | null> {
+  const exercise = unwrap(
+    await supabase
+      .from('code_exercises')
+      .select('*')
+      .eq('id', exerciseId)
+      .maybeSingle(),
+  ) as ExerciseRow | null;
+  if (!exercise) return null;
+  const question = unwrap(
+    await supabase
+      .from('questions')
+      .select('section_id')
+      .eq('id', exercise.question_id)
+      .maybeSingle(),
+  ) as { section_id: string } | null;
+  if (!question) return null;
+  const section = unwrap(
+    await supabase
+      .from('sections')
+      .select('*')
+      .eq('id', question.section_id)
+      .maybeSingle(),
+  ) as SectionRow | null;
+  if (!section) return null;
+  const module = await moduleInClassroom(section.module_id, classroomId);
+  return module && (!isStudent || module.status === 'published') ? exercise : null;
+}
+
 // Code runs only in Piston. The browser talks to this route so its Supabase identity can be
 // checked and a Piston credential (if the selected instance requires one) stays private.
 codeRouter.post('/run', async (req, res) => {
-  const { code, language } = (req.body ?? {}) as Partial<RunCodeRequest>;
-  if (typeof code !== 'string' || typeof language !== 'string') {
+  const { code, language, exerciseId } = (req.body ?? {}) as Partial<RunCodeRequest>;
+  if (
+    typeof code !== 'string' ||
+    typeof language !== 'string' ||
+    (exerciseId !== undefined && (typeof exerciseId !== 'string' || !exerciseId))
+  ) {
     res.status(400).json({ error: 'code and language are required' });
     return;
   }
@@ -60,6 +102,29 @@ codeRouter.post('/run', async (req, res) => {
   if (!runtime) {
     res.status(400).json({ error: 'This lesson language is not available to run yet' });
     return;
+  }
+  let program = code;
+  if (exerciseId) {
+    const exercise = await exerciseInClassroom(
+      exerciseId,
+      req.user!.classroomId,
+      req.user!.role === 'student',
+    );
+    if (!exercise) {
+      res.status(404).json({ error: 'Code exercise not found' });
+      return;
+    }
+    if (exercise.language.toLowerCase() !== language.toLowerCase()) {
+      res.status(400).json({ error: 'Use the language selected for this exercise' });
+      return;
+    }
+    if (exercise.hidden_code.length > MAX_HIDDEN_CODE_LENGTH) {
+      res.status(400).json({ error: 'This exercise has too much hidden test code to run' });
+      return;
+    }
+    // This is deliberately assembled after authentication and classroom ownership checks. The client
+    // submits only its solution; the teacher's harness is never sent in lesson JSON or API responses.
+    program = `${code}\n\n${exercise.hidden_code}`;
   }
   if (!allowRun(req.user!.userId)) {
     res.status(429).json({ error: 'Too many code runs. Please wait a minute and try again.' });
@@ -78,7 +143,7 @@ codeRouter.post('/run', async (req, res) => {
       body: JSON.stringify({
         language: runtime.pistonLanguage,
         version: '*',
-        files: [{ name: runtime.filename, content: code }],
+        files: [{ name: runtime.filename, content: program }],
         run_timeout: RUN_TIMEOUT_MS,
         run_cpu_time: RUN_TIMEOUT_MS,
         run_memory_limit: 128_000_000,
