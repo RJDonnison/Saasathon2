@@ -416,12 +416,41 @@ export default function TeacherHome() {
         />
       )}
 
+      {managing && (
+        <section className="flex flex-col gap-4 rounded-2xl border border-border bg-surface-soft p-4 sm:p-5">
+          <div className="flex flex-col gap-1">
+            <span className="text-xs font-semibold text-muted">START HERE</span>
+            <Heading as="h2">Plan with AI</Heading>
+            <p className="m-0 text-sm text-muted">
+              Start with a complete lesson draft, then review and refine it in
+              the builder.
+            </p>
+          </div>
+          <LessonPlanner />
+        </section>
+      )}
+
+      {managing && (
+        <div className="flex flex-col gap-1 border-t border-border pt-6">
+          <span className="text-xs font-semibold text-muted">
+            MANUAL WORKSPACE
+          </span>
+          <Heading as="h2">Lesson management</Heading>
+          <p className="m-0 text-sm text-muted">
+            Build from scratch, edit existing lessons, and manage your class
+            content.
+          </p>
+        </div>
+      )}
+
       {/*
         Two columns on large screens: [students + lessons] | [raised hands, detail, invitations]. The column wrappers
         are `contents` below lg, so on a phone the order is raised hands, students, detail, invitations, lessons: the
         urgent thing (a raised hand) is never buried under a long student list.
       */}
-      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1.7fr)_minmax(290px,.95fr)]">
+      <div
+        className={`grid items-start gap-5 lg:grid-cols-[minmax(0,1.7fr)_minmax(290px,.95fr)] ${managing ? "rounded-2xl border border-border bg-surface-soft p-4 sm:p-5" : ""}`}
+      >
         <div className="contents lg:flex lg:min-w-0 lg:flex-col lg:gap-5">
           <div className={`order-2 min-w-0 ${managing ? "hidden" : ""}`}>
             <ClassroomGrid
@@ -599,8 +628,6 @@ export default function TeacherHome() {
           </div>
         </div>
       </div>
-
-      {managing && <LessonPlanner />}
     </div>
   );
 }
