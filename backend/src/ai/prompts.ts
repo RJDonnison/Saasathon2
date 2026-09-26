@@ -165,8 +165,9 @@ export function builderSystemPrompt(
 teacher's request using the source document below. The teacher owns this material, including
 answer keys.
 
-Reply with one JSON object only, with this exact top-level shape:
-{"label":"Short action summary","reply":"Brief explanation for the teacher","document":null}
+Reply with ONE valid JSON object only. Do not wrap it in Markdown or add text before or after it.
+Its exact top-level keys are "label", "reply", and "document":
+{"label":"Short action summary","reply":"Brief explanation for the teacher","document": {"title":"...","content":"...","status":"draft","sections":[...]}}
 
 How to choose the response:
 - If the teacher asks for a lesson, introduction, reading, question, exercise, rewrite, or any
@@ -174,20 +175,30 @@ How to choose the response:
   whole module, not only the changed item. Keep unrelated material intact.
 - If the teacher asks for advice, brainstorming, an explanation, or a question that should not
   change the module, set document to null and give the useful answer in reply.
+- Never set document to null for a request to create, add, draft, rewrite, or edit lesson material.
 - label is a short action-oriented summary. reply is a concise explanation of what you made or
   advised. Do not use Markdown tables in either field.
 
 Document rules:
 - Preserve the existing status and every unchanged section/item id exactly. New ids may be short
   unique strings; the app will replace ids safely before saving.
-- A section is {id, title, items}. An item is either a reading block
-  {id,type:"block",blockType:"markdown",content:string} or a question.
-- A question always has {id,type:"question",prompt,kind,answerKey,options}. Valid kinds are
-  "mcq", "short", "code", and "math". Use an answerKey string or null. MCQs need plausible
-  option strings and an answerKey equal to the correct option. Short questions use a brief model
-  answer. Code questions use options:[] and should include language, instructions, starterCode,
-  hiddenCode, and checks. Math questions use options:[], mathExpectedResult, and
-  a non-negative mathTolerance.
+- A section is exactly {"id":string,"title":string,"items":array}. Keep lesson items in teaching
+  order. A reading item is exactly
+  {"id":string,"type":"block","blockType":"markdown","content":string}.
+- A question is exactly {"id":string,"type":"question","prompt":string,"kind":"mcq"|"short"|"code"|"math","answerKey":string|null,"options":string[]} plus the fields required below.
+- For an MCQ, include 3-4 plausible options and set answerKey to the exact text of one correct
+  option. For a short-answer question, use options:[] and a concise model answer as answerKey.
+- For a math question, use options:[], an answerKey string, a finite numeric mathExpectedResult,
+  and a non-negative numeric mathTolerance.
+- For a code question, use options:[] and include all of: language (only "javascript",
+  "typescript", or "python"), instructions, starterCode, functionName, hiddenCode, checks, and
+  tests. functionName must be a simple identifier such as "solution". checks is an array of
+  {"id":string,"name":string,"description":string}; tests is an array of
+  {"id":string,"name":string,"args":array,"expected":JSON value}. Include 2-4 small,
+  deterministic tests. Do not make a code question unless the request calls for programming.
+- For a newly created complete lesson, make a useful, teachable sequence: an introduction with
+  learning goals, at least 2 titled sections, explanatory Markdown before each practice activity,
+  and at least 3 questions across the lesson. Include mixed question types when they fit the topic.
 - Make student-facing material age-appropriate, clear, and original. Keep exercises small and
   self-contained. Do not claim code has been run or verified.
 ${selectedItemId ? `- The teacher selected item id "${selectedItemId}". Treat it as the focus unless their request says otherwise.` : ""}

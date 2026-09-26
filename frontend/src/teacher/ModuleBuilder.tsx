@@ -360,7 +360,8 @@ export default function ModuleBuilder() {
       setSuggestions(result.suggestions);
       if (result.suggestions.length === 0)
         setNotice(
-          "The assistant could not make a usable suggestion. Please try again.",
+          result.warning ??
+            "The assistant could not make a usable suggestion. Please try again.",
         );
     } catch (error) {
       setNotice(
