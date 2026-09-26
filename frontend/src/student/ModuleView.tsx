@@ -6,18 +6,21 @@ import Eyebrow from "../ui/Eyebrow.tsx";
 import Heading from "../ui/Heading.tsx";
 import InlineText from "../ui/InlineText.tsx";
 import MathText from "../ui/MathText.tsx";
+import QuestionConversation from "../ui/QuestionConversation.tsx";
 import Markdown from "../ui/Markdown.tsx";
 import { PencilIcon } from "../ui/icons.tsx";
 import { CARD, INPUT, TINT } from "../ui/styles.ts";
 import CodeEditor from "./CodeEditor.tsx";
 import { onModuleChanged } from "../socket.ts";
 import { useWorkspace } from "./useWorkspace.ts";
+import { useStudentActivity } from "./useStudentActivity.ts";
 import type {
   Module,
   SectionBlock,
   StudentModule,
   StudentQuestion,
   StudentSection,
+  StudentWork,
 } from "../../../shared/types";
 import { ArithmeticError, parseArithmetic } from "../../../math/arithmetic";
 
@@ -59,14 +62,18 @@ function Lesson({
   const [full, setFull] = useState<StudentModule | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [version, setVersion] = useState(0);
+  const [work, setWork] = useState<Record<string, StudentWork>>({});
   const { setActiveQuestion } = useWorkspace();
+  const { record } = useStudentActivity();
 
   useEffect(() => {
     let cancelled = false;
-    api
-      .getModule(module.id)
-      .then((m) => {
-        if (!cancelled) setFull(m as StudentModule); // students always get the student aggregate
+    Promise.all([api.getModule(module.id), api.getStudentWork(module.id)])
+      .then(([m, savedWork]) => {
+        if (!cancelled) {
+          setFull(m as StudentModule); // students always get the student aggregate
+          setWork(Object.fromEntries(savedWork.map((entry) => [entry.questionId, entry])));
+        }
       })
       .catch((err) => {
         console.error(err);
@@ -79,6 +86,9 @@ function Lesson({
       cancelled = true;
     };
   }, [module.id, version]);
+  useEffect(() => {
+    if (full) record({ moduleId: module.id, type: "viewing_lesson" });
+  }, [full, module.id, record]);
   useEffect(
     () =>
       onModuleChanged((change) => {
@@ -142,7 +152,13 @@ function Lesson({
       )}
 
       {full?.sections.map((section, i) => (
-        <SectionView key={section.id} section={section} index={i} />
+        <SectionView
+          key={section.id}
+          section={section}
+          moduleId={module.id}
+          index={i}
+          work={work}
+        />
       ))}
 
       {full?.sections.some((section) =>
@@ -163,13 +179,17 @@ function Lesson({
 
 function SectionView({
   section,
+  moduleId,
   index,
+  work,
 }: {
   section: StudentSection;
+  moduleId: string;
   index: number;
+  work: Record<string, StudentWork>;
 }) {
   const reading = section.blocks.filter((b) => blockText(b)?.trim());
-  const work = section.questions;
+  const questions = section.questions;
   const ordered = section.items
     .map((item) =>
       item.itemType === "block"
@@ -192,9 +212,9 @@ function SectionView({
         | { type: "question"; value: StudentQuestion } => Boolean(item.value),
     );
   const kind =
-    reading.length && work.length
+    reading.length && questions.length
       ? "Read & practise"
-      : work.length
+      : questions.length
         ? "Practise"
         : "Read";
   return (
@@ -204,7 +224,7 @@ function SectionView({
     >
       <header className="flex items-center gap-3">
         <span
-          className={`grid size-8 flex-none place-items-center rounded-full font-mono text-[11px] ${work.length && !reading.length ? TINT.peach : TINT.mint}`}
+          className={`grid size-8 flex-none place-items-center rounded-full font-mono text-[11px] ${questions.length && !reading.length ? TINT.peach : TINT.mint}`}
         >
           {String(index + 1).padStart(2, "0")}
         </span>
@@ -230,18 +250,34 @@ function SectionView({
             </article>
           )
         ) : (
-          <QuestionView key={item.value.id} question={item.value} />
+          <QuestionView
+            key={item.value.id}
+            question={item.value}
+            moduleId={moduleId}
+            sectionId={section.id}
+            savedWork={work[item.value.id]}
+          />
         ),
       )}
     </section>
   );
 }
 
-function QuestionView({ question }: { question: StudentQuestion }) {
+function QuestionView({
+  question,
+  moduleId,
+  sectionId,
+  savedWork,
+}: {
+  question: StudentQuestion;
+  moduleId: string;
+  sectionId: string;
+  savedWork?: StudentWork;
+}) {
   if (question.kind === "code" && question.codeExercise)
-    return <CodeQuestion question={question} />;
-  if (question.kind === "math") return <MathQuestion question={question} />;
-  return <AnswerQuestion question={question} />;
+    return <><CodeQuestion question={question} moduleId={moduleId} sectionId={sectionId} savedWork={savedWork} /><QuestionConversation questionId={question.id} /></>;
+  if (question.kind === "math") return <><MathQuestion question={question} moduleId={moduleId} sectionId={sectionId} savedWork={savedWork} /><QuestionConversation questionId={question.id} /></>;
+  return <><AnswerQuestion question={question} moduleId={moduleId} sectionId={sectionId} savedWork={savedWork} /><QuestionConversation questionId={question.id} /></>;
 }
 
 /** "Write a function `double(n)` that returns…" -> a short, plain-text name for the exercise. */
@@ -250,7 +286,7 @@ const shortLabel = (prompt: string) => {
   return plain.length > 48 ? `${plain.slice(0, 47).trimEnd()}…` : plain;
 };
 
-function CodeQuestion({ question }: { question: StudentQuestion }) {
+function CodeQuestion({ question, moduleId, sectionId, savedWork }: { question: StudentQuestion; moduleId: string; sectionId: string; savedWork?: StudentWork }) {
   const ex = question.codeExercise!;
   return (
     <CodeEditor
@@ -258,24 +294,46 @@ function CodeQuestion({ question }: { question: StudentQuestion }) {
         key: ex.id,
         label: shortLabel(question.prompt),
         exerciseId: ex.id,
+        questionId: question.id,
       }}
       filename="solution"
       language={ex.language}
-      initialCode={ex.starterCode}
+      initialCode={savedWork?.code ?? ex.starterCode}
       prompt={question.prompt}
       instructions={ex.instructions}
+      moduleId={moduleId}
+      sectionId={sectionId}
     />
   );
 }
 
-function AnswerQuestion({ question }: { question: StudentQuestion }) {
-  const [answer, setAnswer] = useState("");
+function AnswerQuestion({ question, moduleId, sectionId, savedWork }: { question: StudentQuestion; moduleId: string; sectionId: string; savedWork?: StudentWork }) {
+  const [answer, setAnswer] = useState(savedWork?.answer ?? "");
+  const [edited, setEdited] = useState(false);
+  const [reported, setReported] = useState(false);
   const [checking, setChecking] = useState(false);
   const [result, setResult] = useState<boolean | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
+  const { record, saveWork } = useStudentActivity();
+
+  const startAnswering = () => {
+    if (reported) return;
+    setReported(true);
+    record({ moduleId, sectionId, questionId: question.id, type: "answering_question" });
+  };
+
+  useEffect(() => {
+    if (!edited) return;
+    const timer = window.setTimeout(
+      () => saveWork({ moduleId, sectionId, questionId: question.id, kind: "answer", value: answer }),
+      650,
+    );
+    return () => window.clearTimeout(timer);
+  }, [answer, edited, moduleId, question.id, saveWork, sectionId]);
 
   async function check() {
     if (!answer.trim()) return;
+    record({ moduleId, sectionId, questionId: question.id, type: "checking_answer" });
     setChecking(true);
     setError(null);
     try {
@@ -290,6 +348,7 @@ function AnswerQuestion({ question }: { question: StudentQuestion }) {
       );
     } finally {
       setChecking(false);
+      setReported(false);
     }
   }
 
@@ -319,6 +378,8 @@ function AnswerQuestion({ question }: { question: StudentQuestion }) {
                 checked={answer === o.text}
                 onChange={() => {
                   setAnswer(o.text);
+                  setEdited(true);
+                  startAnswering();
                   setResult(undefined);
                 }}
                 className="accent-ink"
@@ -338,8 +399,11 @@ function AnswerQuestion({ question }: { question: StudentQuestion }) {
             value={answer}
             onChange={(e) => {
               setAnswer(e.target.value);
+              setEdited(true);
+              startAnswering();
               setResult(undefined);
             }}
+            onFocus={startAnswering}
             placeholder="Type your answer"
           />
         </>
@@ -374,22 +438,43 @@ function AnswerQuestion({ question }: { question: StudentQuestion }) {
   );
 }
 
-function MathQuestion({ question }: { question: StudentQuestion }) {
+function MathQuestion({ question, moduleId, sectionId, savedWork }: { question: StudentQuestion; moduleId: string; sectionId: string; savedWork?: StudentWork }) {
   const { setActiveQuestion } = useWorkspace();
-  const [answer, setAnswer] = useState("");
+  const [answer, setAnswer] = useState(savedWork?.answer ?? "");
+  const [edited, setEdited] = useState(false);
+  const [reported, setReported] = useState(false);
   const [syntaxError, setSyntaxError] = useState<string | null>(null);
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
   const [checking, setChecking] = useState(false);
+  const { record, saveWork } = useStudentActivity();
+
+  const startAnswering = () => {
+    if (reported) return;
+    setReported(true);
+    record({ moduleId, sectionId, questionId: question.id, type: "answering_question" });
+  };
+
+  useEffect(() => {
+    if (!edited) return;
+    const timer = window.setTimeout(
+      () => saveWork({ moduleId, sectionId, questionId: question.id, kind: "answer", value: answer }),
+      650,
+    );
+    return () => window.clearTimeout(timer);
+  }, [answer, edited, moduleId, question.id, saveWork, sectionId]);
 
   const changeAnswer = (next: string) => {
     setActiveQuestion(question.id);
     setAnswer(next);
+    setEdited(true);
+    startAnswering();
     setIsCorrect(null);
     setSyntaxError(null);
   };
 
   const checkAnswer = async () => {
     setActiveQuestion(question.id);
+    record({ moduleId, sectionId, questionId: question.id, type: "checking_answer" });
     if (!answer.trim()) {
       setSyntaxError("Enter an answer before checking it.");
       return;
@@ -411,6 +496,7 @@ function MathQuestion({ question }: { question: StudentQuestion }) {
       );
     } finally {
       setChecking(false);
+      setReported(false);
     }
   };
 
@@ -432,7 +518,10 @@ function MathQuestion({ question }: { question: StudentQuestion }) {
         id={`answer-${question.id}`}
         className={`${INPUT} h-10 w-full font-mono`}
         value={answer}
-        onFocus={() => setActiveQuestion(question.id)}
+        onFocus={() => {
+          setActiveQuestion(question.id);
+          startAnswering();
+        }}
         onChange={(event) => changeAnswer(event.target.value)}
         placeholder="Enter your answer"
       />
