@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { api } from "../api.ts";
 import { useAuth } from "../auth/useAuth.ts";
 import { useLiveSession } from "../useLiveSession.ts";
-import { emitAcknowledgeHand } from "../socket.ts";
+import { emitAcknowledgeHand, onStudentActivityUpdate } from "../socket.ts";
 import { useClassroomPresence } from "../hooks/useClassroomPresence.ts";
 import { useModuleRefresh } from "../hooks/useModuleRefresh.ts";
 import { useRaisedHands } from "../hooks/useRaisedHands.ts";
@@ -24,6 +24,7 @@ import type {
   Classroom,
   ClassroomInvitation,
   Module,
+  StudentActivitySnapshot,
   User,
 } from "../../../shared/types";
 
@@ -47,6 +48,9 @@ export default function TeacherHome() {
   const [inviteText, setInviteText] = useState("");
   const [inviteBusy, setInviteBusy] = useState(false);
   const [inviteMessage, setInviteMessage] = useState<string | null>(null);
+  const [activity, setActivity] = useState<
+    Record<string, StudentActivitySnapshot>
+  >({});
 
   const classroomId = user?.classroomId;
   const refreshStudentsFromPresence = useCallback(() => {
@@ -98,6 +102,17 @@ export default function TeacherHome() {
         if (!cancelled) setModules(m);
       })
       .catch(() => {});
+    api
+      .getClassroomStudentActivity(user.classroomId)
+      .then((snapshots) => {
+        if (!cancelled)
+          setActivity(
+            Object.fromEntries(
+              snapshots.map((snapshot) => [snapshot.studentId, snapshot]),
+            ),
+          );
+      })
+      .catch(() => {});
     // Poll so a student's answer (accepted / declined) shows up without a refresh; a student who joins also
     // triggers a presence_update, which refreshes the student grid.
     const loadInvitations = () => {
@@ -116,6 +131,46 @@ export default function TeacherHome() {
     };
   }, [user]);
 
+  useEffect(
+    () =>
+      onStudentActivityUpdate((update) => {
+        if (!user || update.classroomId !== user.classroomId) return;
+        setActivity((current) => {
+          const previous = current[update.studentId] ?? {
+            studentId: update.studentId,
+            active: null,
+            recent: [],
+            work: [],
+          };
+          const recent = update.activity
+            ? [
+                update.activity,
+                ...previous.recent.filter(
+                  (entry) => entry.id !== update.activity!.id,
+                ),
+              ].slice(0, 6)
+            : previous.recent;
+          const work = update.work
+            ? [
+                update.work,
+                ...previous.work.filter(
+                  (entry) => entry.questionId !== update.work!.questionId,
+                ),
+              ]
+            : previous.work;
+          return {
+            ...current,
+            [update.studentId]: {
+              ...previous,
+              active: update.active,
+              recent,
+              work,
+            },
+          };
+        });
+      }),
+    [user],
+  );
   async function createClassroom() {
     const name = await prompt({
       title: "Name your classroom",
@@ -296,6 +351,7 @@ export default function TeacherHome() {
               online={online}
               selectedId={selectedId}
               onSelect={setSelectedId}
+              activity={activity}
             />
           </div>
           <div className="order-5 min-w-0">
@@ -346,8 +402,12 @@ export default function TeacherHome() {
             <RaiseHandAlert
               hands={hands}
               nameOf={(id) => byId.get(id)?.name ?? "A student"}
-              onHelp={(id) => user && emitAcknowledgeHand(id, user.classroomId)}
+              onHelp={(id) => {
+                setSelectedId(id);
+                if (user) emitAcknowledgeHand(id, user.classroomId);
+              }}
               onSelect={setSelectedId}
+              activity={activity}
             />
           </div>
           <div className="order-3 min-w-0">

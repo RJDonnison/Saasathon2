@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api.ts";
 import { useAuth } from "../auth/useAuth.ts";
 import { useModuleRefresh } from "../hooks/useModuleRefresh.ts";
@@ -19,43 +19,71 @@ export function useClassData() {
   );
   const [error, setError] = useState<string | null>(null);
   const classroomId = user?.classroomId;
+  const lessonsRequest = useRef(0);
+  const lessonsController = useRef<AbortController | null>(null);
+
+  const refreshLessons = useCallback(() => {
+    if (!classroomId) return;
+    lessonsController.current?.abort();
+    const request = ++lessonsRequest.current;
+    const controller = new AbortController();
+    lessonsController.current = controller;
+    void api
+      .getLessons(classroomId, { signal: controller.signal })
+      .then((next) => {
+        if (request === lessonsRequest.current) {
+          setLessons(next);
+          setError(null);
+        }
+      })
+      .catch((err) => {
+        if (
+          !(err instanceof Error && err.name === "AbortError") &&
+          request === lessonsRequest.current
+        )
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Could not refresh your lessons",
+          );
+      });
+    return controller;
+  }, [classroomId]);
 
   useEffect(() => {
     if (!classroomId) return;
-    let active = true;
+    const controller = new AbortController();
+    const signal = controller.signal;
     api
-      .getClassroom(classroomId)
-      .then((c) => active && setClassroom(c))
-      .catch(() => {});
-    api
-      .getAnnouncements(classroomId)
-      .then((a) => active && setAnnouncements(a))
-      .catch(() => active && setAnnouncements([]));
-    api
-      .getLessons(classroomId)
-      .then((l) => active && setLessons(l))
-      .catch((err) => {
-        console.error(err);
-        if (active) {
-          setLessons([]);
+      .getClassroom(classroomId, { signal })
+      .then((c) => !signal.aborted && setClassroom(c))
+      .catch(
+        (err) =>
+          !signal.aborted &&
           setError(
-            err instanceof Error ? err.message : "Could not load your lessons",
-          );
-        }
-      });
+            err instanceof Error
+              ? err.message
+              : "Could not load your classroom",
+          ),
+      );
+    api
+      .getAnnouncements(classroomId, { signal })
+      .then((a) => !signal.aborted && setAnnouncements(a))
+      .catch(
+        (err) =>
+          !signal.aborted &&
+          setError(
+            err instanceof Error ? err.message : "Could not load announcements",
+          ),
+      );
+    const lessonsController = refreshLessons();
     return () => {
-      active = false;
+      controller.abort();
+      lessonsController?.abort();
     };
-  }, [classroomId]);
+  }, [classroomId, refreshLessons]);
 
   // The teacher edited, published or deleted a lesson: reload the list (statuses come with it).
-  const refreshLessons = useCallback(() => {
-    if (classroomId)
-      void api
-        .getLessons(classroomId)
-        .then(setLessons)
-        .catch(() => {});
-  }, [classroomId]);
   useModuleRefresh(classroomId, refreshLessons);
 
   /** Update one lesson's status locally and on the server. */
@@ -69,5 +97,12 @@ export function useClassData() {
       .catch((err) => console.warn("Could not save progress:", err));
   }, []);
 
-  return { classroom, lessons, announcements, error, setStatus };
+  return {
+    classroom,
+    lessons,
+    announcements,
+    error,
+    refreshLessons,
+    setStatus,
+  };
 }

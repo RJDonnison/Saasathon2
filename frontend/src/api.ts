@@ -51,6 +51,14 @@ import type {
   ValidateMathResponse,
   UpsertProgressRequest,
   UpsertProgressResponse,
+  GetClassroomStudentActivityResponse,
+  GetStudentWorkResponse,
+  RecordStudentActivityRequest,
+  SaveStudentWorkRequest,
+  StudentActivity,
+  CreateQuestionCommentRequest,
+  CreateQuestionCommentResponse,
+  ListQuestionCommentsResponse,
 } from "../../shared/types";
 import { supabase } from "./supabase.ts";
 
@@ -67,17 +75,18 @@ async function request<T>(
   path: string,
   init: RequestInit & { json?: unknown } = {},
 ): Promise<T> {
-  const headers = new Headers(init.headers);
+  const { json, ...requestInit } = init;
+  const headers = new Headers(requestInit.headers);
   // The Supabase access token (auto-refreshed by supabase-js) authenticates every API call.
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
   if (token) headers.set("Authorization", `Bearer ${token}`);
-  if (init.json !== undefined) headers.set("Content-Type", "application/json");
+  if (json !== undefined) headers.set("Content-Type", "application/json");
 
   const res = await fetch(path, {
-    ...init,
+    ...requestInit,
     headers,
-    body: init.json !== undefined ? JSON.stringify(init.json) : init.body,
+    body: json !== undefined ? JSON.stringify(json) : requestInit.body,
   });
 
   if (!res.ok) {
@@ -90,48 +99,133 @@ async function request<T>(
 const post = <T>(path: string, json: unknown) =>
   request<T>(path, { method: "POST", json });
 
+type GetOptions = Pick<RequestInit, "signal">;
+
 export const api = {
   createClassroom: (name: string) =>
     post<CreateClassroomResponse>("/api/classrooms", { name }),
   me: () => request<MeResponse>("/api/auth/me"),
-  getModule: (id: string) => request<GetModuleResponse>(`/api/modules/${id}`),
-  getClassroom: (id: string) =>
-    request<GetClassroomResponse>(`/api/classrooms/${id}`),
-  listModules: (classroomId: string) =>
-    request<ListModulesResponse>(`/api/classrooms/${classroomId}/modules`),
+  getModule: (id: string, options?: GetOptions) =>
+    request<GetModuleResponse>(`/api/modules/${id}`, options),
+  getClassroom: (id: string, options?: GetOptions) =>
+    request<GetClassroomResponse>(`/api/classrooms/${id}`, options),
+  listModules: (classroomId: string, options?: GetOptions) =>
+    request<ListModulesResponse>(
+      `/api/classrooms/${classroomId}/modules`,
+      options,
+    ),
   getStudents: (classroomId: string) =>
     request<GetClassroomStudentsResponse>(
       `/api/classrooms/${classroomId}/students`,
     ),
+  getClassroomStudentActivity: (classroomId: string) =>
+    request<GetClassroomStudentActivityResponse>(
+      `/api/activity/classrooms/${classroomId}`,
+    ),
+  getTeacherStudentAggregate: (classroomId: string, studentId: string) =>
+    request<GetTeacherStudentAggregateResponse>(
+      `/api/classrooms/${classroomId}/students/${studentId}/aggregate`,
+    ),
+  getStudentWork: (moduleId: string, options?: GetOptions) =>
+    request<GetStudentWorkResponse>(
+      `/api/activity/work?moduleId=${encodeURIComponent(moduleId)}`,
+      options,
+    ),
+  saveStudentWork: (body: SaveStudentWorkRequest) =>
+    request(`/api/activity/work`, { method: "PUT", json: body }),
+  recordStudentActivity: (body: RecordStudentActivityRequest) =>
+    post<StudentActivity>("/api/activity", body),
+  createComment: (body: CreateCommentRequest) =>
+    post<Comment>("/api/comments", body),
+  getQuestionComments: (
+    questionId: string,
+    studentId?: string,
+    options?: GetOptions,
+  ) =>
+    request<ListQuestionCommentsResponse>(
+      `/api/comments/questions/${questionId}/comments${studentId ? `?studentId=${encodeURIComponent(studentId)}` : ""}`,
+      options,
+    ),
+  createQuestionComment: (
+    questionId: string,
+    body: CreateQuestionCommentRequest,
+  ) =>
+    post<CreateQuestionCommentResponse>(
+      `/api/comments/questions/${questionId}/comments`,
+      body,
+    ),
   getInvitations: (classroomId: string) =>
-    request<ClassroomInvitation[]>(`/api/classrooms/${classroomId}/invitations`),
-  inviteStudents: (classroomId: string, body: CreateClassroomInvitationsRequest) =>
-    post<CreateClassroomInvitationsResponse>(`/api/classrooms/${classroomId}/invitations`, body),
+    request<ClassroomInvitation[]>(
+      `/api/classrooms/${classroomId}/invitations`,
+    ),
+  inviteStudents: (
+    classroomId: string,
+    body: CreateClassroomInvitationsRequest,
+  ) =>
+    post<CreateClassroomInvitationsResponse>(
+      `/api/classrooms/${classroomId}/invitations`,
+      body,
+    ),
   removeInvitation: (classroomId: string, invitationId: string) =>
-    request<void>(`/api/classrooms/${classroomId}/invitations/${invitationId}`, { method: "DELETE" }),
+    request<void>(
+      `/api/classrooms/${classroomId}/invitations/${invitationId}`,
+      { method: "DELETE" },
+    ),
   myInvitations: () => request<ListMyInvitationsResponse>("/api/invitations"),
-  acceptInvitation: (id: string) => post<AcceptInvitationResponse>(`/api/invitations/${id}/accept`, {}),
-  declineInvitation: (id: string) => post<void>(`/api/invitations/${id}/decline`, {}),
+  acceptInvitation: (id: string) =>
+    post<AcceptInvitationResponse>(`/api/invitations/${id}/accept`, {}),
+  declineInvitation: (id: string) =>
+    post<void>(`/api/invitations/${id}/decline`, {}),
   myClassrooms: () => request<ListMyClassroomsResponse>("/api/classrooms"),
-  activateClassroom: (id: string) => post<ActivateClassroomResponse>(`/api/classrooms/${id}/activate`, {}),
-  getLessons: (classroomId: string) => request<ListLessonSummariesResponse>(`/api/classrooms/${classroomId}/lessons`),
-  getAnnouncements: (classroomId: string) => request<ListAnnouncementsResponse>(`/api/classrooms/${classroomId}/announcements`),
-  postAnnouncement: (classroomId: string, text: string) => post<Announcement>(`/api/classrooms/${classroomId}/announcements`, { text }),
+  activateClassroom: (id: string) =>
+    post<ActivateClassroomResponse>(`/api/classrooms/${id}/activate`, {}),
+  getLessons: (classroomId: string, options?: GetOptions) =>
+    request<ListLessonSummariesResponse>(
+      `/api/classrooms/${classroomId}/lessons`,
+      options,
+    ),
+  getAnnouncements: (classroomId: string, options?: GetOptions) =>
+    request<ListAnnouncementsResponse>(
+      `/api/classrooms/${classroomId}/announcements`,
+      options,
+    ),
+  postAnnouncement: (classroomId: string, text: string) =>
+    post<Announcement>(`/api/classrooms/${classroomId}/announcements`, {
+      text,
+    }),
   deleteAnnouncement: (classroomId: string, id: string) =>
-    request<void>(`/api/classrooms/${classroomId}/announcements/${id}`, { method: "DELETE" }),
-  getStudentAggregate: (classroomId: string, studentId: string) =>
-    request<GetTeacherStudentAggregateResponse>(`/api/classrooms/${classroomId}/students/${studentId}/aggregate`),
-  createModule: (body: CreateModuleRequest) => post<Module>("/api/modules", body),
-  getSession: (classroomId: string) => request<GetSessionResponse>(`/api/classrooms/${classroomId}/session`),
-  startSession: (classroomId: string, moduleId: string, phase: LessonPhase = "teach") =>
-    post<GetSessionResponse>(`/api/classrooms/${classroomId}/session`, { moduleId, phase }),
-  updateSession: (classroomId: string, body: { moduleId?: string; phase?: LessonPhase }) =>
-    request<GetSessionResponse>(`/api/classrooms/${classroomId}/session`, { method: "PATCH", json: body }),
+    request<void>(`/api/classrooms/${classroomId}/announcements/${id}`, {
+      method: "DELETE",
+    }),
+  createModule: (body: CreateModuleRequest) =>
+    post<Module>("/api/modules", body),
+  getSession: (classroomId: string) =>
+    request<GetSessionResponse>(`/api/classrooms/${classroomId}/session`),
+  startSession: (
+    classroomId: string,
+    moduleId: string,
+    phase: LessonPhase = "teach",
+  ) =>
+    post<GetSessionResponse>(`/api/classrooms/${classroomId}/session`, {
+      moduleId,
+      phase,
+    }),
+  updateSession: (
+    classroomId: string,
+    body: { moduleId?: string; phase?: LessonPhase },
+  ) =>
+    request<GetSessionResponse>(`/api/classrooms/${classroomId}/session`, {
+      method: "PATCH",
+      json: body,
+    }),
   endSession: (classroomId: string) =>
-    request<GetSessionResponse>(`/api/classrooms/${classroomId}/session`, { method: "DELETE" }),
-  createAttempt: (body: CreateAttemptRequest) => post<CreateAttemptResponse>("/api/comments/attempts", body),
-  createSubmission: (body: CreateSubmissionRequest) => post<CodeSubmission>("/api/comments/submissions", body),
-  createComment: (body: CreateCommentRequest) => post<Comment>("/api/comments", body),
+    request<GetSessionResponse>(`/api/classrooms/${classroomId}/session`, {
+      method: "DELETE",
+    }),
+  createAttempt: (body: CreateAttemptRequest) =>
+    post<CreateAttemptResponse>("/api/comments/attempts", body),
+  createSubmission: (body: CreateSubmissionRequest) =>
+    post<CodeSubmission>("/api/comments/submissions", body),
   upsertProgress: (body: UpsertProgressRequest) =>
     request<UpsertProgressResponse>("/api/progress", {
       method: "PUT",
