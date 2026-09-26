@@ -15,7 +15,7 @@ export default function JoinPage() {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
-  if (loading) return <main className="landing-loading"><span className="loading-mark">{`{ }`}</span> Getting your workspace ready…</main>
+  if (loading) return <main className="landing-loading"><img className="loading-mark" src="/favicon.svg" alt="" /> Getting your workspace ready…</main>
   if (user) return <Navigate to={`/${user.role}`} replace />
 
   async function onGoogle() {
@@ -33,7 +33,7 @@ export default function JoinPage() {
     <main className="landing-shell">
       <div className="landing-grain" aria-hidden="true" />
       <nav className="landing-nav">
-        <a className="brand" href="/" aria-label="Loop home"><span className="brand-icon">{`{ }`}</span><span>loop<span className="brand-dot">.</span></span></a>
+        <a className="brand" href="/" aria-label="Loop home"><img className="brand-icon" src="/favicon.svg" alt="" /><span>loop<span className="brand-dot">.</span></span></a>
         <div className="nav-note">CODE TOGETHER</div>
         <a className="nav-cta" href="#get-started">Get started <Arrow /></a>
       </nav>
@@ -88,7 +88,7 @@ export default function JoinPage() {
           <div className="card-bottom"><span><i/> PRIVATE CLASSROOMS</span><span>MADE FOR LEARNING&nbsp; ✳</span></div>
         </div>
       </section>
-      <footer className="landing-footer"><a className="brand footer-brand" href="#top"><span className="brand-icon">{`{ }`}</span><span>loop<span className="brand-dot">.</span></span></a><span>Make room for big ideas.</span><span>© 2026 LOOP CLASSROOM</span></footer>
+      <footer className="landing-footer"><a className="brand footer-brand" href="#top"><img className="brand-icon" src="/favicon.svg" alt="" /><span>loop<span className="brand-dot">.</span></span></a><span>Make room for big ideas.</span><span>© 2026 LOOP CLASSROOM</span></footer>
     </main>
   )
 }

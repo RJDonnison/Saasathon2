@@ -99,6 +99,7 @@
 .cursor,.feature-icon.mint-icon,.teacher-check{background:var(--color-accent)}
 .pulse-bars i{background:var(--color-accent)}
 .teacher-check,.mint-icon{color:#fff}
+.brand-icon,.loading-mark{display:block;object-fit:contain;background:none;color:transparent}
 
 /* Shared landing and role dashboard system */
 body{font-family:'DM Sans',sans-serif;background:var(--color-canvas);color:var(--color-ink)}
