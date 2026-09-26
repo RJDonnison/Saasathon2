@@ -3,7 +3,7 @@ import Card from '../ui/Card.tsx'
 import Dot from '../ui/Dot.tsx'
 import { UsersIcon } from '../ui/icons.tsx'
 import { FOCUS_RING } from '../ui/styles.ts'
-import type { User } from '../../../shared/types'
+import type { StudentActivitySnapshot, User } from '../../../shared/types'
 
 // Students (REST) with live online/offline state (socket presence_update, owned by TeacherHome).
 // PLACEHOLDER: no per-student status/progress yet.
@@ -12,11 +12,13 @@ export default function ClassroomGrid({
   online,
   selectedId,
   onSelect,
+  activity,
 }: {
   students: User[] | null
   online: Set<string>
   selectedId: string | null
   onSelect: (id: string | null) => void
+  activity: Record<string, StudentActivitySnapshot>
 }) {
   // Online students first, then alphabetical.
   const sorted = [...(students ?? [])].sort(
@@ -51,6 +53,7 @@ export default function ClassroomGrid({
         <ul className="m-0 grid list-none gap-3 p-0 sm:grid-cols-2">
           {sorted.map((s) => {
             const isOnline = online.has(s.id)
+            const active = activity[s.id]?.active
             return (
               <li key={s.id}>
                 <button
@@ -67,6 +70,13 @@ export default function ClassroomGrid({
                       <Dot live={isOnline} />
                       {isOnline ? 'Online' : 'Offline'}
                     </span>
+                    {active?.questionId && (
+                      <span className="truncate text-xs! font-normal! text-muted">
+                        {active.type === 'writing_code' || active.type === 'running_code' || active.type === 'checking_code'
+                          ? 'Working in code'
+                          : 'Working on a question'}
+                      </span>
+                    )}
                   </span>
                 </button>
               </li>

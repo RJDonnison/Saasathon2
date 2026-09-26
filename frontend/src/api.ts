@@ -35,6 +35,11 @@ import type {
   ValidateMathResponse,
   UpsertProgressRequest,
   UpsertProgressResponse,
+  GetClassroomStudentActivityResponse,
+  GetStudentWorkResponse,
+  RecordStudentActivityRequest,
+  SaveStudentWorkRequest,
+  StudentActivity,
 } from "../../shared/types";
 import { supabase } from "./supabase.ts";
 
@@ -91,6 +96,18 @@ export const api = {
     request<GetClassroomStudentsResponse>(
       `/api/classrooms/${classroomId}/students`,
     ),
+  getClassroomStudentActivity: (classroomId: string) =>
+    request<GetClassroomStudentActivityResponse>(
+      `/api/activity/classrooms/${classroomId}`,
+    ),
+  getStudentWork: (moduleId: string) =>
+    request<GetStudentWorkResponse>(
+      `/api/activity/work?moduleId=${encodeURIComponent(moduleId)}`,
+    ),
+  saveStudentWork: (body: SaveStudentWorkRequest) =>
+    request(`/api/activity/work`, { method: "PUT", json: body }),
+  recordStudentActivity: (body: RecordStudentActivityRequest) =>
+    post<StudentActivity>("/api/activity", body),
   createComment: (body: CreateCommentRequest) =>
     post<Comment>("/api/comments", body),
   createAttempt: (body: CreateAttemptRequest) =>

@@ -1,6 +1,8 @@
 // Single source of truth for socket.io event payloads.
 // Plain file (not an npm package) — imported by relative path from backend and frontend.
 
+import type { StudentActivity, StudentWork } from "./types.js";
+
 export type StudentStatus = "idle" | "working" | "stuck";
 
 export interface RaiseHandPayload {
@@ -34,6 +36,17 @@ export interface StudentStatusUpdatePayload {
   status: StudentStatus;
   moduleId: string;
 }
+/** Broadcast when a student changes location, saves work, or takes a meaningful learning action. */
+export interface StudentActivityUpdatePayload {
+  type: "student_activity_update";
+  classroomId: string;
+  studentId: string;
+  active: StudentActivity;
+  /** Present for a meaningful logged action; draft saves only refresh `active`. */
+  activity?: StudentActivity;
+  /** Present when a draft was saved, so the selected teacher view stays in sync. */
+  work?: StudentWork;
+}
 
 export interface PresenceUpdatePayload {
   type: "presence_update";
@@ -53,6 +66,7 @@ export type SocketPayload =
   | AcknowledgeHandPayload
   | RaisedHandsUpdatePayload
   | StudentStatusUpdatePayload
+  | StudentActivityUpdatePayload
   | PresenceUpdatePayload
   | ModuleChangedPayload;
 
@@ -67,6 +81,7 @@ export interface ClientToServerEvents {
 export interface ServerToClientEvents {
   raised_hands_update: (payload: RaisedHandsUpdatePayload) => void;
   student_status_update: (payload: StudentStatusUpdatePayload) => void;
+  student_activity_update: (payload: StudentActivityUpdatePayload) => void;
   presence_update: (payload: PresenceUpdatePayload) => void;
   module_changed: (payload: ModuleChangedPayload) => void;
 }

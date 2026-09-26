@@ -9,6 +9,7 @@ import InlineText from "../ui/InlineText.tsx";
 import { PlayIcon, SparklesIcon, XIcon } from "../ui/icons.tsx";
 import { CARD } from "../ui/styles.ts";
 import { useWorkspace, type EditorInfo } from "./useWorkspace.ts";
+import { useStudentActivity } from "./useStudentActivity.ts";
 
 const EXTENSION: Record<string, string> = {
   javascript: "js",
@@ -27,6 +28,8 @@ export default function CodeEditor({
   initialCode,
   prompt,
   instructions,
+  moduleId,
+  sectionId,
 }: {
   editor: EditorInfo;
   /** Shown in the window title bar, without extension. */
@@ -36,6 +39,9 @@ export default function CodeEditor({
   /** The task, and any extra detail, shown above the editor. */
   prompt?: string;
   instructions?: string;
+  /** Present for a lesson exercise; omitted by the free playground. */
+  moduleId?: string;
+  sectionId?: string;
 }) {
   const {
     codes,
@@ -46,6 +52,7 @@ export default function CodeEditor({
     clearHighlight,
     requestHelp,
   } = useWorkspace();
+  const { record, saveWork } = useStudentActivity();
   const [output, setOutput] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   const [tested, setTested] = useState(false);
@@ -54,6 +61,8 @@ export default function CodeEditor({
   );
   const [running, setRunning] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [edited, setEdited] = useState(false);
+  const [reportedWriting, setReportedWriting] = useState(false);
   const monacoEditor = useRef<Parameters<OnMount>[0] | null>(null);
   const decorations = useRef<ReturnType<
     Parameters<OnMount>[0]["createDecorationsCollection"]
@@ -61,6 +70,32 @@ export default function CodeEditor({
 
   const code = codes[editor.key] ?? initialCode;
   const mine = highlight?.editorKey === editor.key ? highlight : null;
+
+  useEffect(() => {
+    if (!edited || !moduleId || !sectionId || !editor.questionId) return;
+    const timer = window.setTimeout(
+      () =>
+        saveWork({
+          moduleId,
+          sectionId,
+          questionId: editor.questionId!,
+          kind: "code",
+          value: code,
+        }),
+      700,
+    );
+    return () => window.clearTimeout(timer);
+  }, [code, edited, editor.questionId, moduleId, saveWork, sectionId]);
+
+  function report(type: "writing_code" | "running_code" | "checking_code") {
+    if (!moduleId || !sectionId || !editor.questionId) return;
+    record({ moduleId, sectionId, questionId: editor.questionId, type });
+  }
+  function startWriting() {
+    if (reportedWriting) return;
+    setReportedWriting(true);
+    report("writing_code");
+  }
 
   // Register the starter code so the tutor can see it before the student has typed anything.
   useEffect(() => {
@@ -97,12 +132,16 @@ export default function CodeEditor({
   const onMount: OnMount = (instance) => {
     monacoEditor.current = instance;
     decorations.current = instance.createDecorationsCollection();
-    instance.onDidFocusEditorText(() => setActive(editor));
+    instance.onDidFocusEditorText(() => {
+      setActive(editor);
+      startWriting();
+    });
     setMounted(true);
   };
 
   async function runTests() {
     setActive(editor);
+    report("checking_code");
     setRunning(true);
     setTested(true);
     try {
@@ -134,11 +173,13 @@ export default function CodeEditor({
       setRunError(editor.key, message);
     } finally {
       setRunning(false);
+      setReportedWriting(false);
     }
   }
 
   async function runCode() {
     setActive(editor);
+    report("running_code");
     setRunning(true);
     setTested(false);
     setTestResults(null);
@@ -164,6 +205,7 @@ export default function CodeEditor({
       setRunError(editor.key, output);
     } finally {
       setRunning(false);
+      setReportedWriting(false);
     }
   }
 
@@ -232,6 +274,8 @@ export default function CodeEditor({
             onMount={onMount}
             onChange={(value) => {
               setCode(editor.key, value ?? "");
+              setEdited(true);
+              startWriting();
               setTested(false);
               setTestResults(null);
               // A run error only applies to the exact code that produced it.

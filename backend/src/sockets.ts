@@ -7,6 +7,7 @@ import type {
   ModuleChangedPayload,
   PresenceUpdatePayload,
   RaisedHandsUpdatePayload,
+  StudentActivityUpdatePayload,
   ServerToClientEvents,
 } from "../../shared/events.js";
 
@@ -31,6 +32,9 @@ const raisedHands = new Map<string, Map<string, number>>();
 let appIo: AppServer | null = null;
 export function emitModuleChanged(payload: ModuleChangedPayload) {
   appIo?.to(payload.classroomId).emit("module_changed", payload);
+}
+export function emitStudentActivityUpdate(payload: StudentActivityUpdatePayload) {
+  appIo?.to(payload.classroomId).emit("student_activity_update", payload);
 }
 
 function onlineStudentIds(classroomId: string): string[] {

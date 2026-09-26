@@ -11,6 +11,7 @@ import {
   toModuleProgress,
   toSectionProgress,
   toSubmission,
+  toStudentWork,
   toUser,
   unwrap,
   type AttemptRow,
@@ -21,6 +22,7 @@ import {
   type ModuleProgressRow,
   type ModuleRow,
   type SectionProgressRow,
+  type StudentWorkRow,
   type UserRow,
 } from "../rows.js";
 import type {
@@ -141,7 +143,7 @@ classroomsRouter.get(
     )
       return res.status(404).json({ error: "Student not found" });
     const studentId = String(req.params.studentId);
-    const [moduleProgress, sectionProgress, attempts, submissions] =
+    const [moduleProgress, sectionProgress, attempts, submissions, work] =
       await Promise.all([
         supabase
           .from("module_progress")
@@ -161,6 +163,7 @@ classroomsRouter.get(
           .select("*")
           .eq("student_id", studentId)
           .order("created_at"),
+        supabase.from("student_work").select("*").eq("student_id", studentId),
       ]).then((results) => results.map(unwrap));
     const submissionIds = (submissions as { id: string }[]).map((s) => s.id);
     const comments = submissionIds.length
@@ -183,6 +186,7 @@ classroomsRouter.get(
       attempts: (attempts as AttemptRow[]).map(toAttempt),
       submissions: (submissions as CodeSubmissionRow[]).map(toSubmission),
       comments: (comments as CommentRow[]).map(toComment),
+      work: (work as StudentWorkRow[]).map(toStudentWork),
     };
     res.json(body);
   },
