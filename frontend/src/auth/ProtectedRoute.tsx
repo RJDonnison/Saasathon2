@@ -13,7 +13,7 @@ export default function ProtectedRoute({ role, children }: { role: Role; childre
     // Mirrors the landing page's loading screen (same tokens, built from utilities).
     return (
       <main className="grid min-h-screen place-content-center justify-items-center gap-4 bg-canvas font-mono text-xs text-ink">
-        <span className="grid size-[46px] place-items-center rounded-xl bg-accent text-base text-ink">{`{ }`}</span>
+        <img className="size-[46px] object-contain" src="/favicon.svg" alt="" />
         Getting your workspace ready…
       </main>
     )
