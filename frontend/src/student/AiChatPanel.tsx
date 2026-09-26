@@ -256,7 +256,7 @@ export default function AiChatPanel({ moduleId }: { moduleId: string }) {
         role="log"
         aria-live="polite"
         aria-label="Conversation with your tutor"
-        className="flex max-h-[26rem] min-h-56 flex-1 flex-col gap-3 overflow-y-auto bg-canvas px-5 py-4 lg:max-h-none"
+        className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain bg-canvas px-5 py-4"
       >
         {messages.length === 0 && !thinking ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">

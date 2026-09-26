@@ -22,13 +22,13 @@ export default function AppShell({ role }: { role: Role }) {
   const inClass = useMatch('/student/class/*') !== null
   if (inClass) {
     return (
-      <div className="min-h-screen bg-canvas text-ink">
+      <div className="min-h-dvh bg-canvas text-ink">
         <Outlet />
       </div>
     )
   }
   return (
-    <div className="min-h-screen bg-canvas text-ink">
+    <div className="min-h-screen bg-canvas text-ink ">
       <header className="sticky top-0 z-20 border-b border-border bg-surface">
         <div className="mx-auto flex h-16 w-full max-w-6xl items-stretch gap-6 px-4 sm:gap-8 sm:px-6">
           {/* Same wordmark as the landing page, built from utilities with the app.css tokens. */}

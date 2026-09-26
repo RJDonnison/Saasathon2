@@ -84,13 +84,21 @@ export default function CodeEditor({
           endLineNumber: mine.endLine,
           endColumn: 1,
         },
-        options: { isWholeLine: true, className: "bg-peach/60" },
+        options: {
+          isWholeLine: true,
+          className: "bg-amber/40",
+          linesDecorationsClassName: "bg-amber",
+        },
       },
     ]);
-    monacoEditor.current.revealLineInCenter(mine.line);
-    monacoEditor.current
-      .getDomNode()
-      ?.scrollIntoView({ block: "center", behavior: "smooth" });
+    // Wait a beat: on small screens the editor's pane is switched in at the same moment, and Monaco needs its size.
+    const instance = monacoEditor.current;
+    const timer = window.setTimeout(() => {
+      instance.layout();
+      instance.revealLineInCenter(mine.line);
+      instance.getDomNode()?.scrollIntoView({ block: "center", behavior: "smooth" });
+    }, 60);
+    return () => window.clearTimeout(timer);
   }, [mine, mounted, spotLine, spotNonce]);
 
   const onMount: OnMount = (instance) => {
