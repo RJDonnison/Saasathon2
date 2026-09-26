@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Router, type RequestHandler } from "express";
 import { requireRole } from "../auth.js";
-import { inLessonWindow, liveModuleIds, membershipFor, studentInClassroom } from "../access.js";
+import { lessonOpen, liveModuleIds, membershipFor, studentInClassroom } from "../access.js";
 import { supabase } from "../supabase.js";
 import { disconnectClassroomMember } from "../sockets.js";
 import {
@@ -445,8 +445,8 @@ classroomsRouter.get("/:id/lessons", requireRole("student"), async (req, res) =>
         });
       }
     }
-    const available = inLessonWindow(m) || live.has(m.id);
-    // Outside its window a lesson is only a title and its times: no intro, contents or exercises.
+    const available = lessonOpen(m, live);
+    // A live-only lesson that is not being taught is only a title: no intro, contents or exercises.
     return {
       ...toModule(m),
       content: available ? m.content : "",
@@ -594,7 +594,7 @@ classroomsRouter.get("/:id/modules", async (req, res) => {
   const rows = unwrap(await query.order("position").order("id")) as ModuleRow[];
   const live = req.user!.role === "student" ? await liveModuleIds(String(req.params.id)) : null;
   const body: ListModulesResponse = rows.map((row) =>
-    live && !(inLessonWindow(row) || live.has(row.id)) ? { ...toModule(row), content: "" } : toModule(row),
+    live && !lessonOpen(row, live) ? { ...toModule(row), content: "" } : toModule(row),
   );
   res.json(body);
 });
