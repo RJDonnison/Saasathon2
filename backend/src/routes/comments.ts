@@ -90,10 +90,10 @@ commentsRouter.post("/attempts", async (req, res) => {
   const question = unwrap(
     await supabase
       .from("questions")
-      .select("id,answer_key, sections!inner(module_id)")
+      .select("id,answer_key,kind,sections!inner(module_id)")
       .eq("id", b.questionId)
       .maybeSingle(),
-  ) as unknown as WithModule<{ id: string; answer_key: string | null }> | null;
+  ) as unknown as WithModule<{ id: string; answer_key: string | null; kind: string }> | null;
   const moduleId = question ? moduleIdOf(question) : null;
   if (
     !question ||
@@ -102,7 +102,7 @@ commentsRouter.post("/attempts", async (req, res) => {
   )
     return res.status(404).json({ error: "Question not found" });
   const isCorrect =
-    question.answer_key === null
+    question.kind === "long" || question.answer_key === null
       ? null
       : question.answer_key.trim().toLowerCase() ===
         b.answer.trim().toLowerCase();

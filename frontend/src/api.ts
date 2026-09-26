@@ -63,6 +63,10 @@ import type {
   ListQuestionCommentsResponse,
   LessonFeedbackReport,
   LessonFeedbackStudentDetail,
+  AiLessonPlanRequest,
+  AiLessonPlanResponse,
+  SaveTeacherLessonPlanRequest,
+  TeacherLessonPlan,
 } from "../../shared/types";
 import { supabase } from "./supabase.ts";
 
@@ -289,6 +293,15 @@ export const api = {
   /** Teacher-only drafting/planning assistant (for the teacher dashboard to call). */
   aiDraft: (body: AiDraftRequest) =>
     post<AiDraftResponse>("/api/ai/draft", body),
+  aiLessonPlan: (body: AiLessonPlanRequest) =>
+    post<AiLessonPlanResponse>("/api/ai/lesson-plan", body),
+  listTeacherLessonPlans: () => request<TeacherLessonPlan[]>("/api/lesson-plans"),
+  createTeacherLessonPlan: (body: SaveTeacherLessonPlanRequest) =>
+    post<TeacherLessonPlan>("/api/lesson-plans", body),
+  updateTeacherLessonPlan: (id: string, body: SaveTeacherLessonPlanRequest) =>
+    request<TeacherLessonPlan>(`/api/lesson-plans/${encodeURIComponent(id)}`, { method: "PUT", json: body }),
+  linkTeacherLessonPlanModule: (id: string, moduleId: string) =>
+    post<{ moduleId: string }>(`/api/lesson-plans/${encodeURIComponent(id)}/module`, { moduleId }),
   aiCodeTestCandidates: (body: AiCodeTestCandidatesRequest) =>
     post<AiCodeTestCandidatesResponse>("/api/ai/code-test-candidates", body),
   createBuilderModule: (document: ModuleBuilderDocument) =>

@@ -43,6 +43,8 @@ export default function ClassroomGrid({
   onSelect,
   activity,
   liveProgress,
+  fallbackModuleId,
+  onConnect,
   showLiveProgress,
 }: {
   students: User[] | null;
@@ -51,6 +53,8 @@ export default function ClassroomGrid({
   onSelect: (id: string | null) => void;
   activity: Record<string, StudentActivitySnapshot>;
   liveProgress: Record<string, LiveModuleStudentAggregate>;
+  fallbackModuleId?: string | null;
+  onConnect: (studentId: string, moduleId: string, questionId: string | null) => void;
   showLiveProgress: boolean;
 }) {
   // Online students first, then alphabetical.
@@ -108,55 +112,64 @@ export default function ClassroomGrid({
             const progressDisplay = aggregate
               ? LIVE_PROGRESS_DISPLAY[progress]
               : null;
+            const activeModuleId = active?.moduleId ?? fallbackModuleId ?? null;
             return (
               <li key={s.id}>
-                <button
-                  type="button"
-                  aria-pressed={selectedId === s.id}
-                  onClick={() => onSelect(selectedId === s.id ? null : s.id)}
-                  className={`flex w-full items-center gap-3 rounded-[14px] border border-border bg-surface p-3.5 text-left transition hover:-translate-y-px hover:border-accent/60 hover:shadow-[0_8px_22px_-14px_color-mix(in_srgb,var(--color-ink)_35%,transparent)] aria-pressed:border-accent aria-pressed:ring-3 aria-pressed:ring-accent/25 ${FOCUS_RING}`}
-                >
-                  <Avatar name={s.name} id={s.id} />
-                  <span className="flex min-w-0 flex-1 flex-col gap-1">
-                    {/* Font utilities are `!` because of app.css's `button { font: inherit }` (see ui/styles.ts). */}
-                    <span className="block truncate text-sm! font-semibold!">
-                      {s.name}
-                    </span>
-                    {progressDisplay && (
-                      <span
-                        className="flex items-center gap-1.5 text-xs! font-normal! text-muted"
-                        aria-label={progressDisplay.label}
-                      >
-                        <span
-                          aria-hidden="true"
-                          className={`size-2 rounded-full ${progressDisplay.indicator}`}
-                        />
-                        <span
-                          className="h-1.5 w-14 overflow-hidden rounded-full bg-surface-soft"
-                          aria-hidden="true"
-                        >
-                          <span
-                            className={`block h-full rounded-full bg-accent ${progressDisplay.fill}`}
-                          />
+                <div className={`flex items-center gap-2 rounded-[14px] border border-border bg-surface p-2.5 transition hover:border-accent/60 ${selectedId === s.id ? "border-accent ring-3 ring-accent/25" : ""}`}>
+                  <button
+                    type="button"
+                    aria-pressed={selectedId === s.id}
+                    onClick={() => onSelect(selectedId === s.id ? null : s.id)}
+                    className={`flex min-w-0 flex-1 items-center gap-3 rounded-lg p-1.5 text-left ${FOCUS_RING}`}
+                  >
+                    <Avatar name={s.name} id={s.id} />
+                    <span className="flex min-w-0 flex-1 flex-col gap-1">
+                      <span className="block truncate text-sm! font-semibold!">
+                        {s.name}
+                      </span>
+                      {progressDisplay && (
+                        <span className="flex items-center gap-1.5 text-xs! font-normal! text-muted" aria-label={progressDisplay.label}>
+                          <span aria-hidden="true" className={`size-2 rounded-full ${progressDisplay.indicator}`} />
+                          <span className="h-1.5 w-14 overflow-hidden rounded-full bg-surface-soft" aria-hidden="true">
+                            <span className={`block h-full rounded-full bg-accent ${progressDisplay.fill}`} />
+                          </span>
+                          <span>{progressDisplay.shortLabel}</span>
                         </span>
-                        <span>{progressDisplay.shortLabel}</span>
+                      )}
+                      <span className="flex items-center gap-1.5 text-xs! font-normal! text-muted">
+                        <Dot live={isOnline} />
+                        {isOnline ? "Online" : "Offline"}
                       </span>
-                    )}
-                    <span className="flex items-center gap-1.5 text-xs! font-normal! text-muted">
-                      <Dot live={isOnline} />
-                      {isOnline ? "Online" : "Offline"}
+                      {active?.questionId && (
+                        <span className="truncate text-xs! font-normal! text-muted">
+                          {active.type === "writing_code" || active.type === "running_code" || active.type === "checking_code"
+                            ? "Working in code"
+                            : "Working on a question"}
+                        </span>
+                      )}
                     </span>
-                    {active?.questionId && (
-                      <span className="truncate text-xs! font-normal! text-muted">
-                        {active.type === "writing_code" ||
-                        active.type === "running_code" ||
-                        active.type === "checking_code"
-                          ? "Working in code"
-                          : "Working on a question"}
-                      </span>
-                    )}
-                  </span>
-                </button>
+                  </button>
+                  {activeModuleId ? (
+                    <button
+                      type="button"
+                      onClick={() => onConnect(s.id, activeModuleId, active?.moduleId === activeModuleId ? active.questionId : null)}
+                      aria-label={`Connect to ${s.name}'s screen`}
+                      className={`flex-none rounded-lg bg-accent px-3 py-2 text-xs! font-semibold! text-white transition hover:opacity-90 ${FOCUS_RING}`}
+                    >
+                      Connect
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled
+                      title="Connect becomes available when a lesson is open"
+                      aria-label={`Connect to ${s.name}'s screen when a lesson is open`}
+                      className={`flex-none rounded-lg border border-border px-3 py-2 text-xs! font-semibold! text-muted opacity-60 ${FOCUS_RING}`}
+                    >
+                      Connect
+                    </button>
+                  )}
+                </div>
               </li>
             );
           })}

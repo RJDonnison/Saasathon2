@@ -51,7 +51,7 @@ import type {
 } from "../../../shared/types.js";
 
 export const modulesRouter = Router();
-const kinds: QuestionKind[] = ["mcq", "short", "code", "math"];
+const kinds: QuestionKind[] = ["mcq", "short", "long", "code", "math"];
 const validPosition = (value: unknown) =>
   value === undefined || (Number.isInteger(value) && (value as number) >= 0);
 const FUNCTION_NAME = /^[A-Za-z_$][A-Za-z0-9_$]{0,63}$/;

@@ -22,6 +22,9 @@ import type {
   SectionProgress,
   StudentActivity,
   StudentWork,
+  LessonPlanDocument,
+  LessonPlanStatus,
+  TeacherLessonPlan,
   User,
 } from "../../shared/types.js";
 
@@ -194,6 +197,18 @@ export type StudentActivityRow = {
   type: StudentActivity["type"];
   created_at: string;
 };
+export type TeacherLessonPlanRow = {
+  id: string;
+  classroom_id: string;
+  teacher_id: string;
+  module_id: string | null;
+  document: LessonPlanDocument;
+  status: LessonPlanStatus;
+  lesson_date: string | null;
+  taught_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
 
 const iso = (value: string) => new Date(value).toISOString();
 export const toClassroom = (
@@ -203,6 +218,22 @@ export const toClassroom = (
   id: r.id,
   name: r.name,
   teacherName,
+});
+export const toTeacherLessonPlan = (
+  r: TeacherLessonPlanRow,
+  classroomName: string,
+): TeacherLessonPlan => ({
+  id: r.id,
+  classroomId: r.classroom_id,
+  classroomName,
+  teacherId: r.teacher_id,
+  moduleId: r.module_id,
+  document: r.document,
+  status: r.status,
+  lessonDate: r.lesson_date,
+  taughtAt: r.taught_at,
+  createdAt: iso(r.created_at),
+  updatedAt: iso(r.updated_at),
 });
 export const toMembership = (r: MembershipRow): Membership => ({
   id: r.id,

@@ -38,6 +38,7 @@ type Notice = { message: string; tone: "success" | "error" };
 const questionLabel: Record<QuestionKind, string> = {
   mcq: "Multiple choice",
   short: "Short answer",
+  long: "Long answer",
   code: "Code exercise",
   math: "Math question",
 };
@@ -173,9 +174,14 @@ export default function ModuleBuilder() {
   const { user } = useAuth();
   const classPath = `/teacher/class/${user?.classroomId ?? ""}`;
   const [searchParams] = useSearchParams();
-  const plannerDocument = (
-    location.state as { plannerDocument?: ModuleBuilderDocument } | null
-  )?.plannerDocument;
+  const routeState = location.state as {
+    plannerDocument?: ModuleBuilderDocument;
+    sourceLessonPlanId?: string;
+    plannerWarning?: string;
+    fromLessonPlan?: boolean;
+  } | null;
+  const plannerDocument = routeState?.plannerDocument;
+  const sourceLessonPlanId = routeState?.sourceLessonPlanId;
   const [document, setDocument] = useState<ModuleBuilderDocument>(
     () => (!moduleId && plannerDocument) || createBlankModuleDocument(),
   );
@@ -183,7 +189,11 @@ export default function ModuleBuilder() {
   const [access, setAccess] = useState<ModuleAccess>("anytime");
   const [loading, setLoading] = useState(Boolean(moduleId));
   const [saving, setSaving] = useState(false);
-  const [notice, setNotice] = useState<Notice | null>(null);
+  const [notice, setNotice] = useState<Notice | null>(() =>
+    routeState?.plannerWarning
+      ? { message: routeState.plannerWarning, tone: "error" }
+      : null,
+  );
   const [selected, setSelected] = useState<string | undefined>();
   const [assistantOpen, setAssistantOpen] = useState(false);
   const { confirm, toast } = useDialog();
@@ -301,22 +311,29 @@ export default function ModuleBuilder() {
       const result = moduleId
         ? await api.saveBuilderModule(moduleId, revision, next)
         : await api.createBuilderModule(next);
+      let linkError: string | null = null;
+      if (!moduleId && sourceLessonPlanId) {
+        try {
+          await api.linkTeacherLessonPlanModule(sourceLessonPlanId, result.module.id);
+        } catch (error) {
+          linkError = error instanceof Error ? error.message : "The plan could not be linked";
+        }
+      }
       setDocument(documentFrom(result.module));
       setRevision(result.module.revision);
       if (!moduleId)
         navigate(`/teacher/modules/${result.module.id}`, { replace: true });
       setNotice({
-        message:
-          result.module.status === "published"
+        message: linkError
+          ? `${result.module.status === "published" ? "Module published" : "Draft saved"}, but it could not be linked to its planned lesson: ${linkError}`
+          : result.module.status === "published"
             ? "Published changes are live for students."
-            : "Draft saved. Students cannot see it.",
-        tone: "success",
+            : sourceLessonPlanId
+              ? "Draft saved and linked to its planned lesson. Students cannot see it until you publish it."
+              : "Draft saved. Students cannot see it until you publish it.",
+        tone: linkError ? "error" : "success",
       });
-      toast(
-        result.module.status === "published"
-          ? "Module published."
-          : "Draft saved.",
-      );
+      toast(linkError ? "Module saved, but the plan link failed." : result.module.status === "published" ? "Module published." : sourceLessonPlanId ? "Draft saved and linked." : "Draft saved.");
     } catch (error) {
       setNotice({
         message:
@@ -374,9 +391,12 @@ export default function ModuleBuilder() {
             Back to classroom
           </Link>
           <Heading as="h1" variant="title">
-            Build a lesson
+            {routeState?.fromLessonPlan ? "Review student module" : "Build a lesson"}
           </Heading>
           <p className="m-0 text-sm text-muted">
+            {routeState?.fromLessonPlan
+              ? "Built from your saved lesson plan. Review the student-facing content, then publish when it is ready. "
+              : ""}
             {itemCount} lesson items ·{" "}
             {document.status === "draft"
               ? "Draft — hidden from students"
@@ -997,6 +1017,7 @@ function QuestionEditor({
           >
             <option value="mcq">Multiple choice</option>
             <option value="short">Short answer</option>
+            <option value="long">Long answer</option>
             <option value="code">Code exercise</option>
           </select>
         </label>
