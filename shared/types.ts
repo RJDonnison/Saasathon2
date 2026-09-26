@@ -443,6 +443,8 @@ export interface AiModuleSuggestionsRequest {
 }
 export interface AiModuleSuggestionsResponse {
   suggestions: AiModuleSuggestion[];
+  /** Present when the assistant could not produce a reviewable builder document. */
+  warning?: string;
 }
 export interface UpdateModuleRequest {
   title?: string;
