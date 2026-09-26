@@ -61,6 +61,8 @@ import type {
   CreateQuestionCommentRequest,
   CreateQuestionCommentResponse,
   ListQuestionCommentsResponse,
+  LessonFeedbackReport,
+  LessonFeedbackStudentDetail,
 } from "../../shared/types";
 import { supabase } from "./supabase.ts";
 
@@ -228,6 +230,12 @@ export const api = {
     request<GetSessionResponse>(`/api/classrooms/${classroomId}/session`, {
       method: "DELETE",
     }),
+  recordLessonFollow: (sessionId: string, following: boolean) =>
+    post<void>("/api/feedback/follow", { sessionId, following }),
+  getLessonFeedback: (sessionId: string) =>
+    request<LessonFeedbackReport>(`/api/feedback/sessions/${encodeURIComponent(sessionId)}`),
+  getLessonStudentFeedback: (sessionId: string, studentId: string) =>
+    request<LessonFeedbackStudentDetail>(`/api/feedback/sessions/${encodeURIComponent(sessionId)}/students/${encodeURIComponent(studentId)}`),
   createAttempt: (body: CreateAttemptRequest) =>
     post<CreateAttemptResponse>("/api/comments/attempts", body),
   createSubmission: (body: CreateSubmissionRequest) =>
