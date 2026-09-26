@@ -16,39 +16,14 @@ export function pickCurrent(lessons: LessonSummary[]): LessonSummary | null {
   );
 }
 
-function windowTime(iso: string): string {
-  return new Date(iso).toLocaleString(undefined, {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
-/** The teacher's time window for a lesson in words ("Opens Mon 9:00 am"), or null when it has no limit to mention. */
-export function lessonWindowLabel(
-  lesson: Pick<LessonSummary, "opensAt" | "closesAt" | "available">,
+/** Why a lesson is greyed out, or a note on one that is only open while taught; null for ordinary lessons. */
+export function lessonAccessLabel(
+  lesson: Pick<LessonSummary, "access" | "available">,
 ): string | null {
-  if (!lesson.available) {
-    if (lesson.opensAt && Date.parse(lesson.opensAt) > Date.now())
-      return `Opens ${windowTime(lesson.opensAt)}`;
-    return lesson.closesAt ? `Closed ${windowTime(lesson.closesAt)}` : null;
-  }
-  return lesson.closesAt && Date.parse(lesson.closesAt) > Date.now()
-    ? `Open until ${windowTime(lesson.closesAt)}`
-    : null;
-}
-
-/** The next moment (ms since epoch) a lesson's window opens or closes, so the list can be refreshed exactly then. */
-export function nextWindowChange(lessons: LessonSummary[]): number | null {
-  const now = Date.now();
-  const times = lessons
-    .flatMap((l) => [l.opensAt, l.closesAt])
-    .filter((t): t is string => t !== null)
-    .map((t) => Date.parse(t))
-    .filter((t) => t > now);
-  return times.length ? Math.min(...times) : null;
+  if (lesson.access !== "live") return null;
+  return lesson.available
+    ? "Open while your teacher teaches it"
+    : "Opens when your teacher teaches it";
 }
 
 /** Summary values shared by the student dashboard, class page, and live lesson. */

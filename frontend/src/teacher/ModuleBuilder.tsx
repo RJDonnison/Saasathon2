@@ -21,6 +21,7 @@ import { createBlankModuleDocument } from "./moduleBuilderDocument.ts";
 import type {
   AiModuleSuggestion,
   AiCodeTestCandidate,
+  ModuleAccess,
   ModuleBuilderDocument,
   QuestionKind,
   TeacherModule,
@@ -178,15 +179,11 @@ export default function ModuleBuilder() {
     () => (!moduleId && plannerDocument) || createBlankModuleDocument(),
   );
   const [revision, setRevision] = useState(0);
-  const [availability, setAvailability] = useState<{ opensAt: string | null; closesAt: string | null }>({ opensAt: null, closesAt: null });
+  const [access, setAccess] = useState<ModuleAccess>("anytime");
   const [loading, setLoading] = useState(Boolean(moduleId));
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [selected, setSelected] = useState<string | undefined>();
-  const [idea, setIdea] = useState("");
-  const [askingAi, setAskingAi] = useState(false);
-  const [suggestions, setSuggestions] = useState<AiModuleSuggestion[]>([]);
-  const [undo, setUndo] = useState<ModuleBuilderDocument | null>(null);
   const { confirm, toast } = useDialog();
 
   useEffect(() => {
@@ -197,7 +194,7 @@ export default function ModuleBuilder() {
         const teacher = module as TeacherModule;
         setDocument(documentFrom(teacher));
         setRevision(teacher.revision);
-        setAvailability({ opensAt: teacher.opensAt, closesAt: teacher.closesAt });
+        setAccess(teacher.access);
         const questionId = searchParams.get("questionId");
         if (questionId) setSelected(questionId);
       })
@@ -359,46 +356,6 @@ export default function ModuleBuilder() {
     }
   }
 
-  async function askAi() {
-    if (!idea.trim() || askingAi) return;
-    setAskingAi(true);
-    setNotice(null);
-    try {
-      const result = await api.aiModuleSuggestions({
-        request: idea,
-        document,
-        selectedItemId: selected,
-      });
-      setSuggestions(result.suggestions);
-      if (result.suggestions.length === 0)
-        setNotice({
-          message:
-            result.warning ??
-            "The assistant could not make a usable suggestion. Please try again.",
-          tone: "error",
-        });
-    } catch (error) {
-      setNotice({
-        message: error instanceof Error ? error.message : "Could not get suggestions",
-        tone: "error",
-      });
-    } finally {
-      setAskingAi(false);
-    }
-  }
-
-  function accept(suggestion: AiModuleSuggestion) {
-    if (!suggestion.document) return;
-    setUndo(document);
-    setDocument(withFreshIds(suggestion.document));
-    setSelected(undefined);
-    setSuggestions([]);
-    setNotice({
-      message: "AI draft applied. Review it, then save when you are ready.",
-      tone: "success",
-    });
-  }
-
   if (loading) return <p className="m-0 text-muted">Loading module…</p>;
 
   return (
@@ -504,8 +461,7 @@ export default function ModuleBuilder() {
           <AvailabilityCard
             key={moduleId ?? "new"}
             moduleId={moduleId}
-            opensAt={availability.opensAt}
-            closesAt={availability.closesAt}
+            access={access}
           />
 
           {document.sections.map((section, sectionIndex) => (
@@ -574,74 +530,135 @@ export default function ModuleBuilder() {
           aria-label="Writing assistant"
           className="min-w-0 lg:sticky lg:top-24 lg:h-[calc(100dvh-7rem)]"
         >
-          <Card
-            title="Writing assistant"
-            className="flex h-full min-h-0 flex-col"
-            bodyClassName="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-5"
-          >
-            <div
-              className={`rounded-xl px-3 py-2.5 text-xs leading-relaxed ${TINT.lavender}`}
-            >
-              {selected
-                ? "Your suggestion will use the selected lesson item as context."
-                : "Ask for a full lesson, reading, questions, exercises, or teaching advice."}
-            </div>
-            <label className="flex flex-col gap-2 text-sm text-muted">
-              What would you like help with?
-              <textarea
-                className={`${INPUT} min-h-28 py-2.5`}
-                value={idea}
-                onChange={(event) => setIdea(event.target.value)}
-                placeholder={
-                  selected
-                    ? "Rewrite this for beginners and add a quick check-for-understanding question…"
-                    : "Create a 20-minute beginner lesson on loops with two questions…"
-                }
-              />
-            </label>
-            <Button
-              variant="primary"
-              disabled={askingAi || !idea.trim()}
-              onClick={() => void askAi()}
-            >
-              {askingAi ? "Thinking…" : "Ask assistant"}
-            </Button>
-            {suggestions.map((suggestion) => (
-              <div
-                key={suggestion.id}
-                className="flex flex-col gap-3 rounded-xl border border-border bg-surface-soft p-3 text-sm"
-              >
-                <span className="font-medium text-ink">{suggestion.label}</span>
-                <p className="m-0 whitespace-pre-wrap text-muted">
-                  {suggestion.reply}
-                </p>
-                {suggestion.document && (
-                  <Button
-                    size="sm"
-                    className="self-start"
-                    onClick={() => accept(suggestion)}
-                  >
-                    Apply to module
-                  </Button>
-                )}
-              </div>
-            ))}
-            {undo && (
-              <Button
-                size="sm"
-                className="self-start"
-                onClick={() => {
-                  setDocument(undo);
-                  setUndo(null);
-                }}
-              >
-                Undo last suggestion
-              </Button>
-            )}
-          </Card>
+          <WritingAssistant
+            document={document}
+            selectedItemId={selected}
+            onApply={(suggestion) => {
+              setDocument(withFreshIds(suggestion));
+              setSelected(undefined);
+              setNotice({
+                message: "AI draft applied. Review it, then save when you are ready.",
+                tone: "success",
+              });
+            }}
+            onUndo={(previous) => {
+              setDocument(previous);
+              setSelected(undefined);
+            }}
+          />
         </aside>
       </div>
     </div>
+  );
+}
+
+/** Keeps assistant typing local so it does not re-render every lesson editor. */
+function WritingAssistant({
+  document,
+  selectedItemId,
+  onApply,
+  onUndo,
+}: {
+  document: ModuleBuilderDocument;
+  selectedItemId?: string;
+  onApply: (document: ModuleBuilderDocument) => void;
+  onUndo: (document: ModuleBuilderDocument) => void;
+}) {
+  const [idea, setIdea] = useState("");
+  const [askingAi, setAskingAi] = useState(false);
+  const [suggestions, setSuggestions] = useState<AiModuleSuggestion[]>([]);
+  const [undo, setUndo] = useState<ModuleBuilderDocument | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function askAi() {
+    if (!idea.trim() || askingAi) return;
+    setAskingAi(true);
+    setError(null);
+    try {
+      const result = await api.aiModuleSuggestions({
+        request: idea,
+        document,
+        selectedItemId,
+      });
+      setSuggestions(result.suggestions);
+      if (result.suggestions.length === 0)
+        setError(
+          result.warning ??
+            "The assistant could not make a usable suggestion. Please try again.",
+        );
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Could not get suggestions");
+    } finally {
+      setAskingAi(false);
+    }
+  }
+
+  function accept(suggestion: AiModuleSuggestion) {
+    if (!suggestion.document) return;
+    setUndo(document);
+    onApply(suggestion.document);
+    setSuggestions([]);
+  }
+
+  return (
+    <Card
+      title="Writing assistant"
+      className="flex h-full min-h-0 flex-col"
+      bodyClassName="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-5"
+    >
+      <div className={`rounded-xl px-3 py-2.5 text-xs leading-relaxed ${TINT.lavender}`}>
+        {selectedItemId
+          ? "Your suggestion will use the selected lesson item as context."
+          : "Ask for a full lesson, reading, questions, exercises, or teaching advice."}
+      </div>
+      <label className="flex flex-col gap-2 text-sm text-muted">
+        What would you like help with?
+        <textarea
+          className={`${INPUT} min-h-28 py-2.5`}
+          value={idea}
+          onChange={(event) => setIdea(event.target.value)}
+          placeholder={
+            selectedItemId
+              ? "Rewrite this for beginners and add a quick check-for-understanding question…"
+              : "Create a 20-minute beginner lesson on loops with two questions…"
+          }
+        />
+      </label>
+      <Button
+        variant="primary"
+        disabled={askingAi || !idea.trim()}
+        onClick={() => void askAi()}
+      >
+        {askingAi ? "Thinking…" : "Ask assistant"}
+      </Button>
+      {error && <p className={`m-0 rounded-xl px-3 py-2 text-sm ${TINT.peach}`} role="alert">{error}</p>}
+      {suggestions.map((suggestion) => (
+        <div
+          key={suggestion.id}
+          className="flex flex-col gap-3 rounded-xl border border-border bg-surface-soft p-3 text-sm"
+        >
+          <span className="font-medium text-ink">{suggestion.label}</span>
+          <p className="m-0 whitespace-pre-wrap text-muted">{suggestion.reply}</p>
+          {suggestion.document && (
+            <Button size="sm" className="self-start" onClick={() => accept(suggestion)}>
+              Apply to module
+            </Button>
+          )}
+        </div>
+      ))}
+      {undo && (
+        <Button
+          size="sm"
+          className="self-start"
+          onClick={() => {
+            onUndo(undo);
+            setUndo(null);
+          }}
+        >
+          Undo last suggestion
+        </Button>
+      )}
+    </Card>
   );
 }
 

@@ -8,7 +8,7 @@ import { CARD, FOCUS_RING, TINT } from "../ui/styles.ts";
 import {
   introSnippet,
   lessonOverview,
-  lessonWindowLabel,
+  lessonAccessLabel,
   plural,
   STATUS_LABEL,
   timeAgo,
@@ -389,16 +389,16 @@ export default function StudentClassPage() {
                         {STATUS_LABEL[lesson.status]}
                       </span>
                     </div>
-                    {lessonWindowLabel(lesson) && (
+                    {lessonAccessLabel(lesson) && (
                       <p
                         className={`mb-0! mt-3! text-[13px]! font-medium! ${lesson.available ? "text-muted" : "text-peach-ink"}`}
                       >
                         {lesson.available ? "" : "Locked. "}
-                        {lessonWindowLabel(lesson)}
+                        {lessonAccessLabel(lesson)}
                       </p>
                     )}
                     {lesson.sections.length > 0 && (
-                      <>
+                      <div className="flex max-h-40 flex-col gap-2 overflow-y-auto">
                         <h4 className="mb-2! mt-4! font-display! text-[13px]! font-semibold!">
                           What’s in this lesson
                         </h4>
@@ -415,10 +415,10 @@ export default function StudentClassPage() {
                             </li>
                           ))}
                         </ol>
-                      </>
+                      </div>
                     )}
                     {lesson.exercises.length > 0 && (
-                      <>
+                      <div className="flex max-h-48 flex-col gap-1 overflow-y-auto">
                         <h4 className="mb-1! mt-4! font-display! text-[13px]! font-semibold!">
                           Your work
                         </h4>
@@ -435,7 +435,7 @@ export default function StudentClassPage() {
                             </span>
                           </div>
                         ))}
-                      </>
+                      </div>
                     )}
                     </article>
                     </LessonCardFrame>

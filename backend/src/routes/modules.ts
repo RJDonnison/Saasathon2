@@ -60,17 +60,42 @@ const MAX_JSON_BYTES = 8_000;
 const MAX_MODULE_MARKDOWN = 50_000;
 const MAX_BLOCK_MARKDOWN = 25_000;
 
-/** Markdown is rendered for students. Keep it deliberately boring: no HTML, MDX, images or directives. */
+/** Removes fenced code blocks and inline code spans: they render as literal text, so code samples may contain anything. */
+function withoutCode(markdown: string): string {
+  const kept: string[] = [];
+  let fence: { char: string; size: number } | null = null;
+  for (const line of markdown.split("\n")) {
+    if (fence) {
+      const close = line.match(/^ {0,3}(`{3,}|~{3,})\s*$/);
+      if (close && close[1][0] === fence.char && close[1].length >= fence.size)
+        fence = null;
+      continue;
+    }
+    const open = line.match(/^ {0,3}(`{3,}|~{3,})/);
+    if (open) {
+      fence = { char: open[1][0], size: open[1].length };
+      continue;
+    }
+    kept.push(line);
+  }
+  return kept.join("\n").replace(/(`+)[\s\S]*?\1/g, "");
+}
+
+/**
+ * Markdown is rendered for students. Keep the prose deliberately boring: no HTML, MDX, images or directives.
+ * Code blocks and code spans are exempt because they are shown literally (react-markdown never emits raw HTML).
+ */
 function validMarkdown(value: unknown, maximum: number): value is string {
   if (typeof value !== "string" || value.length > maximum) return false;
+  const prose = withoutCode(value);
   if (
-    /<\/?[A-Za-z][^>]*>|<!--|!\[|^\s*:::/m.test(value) ||
-    /(^|\n)\s*(?:import|export)\s+/m.test(value) ||
-    /\{[#/]?[A-Za-z][^}]*\}/.test(value)
+    /<\/?[A-Za-z][^>]*>|<!--|!\[|^\s*:::/m.test(prose) ||
+    /(^|\n)\s*(?:import|export)\s+/m.test(prose) ||
+    /\{[#/]?[A-Za-z][^}]*\}/.test(prose)
   )
     return false;
 
-  const links = value.matchAll(/(?<!!)\[[^\]]*\]\(([^)\s]+)(?:\s+[^)]*)?\)/g);
+  const links = prose.matchAll(/(?<!!)\[[^\]]*\]\(([^)\s]+)(?:\s+[^)]*)?\)/g);
   for (const link of links) {
     const target = link[1].replace(/^<|>$/g, "");
     if (
@@ -585,34 +610,21 @@ modulesRouter.get("/:id", async (req, res) => {
   if (closed?.status === "published")
     return res
       .status(403)
-      .json({ error: "This lesson isn't open right now. Check the time your teacher set for it." });
+      .json({ error: "This lesson is only open while your teacher is teaching it." });
   res.status(404).json({ error: "Module not found" });
 });
 
-/** The time window students may open a lesson in. Teachers always can; a live lesson is open regardless. */
+/** Any time, or only while the teacher is running the lesson live. Teachers are never limited. */
 modulesRouter.put("/:id/availability", requireRole("teacher"), async (req, res) => {
   const current = await ownedModule(req, res, req.params.id);
   if (!current) return;
-  const body = (req.body ?? {}) as Partial<UpdateModuleAvailabilityRequest>;
-  const parse = (value: unknown): string | null | undefined => {
-    if (value === null) return null;
-    if (typeof value !== "string" || Number.isNaN(Date.parse(value))) return undefined;
-    return new Date(value).toISOString();
-  };
-  const opensAt = parse(body.opensAt);
-  const closesAt = parse(body.closesAt);
-  if (
-    opensAt === undefined ||
-    closesAt === undefined ||
-    (opensAt && closesAt && Date.parse(closesAt) <= Date.parse(opensAt))
-  )
-    return res
-      .status(400)
-      .json({ error: "Use valid times, with the close after the open" });
+  const { access } = (req.body ?? {}) as Partial<UpdateModuleAvailabilityRequest>;
+  if (access !== "anytime" && access !== "live")
+    return res.status(400).json({ error: "access must be anytime or live" });
   const row = unwrap(
     await supabase
       .from("modules")
-      .update({ opens_at: opensAt, closes_at: closesAt })
+      .update({ access })
       .eq("id", current.id)
       .select("*")
       .single(),

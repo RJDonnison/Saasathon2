@@ -4,56 +4,48 @@ import Button from "../ui/Button.tsx";
 import Card from "../ui/Card.tsx";
 import { useDialog } from "../ui/DialogContext.tsx";
 import { CalendarIcon } from "../ui/icons.tsx";
-import { INPUT } from "../ui/styles.ts";
+import type { ModuleAccess } from "../../../shared/types";
 
-const pad = (n: number) => String(n).padStart(2, "0");
-/** An ISO instant as the local `YYYY-MM-DDTHH:mm` a datetime-local input wants. */
-function toInput(iso: string | null): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-const fromInput = (value: string) => (value ? new Date(value).toISOString() : null);
+const OPTIONS: Array<{ value: ModuleAccess; label: string; hint: string }> = [
+  {
+    value: "anytime",
+    label: "Open any time",
+    hint: "Students can do this lesson whenever they like.",
+  },
+  {
+    value: "live",
+    label: "Only while I’m teaching it",
+    hint: "It unlocks when you start a live lesson on it and locks again when you move the class on or end the lesson.",
+  },
+];
 
-/** When students may open this lesson. Empty on a side = no limit; a lesson run live is always open. */
+/** Whether students can open this lesson whenever, or only while the teacher's live lesson is on it. */
 export default function AvailabilityCard({
   moduleId,
-  opensAt,
-  closesAt,
+  access,
 }: {
   moduleId: string | undefined;
-  opensAt: string | null;
-  closesAt: string | null;
+  access: ModuleAccess;
 }) {
   const { toast } = useDialog();
-  const [saved, setSaved] = useState({ opensAt, closesAt });
-  const [opens, setOpens] = useState(toInput(opensAt));
-  const [closes, setCloses] = useState(toInput(closesAt));
-  // "Any time" lessons have no window at all; the times typed below are kept if the teacher switches back.
-  const [anytime, setAnytime] = useState(!opensAt && !closesAt);
+  const [saved, setSaved] = useState(access);
+  const [choice, setChoice] = useState(access);
   const [saving, setSaving] = useState(false);
-  const next = {
-    opensAt: anytime ? null : fromInput(opens),
-    closesAt: anytime ? null : fromInput(closes),
-  };
-  const dirty = next.opensAt !== saved.opensAt || next.closesAt !== saved.closesAt;
-  const backwards = !anytime && !!opens && !!closes && new Date(closes) <= new Date(opens);
-  const invalid = backwards || (!anytime && !opens && !closes);
 
   async function save() {
     if (!moduleId) return;
     setSaving(true);
     try {
-      await api.updateModuleAvailability(moduleId, next);
-      setSaved(next);
+      await api.updateModuleAvailability(moduleId, { access: choice });
+      setSaved(choice);
       toast(
-        anytime
-          ? "This lesson is open any time."
-          : "Lesson times saved.",
+        choice === "live"
+          ? "Students can only open this lesson while you teach it."
+          : "This lesson is open any time.",
       );
     } catch (error) {
       toast(
-        error instanceof Error ? error.message : "Could not save lesson times.",
+        error instanceof Error ? error.message : "Could not save this setting.",
         "error",
       );
     } finally {
@@ -74,73 +66,37 @@ export default function AvailabilityCard({
         </p>
       ) : (
         <>
-          <p className="m-0 text-sm leading-relaxed text-muted">
-            Choose whether students can do this lesson at any point, or only
-            between two times. Outside the times it shows as locked. A lesson
-            you start live is open to the class either way.
-          </p>
           <div
             role="radiogroup"
             aria-label="When students can open this lesson"
-            className="flex flex-wrap gap-2"
+            className="grid gap-3 sm:grid-cols-2"
           >
-            <Button
-              role="radio"
-              aria-checked={anytime}
-              variant={anytime ? "primary" : "default"}
-              onClick={() => setAnytime(true)}
-            >
-              Open any time
-            </Button>
-            <Button
-              role="radio"
-              aria-checked={!anytime}
-              variant={anytime ? "default" : "primary"}
-              onClick={() => setAnytime(false)}
-            >
-              Only between set times
-            </Button>
+            {OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                role="radio"
+                aria-checked={choice === option.value}
+                onClick={() => setChoice(option.value)}
+                className="flex flex-col gap-1 rounded-xl border border-border bg-surface p-4 text-left transition hover:bg-surface-soft aria-checked:border-accent aria-checked:bg-mint/70"
+              >
+                <strong className="text-sm! font-semibold! text-ink">
+                  {option.label}
+                </strong>
+                <span className="text-xs! font-normal! leading-relaxed! text-muted">
+                  {option.hint}
+                </span>
+              </button>
+            ))}
           </div>
-          {!anytime && (
-          <div className="grid gap-4 sm:grid-cols-2">
-            <label className="flex flex-col gap-2 text-sm text-muted">
-              Opens
-              <input
-                type="datetime-local"
-                className={`${INPUT} h-11`}
-                value={opens}
-                onChange={(event) => setOpens(event.target.value)}
-              />
-            </label>
-            <label className="flex flex-col gap-2 text-sm text-muted">
-              Closes
-              <input
-                type="datetime-local"
-                className={`${INPUT} h-11`}
-                value={closes}
-                onChange={(event) => setCloses(event.target.value)}
-              />
-            </label>
-          </div>
-          )}
           <div className="flex flex-wrap items-center gap-3">
             <Button
               variant="primary"
-              disabled={saving || !dirty || invalid}
+              disabled={saving || choice === saved}
               onClick={() => void save()}
             >
-              {saving ? "Saving…" : "Save times"}
+              {saving ? "Saving…" : "Save"}
             </Button>
-            {backwards && (
-              <span role="alert" className="text-sm text-peach-ink">
-                Closing time must be after the opening time.
-              </span>
-            )}
-            {!anytime && !opens && !closes && (
-              <span className="text-sm text-muted">
-                Set an opening time, a closing time, or both.
-              </span>
-            )}
           </div>
         </>
       )}

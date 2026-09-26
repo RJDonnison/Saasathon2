@@ -14,7 +14,7 @@ import Dot from "../ui/Dot.tsx";
 import Heading from "../ui/Heading.tsx";
 import { BookIcon, CheckIcon } from "../ui/icons.tsx";
 import { CARD, FOCUS_RING, TINT } from "../ui/styles.ts";
-import { lessonOverview, lessonWindowLabel, plural } from "./lessons.ts";
+import { lessonOverview, lessonAccessLabel, plural } from "./lessons.ts";
 import { useClassData } from "./useClassData.ts";
 import { useWorkspace } from "./useWorkspace.ts";
 
@@ -342,7 +342,7 @@ export default function StudentHome() {
                           <span className="truncate">{m.title}</span>
                           {!m.available ? (
                             <span className="text-xs! font-medium! text-peach-ink">
-                              {lessonWindowLabel(m) ?? "Not open"}
+                              {lessonAccessLabel(m) ?? "Not open"}
                             </span>
                           ) : session?.moduleId === m.id ? (
                             <span className="text-xs! font-medium! text-mint-ink">
@@ -353,9 +353,9 @@ export default function StudentHome() {
                               You’re here
                             </span>
                           ) : (
-                            lessonWindowLabel(m) && (
+                            lessonAccessLabel(m) && (
                               <span className="text-xs! font-medium! text-muted">
-                                {lessonWindowLabel(m)}
+                                {lessonAccessLabel(m)}
                               </span>
                             )
                           )}
@@ -415,8 +415,8 @@ export default function StudentHome() {
                 </span>
                 <Heading>No lesson is open right now</Heading>
                 <p className="m-0 max-w-sm text-sm text-muted">
-                  Your teacher sets when each lesson opens. Check the times in
-                  the lesson list.
+                  These lessons open when your teacher teaches them. Join the
+                  class when a lesson goes live.
                 </p>
               </div>
             )}

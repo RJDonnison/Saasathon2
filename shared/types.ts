@@ -188,6 +188,8 @@ export interface ActivateClassroomResponse {
   user: User;
 }
 
+/** "anytime" = open whenever; "live" = open only while the teacher's live lesson is on this module. */
+export type ModuleAccess = "anytime" | "live";
 export interface Module {
   id: string;
   classroomId: string;
@@ -196,10 +198,8 @@ export interface Module {
   position: number;
   status: ModuleStatus;
   revision: number;
-  /** Students can only open the lesson from this time (ISO), or any time before closesAt when null. */
-  opensAt: string | null;
-  /** Students can no longer open the lesson after this time (ISO), or never when null. */
-  closesAt: string | null;
+  /** When students can open it: any time, or only while the teacher is running it live. */
+  access: ModuleAccess;
 }
 export interface Section {
   id: string;
@@ -274,7 +274,7 @@ export interface ExerciseSummary {
 /** A lesson as one student sees it: the module plus their progress and what is in it. */
 export interface LessonSummary extends Omit<Module, "status"> {
   status: ProgressStatus;
-  /** Whether the student can open it right now: inside its time window, or the teacher is running it live. */
+  /** Whether the student can open it right now: it is open any time, or the teacher is running it live. */
   available: boolean;
   sections: Array<{ id: string; title: string }>;
   exercises: ExerciseSummary[];
@@ -504,7 +504,7 @@ export interface SaveModuleBuilderResponse {
 /**
  * A teacher-only builder suggestion. `document` is a complete, reviewable replacement for the
  * in-progress builder document, so it can add reading blocks and questions as well as edit text.
- * It is omitted when the assistant is only giving advice.
+ * It is omitted when the assistant is giving advice or can only provide a planning draft.
  */
 export interface AiModuleSuggestion {
   id: string;
@@ -524,10 +524,9 @@ export interface AiModuleSuggestionsResponse {
   /** Present when the assistant could not produce a reviewable builder document. */
   warning?: string;
 }
-/** PUT /api/modules/:id/availability (teacher) — the time window students may open the lesson in; null = unbounded. */
+/** PUT /api/modules/:id/availability (teacher) — whether students can open the lesson any time or only while it is live. */
 export interface UpdateModuleAvailabilityRequest {
-  opensAt: string | null;
-  closesAt: string | null;
+  access: ModuleAccess;
 }
 export interface UpdateModuleRequest {
   title?: string;
