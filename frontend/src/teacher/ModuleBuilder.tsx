@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import {
   Link,
+  useLocation,
   useNavigate,
   useParams,
   useSearchParams,
@@ -15,6 +16,7 @@ import { useDialog } from "../ui/DialogContext.tsx";
 import { onModuleDeleted } from "../socket.ts";
 import CodeTestEditor from "./CodeTestEditor.tsx";
 import TeacherCodeEditor from "./TeacherCodeEditor.tsx";
+import { createBlankModuleDocument } from "./moduleBuilderDocument.ts";
 import type {
   AiModuleSuggestion,
   AiCodeTestCandidate,
@@ -28,13 +30,6 @@ const RichTextEditor = lazy(() => import("./RichTextEditor.tsx"));
 const id = () => crypto.randomUUID();
 type BuilderItem = ModuleBuilderDocument["sections"][number]["items"][number];
 type BuilderQuestion = Extract<BuilderItem, { type: "question" }>;
-
-const blank = (): ModuleBuilderDocument => ({
-  title: "Untitled module",
-  content: "",
-  status: "draft",
-  sections: [{ id: id(), title: "Section 1", items: [] }],
-});
 
 const questionLabel: Record<QuestionKind, string> = {
   mcq: "Multiple choice",
@@ -169,9 +164,15 @@ function withFreshIds(document: ModuleBuilderDocument): ModuleBuilderDocument {
 
 export default function ModuleBuilder() {
   const { id: moduleId } = useParams();
+  const location = useLocation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const [document, setDocument] = useState<ModuleBuilderDocument>(blank);
+  const plannerDocument = (
+    location.state as { plannerDocument?: ModuleBuilderDocument } | null
+  )?.plannerDocument;
+  const [document, setDocument] = useState<ModuleBuilderDocument>(
+    () => (!moduleId && plannerDocument) || createBlankModuleDocument(),
+  );
   const [revision, setRevision] = useState(0);
   const [loading, setLoading] = useState(Boolean(moduleId));
   const [saving, setSaving] = useState(false);
