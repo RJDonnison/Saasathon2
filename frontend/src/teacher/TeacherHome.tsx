@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { api } from '../api.ts'
 import { useAuth } from '../auth/useAuth.ts'
 import { useLiveSession } from '../useLiveSession.ts'
 import { onPresenceUpdate, onRaiseHand } from '../socket.ts'
+import AnswerKeyPanel from './AnswerKeyPanel.tsx'
 import ClassroomGrid from './ClassroomGrid.tsx'
+import CodeTestPanel from './CodeTestPanel.tsx'
 import StudentDetailPanel from './StudentDetailPanel.tsx'
 import AnnouncementsCard from './AnnouncementsCard.tsx'
 import LessonPlanner from './LessonPlanner.tsx'
@@ -197,7 +200,7 @@ export default function TeacherHome() {
       <LiveLessonControl
         classroomId={user!.classroomId}
         classroomName={classroom?.name ?? 'your classroom'}
-        lessons={modules}
+        lessons={modules.filter((m) => m.status === 'published')}
         session={session}
         onSession={setSession}
         online={onlineCount}
@@ -227,12 +230,25 @@ export default function TeacherHome() {
                 <p className="m-0 px-5 py-4 text-sm text-muted">No lessons yet. Lessons you create appear here for your students.</p>
               ) : (
                 modules.map((m, i) => (
-                  <div key={m.id} className="flex items-center gap-3 px-5 py-3.5">
+                  <Link
+                    key={m.id}
+                    to={`/teacher/modules/${m.id}`}
+                    className="flex items-center gap-3 px-5 py-3.5 text-ink transition hover:bg-surface-soft"
+                  >
                     <span className="grid size-8 flex-none place-items-center rounded-full border border-border bg-surface text-[13px] font-semibold text-muted">{i + 1}</span>
-                    <strong className="min-w-0 truncate text-[14px]">{m.title}</strong>
-                  </div>
+                    <strong className="min-w-0 flex-1 truncate text-[14px]!">{m.title}</strong>
+                    <span className="flex-none text-xs! font-normal! text-muted">{m.status === 'draft' ? 'Draft' : 'Published'}</span>
+                  </Link>
                 ))
               )}
+              <div className="px-5 py-3.5">
+                <Link
+                  to="/teacher/modules/new"
+                  className="inline-flex text-sm! font-semibold! text-ink underline underline-offset-4"
+                >
+                  + Build a module
+                </Link>
+              </div>
               <NewLessonForm onCreated={(lesson) => setModules((current) => [...current, lesson])} />
             </Card>
           </div>
@@ -300,6 +316,11 @@ export default function TeacherHome() {
       </div>
 
       <LessonPlanner />
+
+      <div className="grid items-start gap-5 lg:grid-cols-2">
+        <CodeTestPanel modules={modules} />
+        <AnswerKeyPanel modules={modules} />
+      </div>
     </div>
   )
 }

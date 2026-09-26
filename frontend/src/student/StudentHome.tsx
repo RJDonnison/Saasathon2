@@ -245,7 +245,7 @@ export default function StudentHome() {
           {current && (
             <aside aria-label="Helper" className="flex min-h-[30rem] flex-col border-t border-border bg-surface lg:min-h-0 lg:overflow-hidden lg:border-t-0 lg:border-l">
               {phase === 'work' ? (
-                <AiChatPanel key={current.id} moduleId={current.id} />
+                <AiChatPanel moduleId={current.id} />
               ) : (
                 <div className="flex flex-col gap-2 p-5">
                   <Eyebrow>Teach phase</Eyebrow>
