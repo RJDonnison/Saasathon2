@@ -8,6 +8,7 @@ import StudentDashboard from "./student/StudentDashboard.tsx";
 import TeacherLayout from "./teacher/TeacherLayout.tsx";
 import TeacherHome from "./teacher/TeacherHome.tsx";
 import ModuleBuilder from "./teacher/ModuleBuilder.tsx";
+import StudentWorkView from "./teacher/StudentWorkView.tsx";
 
 export default function App() {
   return (
@@ -39,6 +40,7 @@ export default function App() {
         <Route index element={<TeacherHome />} />
         <Route path="modules/new" element={<ModuleBuilder />} />
         <Route path="modules/:id" element={<ModuleBuilder />} />
+        <Route path="student-work/:studentId/:moduleId" element={<StudentWorkView />} />
         <Route path="*" element={<Navigate to="/teacher" replace />} />
       </Route>
 

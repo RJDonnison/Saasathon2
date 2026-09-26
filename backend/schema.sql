@@ -106,6 +106,59 @@ alter table modules alter column revision set default 0;
 alter table modules drop constraint if exists modules_revision_check;
 alter table modules add constraint modules_revision_check check (revision >= 0);
 
+-- Classroom collaboration tables already present in the deployed project.
+create table if not exists classroom_invitations (
+  id text primary key, classroom_id text not null references classrooms(id) on delete cascade,
+  email text not null, student_name text, invited_by text not null references users(id) on delete cascade,
+  status text not null default 'pending' check (status in ('pending','accepted','declined')),
+  user_id text references users(id) on delete set null, created_at timestamptz not null default now(),
+  responded_at timestamptz, unique (classroom_id, email)
+);
+create index if not exists classroom_invitations_email_idx on classroom_invitations (email, status);
+
+create table if not exists classroom_announcements (
+  id text primary key, classroom_id text not null references classrooms(id) on delete cascade,
+  author_id text not null references users(id) on delete cascade,
+  text text not null check (length(text) between 1 and 1000), created_at timestamptz not null default now()
+);
+create index if not exists classroom_announcements_classroom_idx on classroom_announcements (classroom_id, created_at desc);
+
+create table if not exists lesson_sessions (
+  id text primary key, classroom_id text not null references classrooms(id) on delete cascade,
+  module_id text not null references modules(id) on delete cascade,
+  phase text not null default 'teach' check (phase in ('teach','work')),
+  started_by text not null references users(id) on delete cascade,
+  started_at timestamptz not null default now(), ended_at timestamptz
+);
+create unique index if not exists lesson_sessions_one_live on lesson_sessions (classroom_id) where ended_at is null;
+
+create table if not exists help_requests (
+  id text primary key, classroom_id text not null references classrooms(id) on delete cascade,
+  student_id text not null references users(id) on delete cascade,
+  module_id text not null references modules(id) on delete cascade,
+  message text not null default '' check (char_length(message) <= 500),
+  raised_at timestamptz not null default now(), cleared_at timestamptz,
+  cleared_by text references users(id)
+);
+create unique index if not exists help_requests_one_active_per_student
+  on help_requests (classroom_id, student_id) where cleared_at is null;
+create index if not exists help_requests_active_classroom
+  on help_requests (classroom_id, raised_at desc) where cleared_at is null;
+create index if not exists help_requests_module_idx on help_requests (module_id);
+create index if not exists help_requests_cleared_by_idx on help_requests (cleared_by) where cleared_by is not null;
+
+create table if not exists classroom_event_cursors (
+  classroom_id text primary key references classrooms(id) on delete cascade,
+  next_cursor bigint not null default 1 check (next_cursor > 0)
+);
+create table if not exists classroom_events (
+  classroom_id text not null references classrooms(id) on delete cascade,
+  cursor bigint not null, event_type text not null, payload jsonb not null,
+  created_at timestamptz not null default now(), primary key (classroom_id, cursor)
+);
+create index if not exists classroom_events_replay_idx on classroom_events (classroom_id, cursor);
+create index if not exists classroom_events_retention_idx on classroom_events (created_at);
+
 create table if not exists sections (
   id text primary key, module_id text not null references modules(id) on delete cascade,
   title text not null, position integer not null default 0
@@ -245,16 +298,51 @@ create table if not exists code_submissions (
   id text primary key, student_id text not null references users(id), code_exercise_id text not null references code_exercises(id) on delete cascade,
   code text not null, stdout text not null default '', stderr text not null default '', passed boolean, created_at timestamptz not null default now()
 );
+-- Persistent drafts and live location/activity let teachers see progress across reloads and reconnects.
+create table if not exists student_work (
+  id text primary key, student_id text not null references users(id) on delete cascade,
+  question_id text not null references questions(id) on delete cascade,
+  answer text, code text, updated_at timestamptz not null default now(),
+  unique(student_id, question_id), check (answer is not null or code is not null)
+);
+create table if not exists student_activities (
+  id text primary key, student_id text not null references users(id) on delete cascade,
+  classroom_id text not null references classrooms(id) on delete cascade,
+  module_id text not null references modules(id) on delete cascade,
+  section_id text references sections(id) on delete cascade,
+  question_id text references questions(id) on delete cascade,
+  type text not null check (type in ('viewing_lesson','answering_question','checking_answer','writing_code','running_code','checking_code')),
+  created_at timestamptz not null default now()
+);
+create index if not exists student_activities_student_created_idx on student_activities (student_id, created_at desc);
+create table if not exists student_activity_state (
+  student_id text primary key references users(id) on delete cascade,
+  classroom_id text not null references classrooms(id) on delete cascade,
+  module_id text not null references modules(id) on delete cascade,
+  section_id text references sections(id) on delete cascade,
+  question_id text references questions(id) on delete cascade,
+  type text not null check (type in ('viewing_lesson','answering_question','checking_answer','writing_code','running_code','checking_code')),
+  updated_at timestamptz not null default now()
+);
 create table if not exists comments (
   id text primary key, submission_id text not null references code_submissions(id) on delete cascade,
   author_id text not null references users(id), text text not null,
   line_start integer, line_end integer, created_at timestamptz not null default now(),
   check (line_start is null or line_start > 0), check (line_end is null or line_end >= line_start)
 );
+create table if not exists question_comments (
+  id text primary key, question_id text not null references questions(id) on delete cascade,
+  student_id text not null references users(id) on delete cascade,
+  author_id text not null references users(id) on delete cascade, text text not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists question_comments_question_created_idx on question_comments (question_id, created_at);
 
 alter table classrooms enable row level security; alter table users enable row level security;
 alter table memberships enable row level security; alter table modules enable row level security;
-alter table classroom_invitations enable row level security; alter table classroom_announcements enable row level security; alter table lesson_sessions enable row level security;
+alter table classroom_invitations enable row level security; alter table classroom_announcements enable row level security;
+alter table lesson_sessions enable row level security; alter table help_requests enable row level security;
+alter table classroom_event_cursors enable row level security; alter table classroom_events enable row level security;
 alter table sections enable row level security; alter table section_blocks enable row level security;
 alter table section_items enable row level security;
 alter table questions enable row level security; alter table question_options enable row level security;
@@ -263,6 +351,9 @@ alter table code_checks enable row level security; alter table module_progress e
 alter table code_tests enable row level security;
 alter table section_progress enable row level security; alter table attempts enable row level security;
 alter table code_submissions enable row level security; alter table comments enable row level security;
+alter table question_comments enable row level security;
+alter table student_work enable row level security; alter table student_activities enable row level security;
+alter table student_activity_state enable row level security;
 
 -- Demo: a complete small lesson with authored answers/checks and student activity.
 insert into classrooms (id, name) values ('classroom-demo','Demo Classroom') on conflict do nothing;

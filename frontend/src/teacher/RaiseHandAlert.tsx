@@ -4,6 +4,7 @@ import Card from '../ui/Card.tsx'
 import { CheckIcon, HandIcon } from '../ui/icons.tsx'
 import { FOCUS_RING, TINT } from '../ui/styles.ts'
 import type { RaisedHand } from '../../../shared/events'
+import type { StudentActivitySnapshot } from '../../../shared/types'
 
 // Live, server-owned raised hands (the listener lives in TeacherHome).
 export default function RaiseHandAlert({
@@ -11,11 +12,13 @@ export default function RaiseHandAlert({
   nameOf,
   onHelp,
   onSelect,
+  activity,
 }: {
   hands: RaisedHand[]
   nameOf: (studentId: string) => string
   onHelp: (studentId: string) => void
   onSelect: (studentId: string) => void
+  activity: Record<string, StudentActivitySnapshot>
 }) {
   return (
     <Card
@@ -36,6 +39,7 @@ export default function RaiseHandAlert({
         <ul className="m-0 flex list-none flex-col gap-2 p-0" aria-live="polite">
           {hands.map((h) => {
             const name = nameOf(h.studentId)
+            const active = activity[h.studentId]?.active
             return (
               <li key={h.studentId} className="flex items-center gap-3 rounded-xl bg-peach/40 p-2.5 pr-2">
                 <button type="button" onClick={() => onSelect(h.studentId)} className={`flex min-w-0 flex-1 items-center gap-3 rounded-lg text-left ${FOCUS_RING}`}>
@@ -44,7 +48,9 @@ export default function RaiseHandAlert({
                     {/* Font utilities are `!` because of app.css's `button { font: inherit }` (see ui/styles.ts). */}
                     <span className="block truncate text-sm! font-semibold!">{name}</span>
                     <span className="block text-xs! font-normal! text-muted">
-                      needs a hand · {new Date(h.raisedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                      {active?.questionId
+                        ? 'working on a question'
+                        : `needs a hand · ${new Date(h.raisedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`}
                     </span>
                   </span>
                 </button>

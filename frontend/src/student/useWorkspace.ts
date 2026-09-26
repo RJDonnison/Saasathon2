@@ -4,6 +4,7 @@ export interface EditorInfo {
   key: string;
   label: string;
   exerciseId?: string;
+  questionId?: string;
 }
 
 export interface CodeHighlight {

@@ -9,6 +9,7 @@ import {
   onModuleDeleted,
   onPresenceUpdate,
   onRaisedHandsUpdate,
+  onStudentActivityUpdate,
 } from '../socket.ts'
 import AnswerKeyPanel from './AnswerKeyPanel.tsx'
 import ClassroomGrid from './ClassroomGrid.tsx'
@@ -24,7 +25,7 @@ import Card from '../ui/Card.tsx'
 import Heading from '../ui/Heading.tsx'
 import { BookIcon, UsersIcon } from '../ui/icons.tsx'
 import { INPUT, TINT } from '../ui/styles.ts'
-import type { Classroom, ClassroomInvitation, Module, User } from '../../../shared/types'
+import type { Classroom, ClassroomInvitation, Module, StudentActivitySnapshot, User } from '../../../shared/types'
 import type { RaisedHand } from '../../../shared/events'
 
 const INVITATION_LABEL: Record<ClassroomInvitation['status'], string> = {
@@ -48,6 +49,7 @@ export default function TeacherHome() {
   const [inviteText, setInviteText] = useState('')
   const [inviteBusy, setInviteBusy] = useState(false)
   const [inviteMessage, setInviteMessage] = useState<string | null>(null)
+  const [activity, setActivity] = useState<Record<string, StudentActivitySnapshot>>({})
 
   useEffect(() => {
     if (!user) return
@@ -71,6 +73,13 @@ export default function TeacherHome() {
       .listModules(user.classroomId)
       .then((m) => {
         if (!cancelled) setModules(m)
+      })
+      .catch(() => {})
+    api
+      .getClassroomStudentActivity(user.classroomId)
+      .then((snapshots) => {
+        if (!cancelled)
+          setActivity(Object.fromEntries(snapshots.map((snapshot) => [snapshot.studentId, snapshot])));
       })
       .catch(() => {})
     // Poll so a student's answer (accepted / declined) shows up without a refresh; a student who joins also
@@ -106,6 +115,29 @@ export default function TeacherHome() {
       deleted();
     };
   }, [user]);
+
+  useEffect(
+    () =>
+      onStudentActivityUpdate((update) => {
+        if (!user || update.classroomId !== user.classroomId) return;
+        setActivity((current) => {
+          const previous = current[update.studentId] ?? {
+            studentId: update.studentId,
+            active: null,
+            recent: [],
+            work: [],
+          };
+          const recent = update.activity
+            ? [update.activity, ...previous.recent.filter((entry) => entry.id !== update.activity!.id)].slice(0, 6)
+            : previous.recent;
+          const work = update.work
+            ? [update.work, ...previous.work.filter((entry) => entry.questionId !== update.work!.questionId)]
+            : previous.work;
+          return { ...current, [update.studentId]: { ...previous, active: update.active, recent, work } };
+        });
+      }),
+    [user],
+  );
 
   useEffect(
     () =>
@@ -237,7 +269,13 @@ export default function TeacherHome() {
       <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1.7fr)_minmax(290px,.95fr)]">
         <div className="contents lg:flex lg:min-w-0 lg:flex-col lg:gap-5">
           <div className="order-2 min-w-0">
-            <ClassroomGrid students={students} online={online} selectedId={selectedId} onSelect={setSelectedId} />
+            <ClassroomGrid
+              students={students}
+              online={online}
+              selectedId={selectedId}
+              onSelect={setSelectedId}
+              activity={activity}
+            />
           </div>
           <div className="order-5 min-w-0">
             <Card
@@ -279,8 +317,12 @@ export default function TeacherHome() {
             <RaiseHandAlert
               hands={hands}
               nameOf={(id) => byId.get(id)?.name ?? 'A student'}
-              onHelp={(id) => user && emitAcknowledgeHand(id, user.classroomId)}
+              onHelp={(id) => {
+                setSelectedId(id)
+                if (user) emitAcknowledgeHand(id, user.classroomId)
+              }}
               onSelect={setSelectedId}
+              activity={activity}
             />
           </div>
           <div className="order-3 min-w-0">
