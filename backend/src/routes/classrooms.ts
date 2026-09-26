@@ -363,19 +363,22 @@ classroomsRouter.get("/:id/lessons", requireRole("student"), async (req, res) =>
     ? (unwrap(
         await supabase
           .from("questions")
-          .select("id,section_id,prompt")
+          .select("id,section_id,prompt,kind")
           .in("section_id", sectionIds)
-          .eq("kind", "code")
           .order("position")
           .order("id"),
-      ) as Array<{ id: string; section_id: string; prompt: string }>)
+      ) as Array<{ id: string; section_id: string; prompt: string; kind: string }>)
     : [];
-  const exercises = questions.length
+  const questionIds = questions.map((question) => question.id);
+  const codeQuestionIds = questions
+    .filter((question) => question.kind === "code")
+    .map((question) => question.id);
+  const exercises = codeQuestionIds.length
     ? (unwrap(
-        await supabase.from("code_exercises").select("id,question_id").in("question_id", questions.map((q) => q.id)),
+        await supabase.from("code_exercises").select("id,question_id").in("question_id", codeQuestionIds),
       ) as Array<{ id: string; question_id: string }>)
     : [];
-  const [progress, submissions] = await Promise.all([
+  const [progress, submissions, attempts, work] = await Promise.all([
     supabase.from("module_progress").select("module_id,status").eq("student_id", studentId).in("module_id", moduleIds.length ? moduleIds : [""]),
     exercises.length
       ? supabase
@@ -385,6 +388,20 @@ classroomsRouter.get("/:id/lessons", requireRole("student"), async (req, res) =>
           .in("code_exercise_id", exercises.map((e) => e.id))
           .order("created_at", { ascending: false })
       : Promise.resolve({ data: [], error: null }),
+    questionIds.length
+      ? supabase
+          .from("attempts")
+          .select("question_id")
+          .eq("student_id", studentId)
+          .in("question_id", questionIds)
+      : Promise.resolve({ data: [], error: null }),
+    questionIds.length
+      ? supabase
+          .from("student_work")
+          .select("question_id")
+          .eq("student_id", studentId)
+          .in("question_id", questionIds)
+      : Promise.resolve({ data: [], error: null }),
   ]);
   const statusOf = new Map(
     (unwrap(progress) as Array<{ module_id: string; status: ProgressStatus }>).map((p) => [p.module_id, p.status]),
@@ -393,9 +410,27 @@ classroomsRouter.get("/:id/lessons", requireRole("student"), async (req, res) =>
     code_exercise_id: string;
     passed: boolean | null;
   }>;
+  const startedQuestionIds = new Set([
+    ...(unwrap(attempts as { data: Array<{ question_id: string }>; error: null }) as Array<{ question_id: string }>).map(
+      (attempt) => attempt.question_id,
+    ),
+    ...(unwrap(work as { data: Array<{ question_id: string }>; error: null }) as Array<{ question_id: string }>).map(
+      (entry) => entry.question_id,
+    ),
+  ]);
+  const exerciseQuestionIds = new Map(
+    exercises.map((exercise) => [exercise.id, exercise.question_id]),
+  );
+  for (const run of runs) {
+    const questionId = exerciseQuestionIds.get(run.code_exercise_id);
+    if (questionId) startedQuestionIds.add(questionId);
+  }
 
   const body: ListLessonSummariesResponse = modules.map((m) => {
     const mine = sections.filter((s) => s.module_id === m.id);
+    const lessonQuestionIds = questions
+      .filter((question) => mine.some((section) => section.id === question.section_id))
+      .map((question) => question.id);
     const exerciseSummaries: ExerciseSummary[] = [];
     for (const section of mine) {
       for (const q of questions.filter((q) => q.section_id === section.id)) {
@@ -419,6 +454,10 @@ classroomsRouter.get("/:id/lessons", requireRole("student"), async (req, res) =>
       available,
       sections: available ? mine.map((s) => ({ id: s.id, title: s.title })) : [],
       exercises: available ? exerciseSummaries : [],
+      questionCount: available ? lessonQuestionIds.length : 0,
+      startedQuestionCount: available
+        ? lessonQuestionIds.filter((id) => startedQuestionIds.has(id)).length
+        : 0,
     };
   });
   res.json(body);

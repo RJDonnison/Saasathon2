@@ -373,6 +373,7 @@ export default function ModuleBuilder() {
       if (result.suggestions.length === 0)
         setNotice({
           message:
+            result.warning ??
             "The assistant could not make a usable suggestion. Please try again.",
           tone: "error",
         });
