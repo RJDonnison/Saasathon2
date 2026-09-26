@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { api } from '../api.ts'
 import { useAuth } from '../auth/useAuth.ts'
 import { useLiveSession } from '../useLiveSession.ts'
@@ -36,6 +36,7 @@ const INVITATION_LABEL: Record<ClassroomInvitation['status'], string> = {
 
 export default function TeacherHome() {
   const { user, createClassroom: createClassroomFor } = useAuth()
+  const navigate = useNavigate()
   const { session, setSession } = useLiveSession()
   const [students, setStudents] = useState<User[] | null>(null)
   const [classroom, setClassroom] = useState<Classroom | null>(null)
@@ -320,6 +321,10 @@ export default function TeacherHome() {
               onHelp={(id) => {
                 setSelectedId(id)
                 if (user) emitAcknowledgeHand(id, user.classroomId)
+                const active = activity[id]?.active
+                if (!active) return
+                const question = active.questionId ? `?questionId=${encodeURIComponent(active.questionId)}` : ''
+                navigate(`/teacher/student-work/${id}/${active.moduleId}${question}`)
               }}
               onSelect={setSelectedId}
               activity={activity}
