@@ -10,7 +10,7 @@ import { api, ApiClientError } from "../api.ts";
 import { supabase } from "../supabase.ts";
 import { connectSocket, disconnectSocket } from "../socket.ts";
 import { AuthContext, type AuthState } from "./useAuth.ts";
-import type { JoinRequest, User } from "../../../shared/types";
+import type { User } from "../../../shared/types";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
@@ -45,13 +45,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!sessionReady || !authId) return;
     let cancelled = false;
-    let assigned = false;
     const loadProfile = () => {
       void api
         .me()
         .then(({ user }) => {
           if (cancelled) return;
-          assigned = user !== null;
           setProfile({ authId, user });
         })
         .catch((err) => {
@@ -63,14 +61,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
     };
     loadProfile();
-    // A student may already be signed in when their teacher adds their email. Recheck quietly
-    // until a roster assignment appears so they do not have to enter a code or refresh manually.
-    const interval = window.setInterval(() => {
-      if (!assigned) loadProfile();
-    }, 15000);
     return () => {
       cancelled = true;
-      window.clearInterval(interval);
     };
   }, [sessionReady, authId]);
 
@@ -80,11 +72,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const user = resolvedProfile?.user ?? null;
   const loading = !sessionReady || (authId !== null && !resolvedProfile);
 
-  // The socket lives exactly as long as there is a signed-in user in a classroom.
+  // The socket lives exactly as long as there is a signed-in user in a classroom, and it joins that classroom's
+  // room at connect time, so switching classrooms means reconnecting.
+  const userId = user?.id;
+  const classroomId = user?.classroomId;
   useEffect(() => {
-    if (user) connectSocket();
-    else disconnectSocket();
-  }, [user]);
+    if (!userId || !classroomId) {
+      disconnectSocket();
+      return;
+    }
+    disconnectSocket();
+    connectSocket();
+  }, [userId, classroomId]);
 
   const signInWithGoogle = useCallback(async () => {
     const { error } = await supabase.auth.signInWithOAuth({
@@ -94,9 +93,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (error) throw error;
   }, []);
 
-  const joinClassroom = useCallback(
-    async (req: JoinRequest) => {
-      const { user } = await api.join(req);
+  const createClassroom = useCallback(
+    async (name: string) => {
+      const { user } = await api.createClassroom(name);
+      if (authId) setProfile({ authId, user });
+      return user;
+    },
+    [authId],
+  );
+
+  const acceptInvitation = useCallback(
+    async (invitationId: string) => {
+      const { user } = await api.acceptInvitation(invitationId);
+      if (authId) setProfile({ authId, user });
+      return user;
+    },
+    [authId],
+  );
+
+  const switchClassroom = useCallback(
+    async (classroomId: string) => {
+      const { user } = await api.activateClassroom(classroomId);
       if (authId) setProfile({ authId, user });
       return user;
     },
@@ -113,10 +130,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       loading,
       signInWithGoogle,
-      joinClassroom,
+      createClassroom,
+      acceptInvitation,
+      switchClassroom,
       signOut,
     }),
-    [session, user, loading, signInWithGoogle, joinClassroom, signOut],
+    [session, user, loading, signInWithGoogle, createClassroom, acceptInvitation, switchClassroom, signOut],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api.ts'
+import Button from '../ui/Button.tsx'
 import Card from '../ui/Card.tsx'
 import Eyebrow from '../ui/Eyebrow.tsx'
 import Heading from '../ui/Heading.tsx'
 import InlineText from '../ui/InlineText.tsx'
 import Markdown from '../ui/Markdown.tsx'
-import { BookIcon, CodeIcon, PencilIcon } from '../ui/icons.tsx'
+import { PencilIcon } from '../ui/icons.tsx'
 import { CARD, INPUT, TINT } from '../ui/styles.ts'
 import CodeEditor from './CodeEditor.tsx'
 import type { Module, SectionBlock, StudentModule, StudentQuestion, StudentSection } from '../../../shared/types'
@@ -57,26 +58,20 @@ function Lesson({ module, index, total }: { module: Module; index: number; total
 
   return (
     <div className="flex flex-col gap-6">
-      <section className={`relative overflow-hidden ${CARD} p-6 sm:p-7`}>
-        <div aria-hidden="true" className="pointer-events-none absolute -top-16 -right-16 size-48 rounded-full bg-accent/15 blur-2xl" />
-        <div className="relative flex flex-col gap-5">
-          <div className="flex items-start gap-4">
-            <span className={`grid size-11 flex-none place-items-center rounded-2xl ${TINT.mint}`}>
-              <BookIcon className="size-5" />
-            </span>
-            <div className="flex min-w-0 flex-col gap-2.5">
-              <Eyebrow>
-                Lesson {String(index + 1).padStart(2, '0')} of {String(total).padStart(2, '0')}
-              </Eyebrow>
-              <Heading variant="title">{module.title}</Heading>
-            </div>
-          </div>
-          {intro && (
-            <p className="m-0 max-w-2xl text-[15px] leading-relaxed whitespace-pre-line text-muted">
-              <InlineText text={intro} />
-            </p>
-          )}
+      <section className={`flex flex-col gap-3 ${CARD} p-6 sm:p-7`}>
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="rounded-lg border border-border bg-surface-soft px-2.5 py-1 text-xs font-semibold text-ink">
+            Lesson {index + 1} of {total}
+          </span>
         </div>
+        <Heading as="h1" variant="title">
+          {module.title}
+        </Heading>
+        {intro && (
+          <p className="m-0 max-w-2xl text-[15px] leading-relaxed whitespace-pre-line text-ink">
+            <InlineText text={intro} />
+          </p>
+        )}
       </section>
 
       {error && <p className={`m-0 rounded-xl px-4 py-3 text-sm ${TINT.peach}`}>{error}</p>}
@@ -155,9 +150,25 @@ function CodeQuestion({ question }: { question: StudentQuestion }) {
   )
 }
 
-// PLACEHOLDER: choices and answers stay in this browser tab; there is no attempts endpoint wired up yet.
+/** Multiple-choice and short-answer questions. Each answer is saved as an attempt and checked against the teacher's key. */
 function AnswerQuestion({ question }: { question: StudentQuestion }) {
   const [answer, setAnswer] = useState('')
+  const [result, setResult] = useState<{ isCorrect: boolean | null } | { error: string } | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  async function submit(value: string) {
+    if (!value.trim() || busy) return
+    setBusy(true)
+    try {
+      const attempt = await api.createAttempt({ questionId: question.id, answer: value })
+      setResult({ isCorrect: attempt.isCorrect })
+    } catch (err) {
+      setResult({ error: err instanceof Error ? err.message : 'Could not save your answer' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <Card title="Question" eyebrow="Check yourself" icon={<PencilIcon className="size-[18px]" />} tint="peach" bodyClassName="flex flex-col gap-4 p-5">
       <p className="m-0 text-[15px] leading-relaxed text-ink">
@@ -171,29 +182,62 @@ function AnswerQuestion({ question }: { question: StudentQuestion }) {
               key={o.id}
               className="flex cursor-pointer items-center gap-3 rounded-[10px] border border-border bg-surface px-3.5 py-2.5 text-sm transition hover:bg-surface-soft has-checked:border-ink has-checked:bg-surface-soft"
             >
-              <input type="radio" name={question.id} value={o.id} checked={answer === o.id} onChange={() => setAnswer(o.id)} className="accent-ink" />
+              <input
+                type="radio"
+                name={question.id}
+                value={o.id}
+                checked={answer === o.id}
+                disabled={busy}
+                onChange={() => {
+                  setAnswer(o.id)
+                  void submit(o.text)
+                }}
+                className="accent-ink"
+              />
               <InlineText text={o.text} />
             </label>
           ))}
         </fieldset>
       ) : (
-        <>
+        <form
+          className="flex flex-wrap items-center gap-2"
+          onSubmit={(e) => {
+            e.preventDefault()
+            void submit(answer)
+          }}
+        >
           <label className="sr-only" htmlFor={`answer-${question.id}`}>
             Your answer
           </label>
           <input
             id={`answer-${question.id}`}
-            className={`${INPUT} h-10 w-full`}
+            className={`${INPUT} h-10 min-w-0 flex-1`}
             value={answer}
-            onChange={(e) => setAnswer(e.target.value)}
+            onChange={(e) => {
+              setAnswer(e.target.value)
+              setResult(null)
+            }}
             placeholder="Type your answer"
           />
-        </>
+          <Button type="submit" variant="primary" disabled={busy || !answer.trim()}>
+            {busy ? 'Checking…' : 'Check answer'}
+          </Button>
+        </form>
       )}
-      <p className="m-0 flex items-center gap-2 text-xs text-subtle">
-        <CodeIcon className="size-3.5" />
-        Answers aren’t submitted or checked yet.
-      </p>
+      {result && (
+        <p
+          role="status"
+          className={`m-0 rounded-xl px-4 py-2.5 text-sm ${'error' in result || result.isCorrect === false ? TINT.peach : TINT.mint}`}
+        >
+          {'error' in result
+            ? result.error
+            : result.isCorrect === true
+              ? 'Correct.'
+              : result.isCorrect === false
+                ? 'Not quite. Have another go.'
+                : 'Answer saved.'}
+        </p>
+      )}
     </Card>
   )
 }

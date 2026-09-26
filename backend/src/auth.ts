@@ -1,5 +1,4 @@
 import type { NextFunction, Request, RequestHandler, Response } from "express";
-import { randomUUID } from "node:crypto";
 import { supabase } from "./supabase.js";
 import { toUser, unwrap, type MembershipRow, type UserRow } from "./rows.js";
 import type { Role, User } from "../../shared/types.js";
@@ -60,57 +59,6 @@ export async function verifyToken(token: string): Promise<AuthIdentity | null> {
   if (cache.size >= CACHE_MAX) cache.clear();
   cache.set(token, { identity, expires: Date.now() + CACHE_TTL_MS });
   return identity;
-}
-
-/** Create student memberships for email roster entries that match this Google identity. */
-export async function applyClassroomAssignments(identity: AuthIdentity): Promise<void> {
-  if (!identity.email) return;
-  unwrap(
-    await supabase.from("users").upsert(
-      { id: identity.authId, name: identity.name, email: identity.email },
-      { onConflict: "id" },
-    ),
-  );
-
-  const assignments = unwrap(
-    await supabase
-      .from("classroom_assignments")
-      .select("id,classroom_id,student_id")
-      .eq("email", identity.email),
-  ) as Array<{ id: string; classroom_id: string; student_id: string | null }>;
-
-  for (const assignment of assignments) {
-    // Never transfer an assignment already claimed by a different authenticated account.
-    if (assignment.student_id && assignment.student_id !== identity.authId) continue;
-    const prior = unwrap(
-      await supabase
-        .from("memberships")
-        .select("id,role")
-        .eq("user_id", identity.authId)
-        .eq("classroom_id", assignment.classroom_id)
-        .maybeSingle(),
-    ) as { id: string; role: Role } | null;
-    if (prior?.role === "teacher") continue;
-
-    unwrap(
-      await supabase.from("memberships").upsert(
-        {
-          id: prior?.id ?? randomUUID(),
-          user_id: identity.authId,
-          classroom_id: assignment.classroom_id,
-          role: "student",
-          created_at: new Date().toISOString(),
-        },
-        { onConflict: "user_id,classroom_id" },
-      ),
-    );
-    unwrap(
-      await supabase
-        .from("classroom_assignments")
-        .update({ student_id: identity.authId })
-        .eq("id", assignment.id),
-    );
-  }
 }
 
 /** The classroom profile for a signed-in user, or null if they haven't joined one yet. */
