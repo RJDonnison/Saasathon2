@@ -1,7 +1,4 @@
-import type {
-  StudentModule,
-  TeacherModule,
-} from "../../../shared/types.js";
+import type { StudentModule, TeacherModule } from "../../../shared/types.js";
 
 // ---------- Context builders: module -> plain text for the prompt ----------
 //
@@ -74,7 +71,12 @@ export function teacherModuleContext(m: TeacherModule): string {
         for (const r of ex.referenceAnswers) {
           out.push(`  Reference answer "${r.title}":`, indent(r.answer));
         }
-        for (const c of ex.checks) out.push(`  Check "${c.name}": ${c.description}`);
+        for (const c of ex.checks)
+          out.push(`  Check "${c.name}": ${c.description}`);
+        for (const test of ex.tests)
+          out.push(
+            `  Automated test: ${JSON.stringify({ args: test.args, expected: test.expected })}`,
+          );
       }
     }
   }
@@ -124,7 +126,10 @@ The student's code is attached with line numbers ("12| code"). The numbers are a
 - "note" is at most one short sentence saying what to look at (for example "Check the brackets on this line"), never the corrected code. If a run error is provided, use it to find the line.`;
 
 /** The teacher's planning/drafting assistant (stretch goal). */
-export function draftSystemPrompt(moduleContext: string | null, draft: string | null): string {
+export function draftSystemPrompt(
+  moduleContext: string | null,
+  draft: string | null,
+): string {
   const context = [
     moduleContext ? `<module>\n${moduleContext}\n</module>` : "",
     draft ? `<draft>\n${draft}\n</draft>` : "",
@@ -139,4 +144,18 @@ export function draftSystemPrompt(moduleContext: string | null, draft: string | 
 - If the request is ambiguous, ask one short clarifying question; otherwise make sensible assumptions and state them.
 - The teacher has the final say. Flag anything you are unsure of (for example code you have not run) instead of presenting it as verified.
 ${context ? `\nThe teacher's current material follows.\n\n${context}` : ""}`;
+}
+
+/** Teacher-only: produce structured cases for review, never persist them. */
+export function codeTestSystemPrompt(exerciseContext: string): string {
+  return `You help a teacher author automated checks for one classroom code exercise. Return ONLY JSON in this shape:
+{"candidates":[{"functionName":"validIdentifier","args":[...],"expected":<JSON value>}]}
+
+- Suggest at most 5 small, deterministic cases for the named synchronous function.
+- args must be a JSON array; expected must be a JSON value. Do not include code, prose, markdown, or test explanations.
+- These are teacher-facing editable suggestions, not student feedback.
+
+<exercise>
+${exerciseContext}
+</exercise>`;
 }

@@ -64,6 +64,17 @@ export interface CodeExercise {
   language: string;
   starterCode: string;
   instructions: string;
+  /** The synchronous named function automated checks invoke. */
+  functionName: string;
+}
+/** Teacher-only structured, JSON-safe automated case. Never included in StudentModule. */
+export interface CodeTest {
+  id: string;
+  codeExerciseId: string;
+  name: string;
+  args: unknown[];
+  expected: unknown;
+  position: number;
 }
 export interface ReferenceAnswer {
   id: string;
@@ -86,6 +97,7 @@ export interface TeacherQuestion extends Question {
   codeExercise?: CodeExercise & {
     referenceAnswers: ReferenceAnswer[];
     checks: CodeCheck[];
+    tests: CodeTest[];
   };
 }
 export interface TeacherSection extends Section {
@@ -238,6 +250,22 @@ export interface UpsertCodeExerciseRequest {
   language: string;
   starterCode: string;
   instructions: string;
+  functionName: string;
+}
+export interface UpdateCodeExerciseRequest {
+  functionName: string;
+}
+export interface CreateCodeTestRequest {
+  name: string;
+  args: unknown[];
+  expected: unknown;
+  position?: number;
+}
+export interface UpdateCodeTestRequest {
+  name?: string;
+  args?: unknown[];
+  expected?: unknown;
+  position?: number;
 }
 export interface CreateReferenceAnswerRequest {
   title: string;
@@ -312,6 +340,22 @@ export interface RunCodeResponse {
   stderr: string;
   exitCode: number;
 }
+/** POST /api/code/grade; inputs and expected values are intentionally never returned. */
+export interface GradeCodeExerciseRequest {
+  exerciseId: string;
+  code: string;
+}
+export interface GradeCodeExerciseResponse {
+  passed: boolean;
+  /** Named check outcomes, without test inputs, expected values, or diagnostics. */
+  results?: GradeCodeTestResult[];
+  /** A generic configuration or execution message, never test implementation detail. */
+  error?: string;
+}
+export interface GradeCodeTestResult {
+  name: string;
+  passed: boolean;
+}
 /** One turn of an AI conversation. The AI endpoints are stateless: the client re-sends the transcript each call. */
 export interface AiChatMessage {
   role: "user" | "assistant";
@@ -366,6 +410,19 @@ export interface AiDraftRequest {
 }
 export interface AiDraftResponse {
   reply: string;
+}
+/** POST /api/ai/code-test-candidates (teacher only). Candidates are editable and not persisted. */
+export interface AiCodeTestCandidatesRequest {
+  exerciseId: string;
+  request: string;
+}
+export interface AiCodeTestCandidate {
+  functionName: string;
+  args: unknown[];
+  expected: unknown;
+}
+export interface AiCodeTestCandidatesResponse {
+  candidates: AiCodeTestCandidate[];
 }
 export interface ApiError {
   error: string;
