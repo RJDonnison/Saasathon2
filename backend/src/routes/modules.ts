@@ -44,9 +44,26 @@ import type {
 } from "../../../shared/types.js";
 
 export const modulesRouter = Router();
-const kinds: QuestionKind[] = ["mcq", "short", "code"];
+const kinds: QuestionKind[] = ["mcq", "short", "code", "math"];
 const validPosition = (value: unknown) =>
   value === undefined || (Number.isInteger(value) && (value as number) >= 0);
+const validMathValue = (value: unknown) =>
+  value === undefined ||
+  value === null ||
+  (typeof value === "number" && Number.isFinite(value));
+const validMathQuestion = (
+  kind: QuestionKind,
+  expected: unknown,
+  tolerance: unknown,
+) =>
+  kind === "math"
+    ? typeof expected === "number" &&
+      Number.isFinite(expected) &&
+      typeof tolerance === "number" &&
+      Number.isFinite(tolerance) &&
+      tolerance >= 0
+    : (expected === undefined || expected === null) &&
+      (tolerance === undefined || tolerance === null);
 const nextPosition = async (
   table: string,
   column: string,
@@ -139,7 +156,13 @@ export async function aggregate(
             options: options
               .filter((o) => o.question_id === q.id)
               .map(toOption),
-            ...(teacher ? { answerKey: q.answer_key } : {}),
+            ...(teacher
+              ? {
+                  answerKey: q.answer_key,
+                  mathExpectedResult: q.math_expected_result,
+                  mathTolerance: q.math_tolerance,
+                }
+              : {}),
             ...(exercise
               ? {
                   codeExercise: teacher
@@ -440,6 +463,13 @@ modulesRouter.post(
       (b.answerKey !== undefined &&
         b.answerKey !== null &&
         typeof b.answerKey !== "string") ||
+      !validMathValue(b.mathExpectedResult) ||
+      !validMathValue(b.mathTolerance) ||
+      !validMathQuestion(
+        b.kind as QuestionKind,
+        b.mathExpectedResult,
+        b.mathTolerance,
+      ) ||
       !validPosition(b.position)
     )
       return res.status(400).json({ error: "Invalid question fields" });
@@ -454,12 +484,21 @@ modulesRouter.post(
           prompt: b.prompt.trim(),
           kind: b.kind,
           answer_key: b.answerKey ?? null,
+          math_expected_result: b.mathExpectedResult ?? null,
+          math_tolerance: b.mathTolerance ?? null,
           position,
         })
         .select("*")
         .single(),
     ) as QuestionRow;
-    res.status(201).json({ ...toQuestion(row), answerKey: row.answer_key });
+    res
+      .status(201)
+      .json({
+        ...toQuestion(row),
+        answerKey: row.answer_key,
+        mathExpectedResult: row.math_expected_result,
+        mathTolerance: row.math_tolerance,
+      });
   },
 );
 modulesRouter.patch(
@@ -469,6 +508,13 @@ modulesRouter.patch(
     const q = await ownedQuestion(req, res, req.params.id);
     const b = req.body as UpdateQuestionRequest;
     if (!q) return;
+    const kind = b.kind ?? q.kind;
+    const mathExpectedResult =
+      b.mathExpectedResult === undefined
+        ? q.math_expected_result
+        : b.mathExpectedResult;
+    const mathTolerance =
+      b.mathTolerance === undefined ? q.math_tolerance : b.mathTolerance;
     if (
       (b.prompt !== undefined &&
         (typeof b.prompt !== "string" || !b.prompt.trim())) ||
@@ -476,6 +522,9 @@ modulesRouter.patch(
       (b.answerKey !== undefined &&
         b.answerKey !== null &&
         typeof b.answerKey !== "string") ||
+      !validMathValue(b.mathExpectedResult) ||
+      !validMathValue(b.mathTolerance) ||
+      !validMathQuestion(kind, mathExpectedResult, mathTolerance) ||
       !validPosition(b.position)
     )
       return res.status(400).json({ error: "Invalid question fields" });
@@ -484,15 +533,22 @@ modulesRouter.patch(
         .from("questions")
         .update({
           prompt: b.prompt?.trim() ?? q.prompt,
-          kind: b.kind ?? q.kind,
+          kind,
           answer_key: b.answerKey === undefined ? q.answer_key : b.answerKey,
+          math_expected_result: kind === "math" ? mathExpectedResult : null,
+          math_tolerance: kind === "math" ? mathTolerance : null,
           position: b.position ?? q.position,
         })
         .eq("id", q.id)
         .select("*")
         .single(),
     ) as QuestionRow;
-    res.json({ ...toQuestion(row), answerKey: row.answer_key });
+    res.json({
+      ...toQuestion(row),
+      answerKey: row.answer_key,
+      mathExpectedResult: row.math_expected_result,
+      mathTolerance: row.math_tolerance,
+    });
   },
 );
 modulesRouter.delete(
