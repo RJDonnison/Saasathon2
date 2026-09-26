@@ -61,24 +61,39 @@ export async function verifyToken(token: string): Promise<AuthIdentity | null> {
   return identity;
 }
 
+// The profile (user + active membership) is read on every authenticated request, so it is cached briefly per user.
+// Anything that changes a membership must call invalidateProfile so the change is visible immediately.
+const PROFILE_TTL_MS = 10_000;
+const profileCache = new Map<string, { profile: User; expires: number }>();
+
+export function invalidateProfile(userId: string): void {
+  profileCache.delete(userId);
+}
+
 /** The classroom profile for a signed-in user, or null if they haven't joined one yet. */
 export async function findProfile(authId: string): Promise<User | null> {
+  const hit = profileCache.get(authId);
+  if (hit && hit.expires > Date.now()) return hit.profile;
+  profileCache.delete(authId);
+
+  // One round trip: the most recently joined membership is the active classroom (joining an existing
+  // classroom refreshes its timestamp, so it also switches the active membership), with its user embedded.
   const row = unwrap(
-    await supabase.from("users").select("*").eq("id", authId).maybeSingle(),
-  ) as UserRow | null;
-  if (!row) return null;
-  // The most recently joined membership is the active classroom. Joining an existing
-  // classroom refreshes its timestamp, so it also switches the active membership.
-  const membership = unwrap(
     await supabase
       .from("memberships")
-      .select("*")
+      .select("*, users!inner(*)")
       .eq("user_id", authId)
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
-  ) as MembershipRow | null;
-  return membership ? toUser(row, membership) : null;
+  ) as (MembershipRow & { users: UserRow }) | null;
+  if (!row) return null;
+  const { users: user, ...membership } = row;
+  const profile = toUser(user, membership);
+
+  if (profileCache.size >= CACHE_MAX) profileCache.clear();
+  profileCache.set(authId, { profile, expires: Date.now() + PROFILE_TTL_MS });
+  return profile;
 }
 
 function bearer(req: Request): string | null {
