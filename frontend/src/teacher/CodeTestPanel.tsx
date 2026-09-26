@@ -3,19 +3,19 @@ import { api } from "../api.ts";
 import Button from "../ui/Button.tsx";
 import Card from "../ui/Card.tsx";
 import { INPUT, TINT } from "../ui/styles.ts";
+import CodeTestEditor, { type EditableCodeTest } from "./CodeTestEditor.tsx";
 import type { CodeTest, Module, TeacherModule } from "../../../shared/types";
-
-const parseJson = (text: string) => JSON.parse(text) as unknown;
 
 export default function CodeTestPanel({ modules }: { modules: Module[] }) {
   const [moduleId, setModuleId] = useState("");
   const [module, setModule] = useState<TeacherModule | null>(null);
   const [exerciseId, setExerciseId] = useState("");
   const [functionName, setFunctionName] = useState("");
-  const [name, setName] = useState("Check 1");
-  const [args, setArgs] = useState("[]");
-  const [expected, setExpected] = useState("null");
-  const [request, setRequest] = useState("Suggest representative edge cases.");
+  const [testDraft, setTestDraft] = useState<EditableCodeTest>({
+    name: "Check 1",
+    args: [],
+    expected: null,
+  });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -82,9 +82,9 @@ export default function CodeTestPanel({ modules }: { modules: Module[] }) {
     setError(null);
     try {
       const body = {
-        name,
-        args: parseJson(args) as unknown[],
-        expected: parseJson(expected),
+        name: testDraft.name,
+        args: testDraft.args,
+        expected: testDraft.expected,
       };
       if (editingId) await api.updateCodeTest(editingId, body);
       else await api.createCodeTest(selected.exercise.id, body);
@@ -92,9 +92,7 @@ export default function CodeTestPanel({ modules }: { modules: Module[] }) {
       await refresh();
     } catch (err) {
       setError(
-        err instanceof Error
-          ? err.message
-          : "Use valid JSON input and expected values",
+        err instanceof Error ? err.message : "Could not save this check",
       );
     } finally {
       setSaving(false);
@@ -108,28 +106,6 @@ export default function CodeTestPanel({ modules }: { modules: Module[] }) {
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not delete check");
-    } finally {
-      setSaving(false);
-    }
-  };
-  const suggest = async () => {
-    if (!selected) return;
-    setSaving(true);
-    setError(null);
-    try {
-      const result = await api.aiCodeTestCandidates({
-        exerciseId: selected.exercise.id,
-        request,
-      });
-      if (result.candidates[0]) {
-        setFunctionName(result.candidates[0].functionName);
-        setArgs(JSON.stringify(result.candidates[0].args));
-        setExpected(JSON.stringify(result.candidates[0].expected));
-      } else setError("No usable suggestions were returned.");
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Could not get suggestions",
-      );
     } finally {
       setSaving(false);
     }
@@ -193,37 +169,11 @@ export default function CodeTestPanel({ modules }: { modules: Module[] }) {
           >
             Save function name
           </Button>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="flex flex-col gap-2 text-[13px] text-muted">
-              Check name
-              <input
-                className={`${INPUT} h-10`}
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                placeholder="For example, handles zero"
-              />
-            </label>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="flex flex-col gap-2 text-[13px] text-muted">
-              JSON arguments
-              <textarea
-                className={INPUT}
-                rows={3}
-                value={args}
-                onChange={(event) => setArgs(event.target.value)}
-              />
-            </label>
-            <label className="flex flex-col gap-2 text-[13px] text-muted">
-              Expected JSON value
-              <textarea
-                className={INPUT}
-                rows={3}
-                value={expected}
-                onChange={(event) => setExpected(event.target.value)}
-              />
-            </label>
-          </div>
+          <CodeTestEditor
+            key={editingId ?? "new"}
+            test={testDraft}
+            onChange={setTestDraft}
+          />
           <div className="flex flex-wrap gap-2">
             <Button
               size="sm"
@@ -242,18 +192,7 @@ export default function CodeTestPanel({ modules }: { modules: Module[] }) {
                 Cancel edit
               </Button>
             )}
-            <Button size="sm" onClick={() => void suggest()} disabled={saving}>
-              Get AI suggestion
-            </Button>
           </div>
-          <label className="flex flex-col gap-2 text-[13px] text-muted">
-            AI request
-            <input
-              className={`${INPUT} h-10`}
-              value={request}
-              onChange={(event) => setRequest(event.target.value)}
-            />
-          </label>
           <div className="flex flex-col gap-2">
             {selected.exercise.tests.map((test) => (
               <div
@@ -270,9 +209,11 @@ export default function CodeTestPanel({ modules }: { modules: Module[] }) {
                     variant="default"
                     onClick={() => {
                       setEditingId(test.id);
-                      setName(test.name);
-                      setArgs(JSON.stringify(test.args));
-                      setExpected(JSON.stringify(test.expected));
+                      setTestDraft({
+                        name: test.name,
+                        args: test.args,
+                        expected: test.expected,
+                      });
                     }}
                     disabled={saving}
                   >

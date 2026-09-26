@@ -32,7 +32,13 @@ import type {
   AiModuleSuggestion,
 } from "../../../shared/types.js";
 import { supabase } from "../supabase.js";
-import { unwrap, type ExerciseRow, type ModuleRow } from "../rows.js";
+import {
+  unwrap,
+  type ExerciseRow,
+  type ModuleRow,
+  type ReferenceRow,
+  type TestRow,
+} from "../rows.js";
 
 // Both endpoints are stateless: the module is loaded server-side (scoped to the caller's classroom),
 // the client re-sends the chat history, and nothing is stored. Mounted behind requireMember.
@@ -46,36 +52,64 @@ const MAX_RUN_ERROR = 2000;
 const MAX_NOTE = 200;
 const MAX_DRAFT_REQUEST = 4000;
 const MAX_DRAFT = 20000;
-const FUNCTION_NAME = /^[A-Za-z_$][A-Za-z0-9_$]{0,63}$/;
-function jsonValue(value: unknown): boolean {
+function isJsonValue(value: unknown): boolean {
   if (value === null || typeof value === "string" || typeof value === "boolean")
     return true;
   if (typeof value === "number") return Number.isFinite(value);
-  if (Array.isArray(value)) return value.every(jsonValue);
+  if (Array.isArray(value)) return value.every(isJsonValue);
   return (
     !!value &&
     typeof value === "object" &&
-    Object.values(value).every(jsonValue)
+    Object.values(value).every(isJsonValue)
   );
 }
-function candidate(value: unknown): AiCodeTestCandidate | null {
+function parseCodeTestCandidate(value: unknown): AiCodeTestCandidate | null {
   if (!value || typeof value !== "object") return null;
-  const c = value as Partial<AiCodeTestCandidate>;
+  const candidate = value as Partial<AiCodeTestCandidate>;
   if (
-    !FUNCTION_NAME.test(c.functionName ?? "") ||
-    !Array.isArray(c.args) ||
-    c.args.length > 10 ||
-    !jsonValue(c.args) ||
-    !jsonValue(c.expected)
+    typeof candidate.name !== "string" ||
+    !candidate.name.trim() ||
+    candidate.name.length > 120 ||
+    !Array.isArray(candidate.args) ||
+    candidate.args.length > 10 ||
+    !isJsonValue(candidate.args) ||
+    !isJsonValue(candidate.expected)
   )
     return null;
   try {
-    return JSON.stringify(c).length <= 8000
-      ? { functionName: c.functionName!, args: c.args, expected: c.expected }
+    return JSON.stringify(candidate).length <= 8000
+      ? {
+          name: candidate.name.trim(),
+          args: candidate.args,
+          expected: candidate.expected,
+        }
       : null;
   } catch {
     return null;
   }
+}
+
+function codeTestContext(
+  exercise: ExerciseRow,
+  prompt: string,
+  tests: TestRow[],
+  references: ReferenceRow[],
+): string {
+  const out = [
+    `Language: ${exercise.language}`,
+    `Function name: ${exercise.function_name}`,
+    `Question: ${prompt}`,
+    `Instructions: ${exercise.instructions}`,
+    "Starter code:",
+    exercise.starter_code,
+  ];
+  for (const test of tests)
+    out.push(
+      `Existing test: ${JSON.stringify({ name: test.name, args: test.args, expected: test.expected })}`,
+    );
+  for (const reference of references)
+    out.push(`Reference answer (${reference.title}):\n${reference.answer}`);
+  return out.join("\n");
 }
 
 // Protects the OpenAI bill: a small per-user sliding window (in-memory, per server process).
@@ -410,11 +444,16 @@ aiRouter.post(
     const exercise = unwrap(
       await supabase
         .from("code_exercises")
-        .select("*, questions!inner(section_id, sections!inner(module_id))")
+        .select(
+          "*, questions!inner(prompt, section_id, sections!inner(module_id))",
+        )
         .eq("id", exerciseId)
         .maybeSingle(),
     ) as
-      (ExerciseRow & { questions: { sections: { module_id: string } } }) | null;
+      | (ExerciseRow & {
+          questions: { prompt: string; sections: { module_id: string } };
+        })
+      | null;
     if (!exercise) {
       res.status(404).json({ error: "Exercise not found" });
       return;
@@ -427,8 +466,25 @@ aiRouter.post(
       res.status(404).json({ error: "Exercise not found" });
       return;
     }
-    const context = teacherModuleContext(
-      (await aggregate(module, true)) as TeacherModule,
+    const [testsResult, referencesResult] = await Promise.all([
+      supabase
+        .from("code_tests")
+        .select("*")
+        .eq("code_exercise_id", exercise.id)
+        .order("position"),
+      supabase
+        .from("reference_answers")
+        .select("*")
+        .eq("code_exercise_id", exercise.id)
+        .order("position"),
+    ]);
+    const tests = unwrap(testsResult) as TestRow[];
+    const references = unwrap(referencesResult) as ReferenceRow[];
+    const context = codeTestContext(
+      exercise,
+      exercise.questions.prompt,
+      tests,
+      references,
     );
     await reply(res, async () => {
       const raw = await complete({
@@ -438,17 +494,34 @@ aiRouter.post(
         maxTokens: 900,
         json: true,
       });
-      let parsed: { candidates?: unknown } = {};
+      let parsed: { candidates?: unknown } | null = null;
       try {
         parsed = JSON.parse(raw) as { candidates?: unknown };
       } catch {}
-      const candidates = Array.isArray(parsed.candidates)
+      const existing = new Set(
+        tests.map((test) => JSON.stringify([test.args, test.expected])),
+      );
+      const candidates = Array.isArray(parsed?.candidates)
         ? parsed.candidates
-            .map(candidate)
+            .map(parseCodeTestCandidate)
             .filter((c): c is AiCodeTestCandidate => c !== null)
+            .filter((c) => {
+              const key = JSON.stringify([c.args, c.expected]);
+              if (existing.has(key)) return false;
+              existing.add(key);
+              return true;
+            })
             .slice(0, 5)
         : [];
-      return { candidates } satisfies AiCodeTestCandidatesResponse;
+      return {
+        candidates,
+        ...(candidates.length
+          ? {}
+          : {
+              warning:
+                "The assistant did not return any usable new test cases. Try a more specific request.",
+            }),
+      } satisfies AiCodeTestCandidatesResponse;
     });
   },
 );
