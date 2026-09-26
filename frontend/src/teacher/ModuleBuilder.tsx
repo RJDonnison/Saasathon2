@@ -355,7 +355,7 @@ export default function ModuleBuilder() {
       !(await confirm({
         title: "Delete module?",
         message:
-          "Permanently delete this module and all of its lesson content?",
+          "Permanently delete this module, all of its lesson content and every student's progress, attempts and code submissions for it? This can't be undone.",
         confirmLabel: "Delete module",
       }))
     )

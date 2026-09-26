@@ -668,16 +668,8 @@ modulesRouter.patch("/:id", requireRole("teacher"), async (req, res) => {
 modulesRouter.delete("/:id", requireRole("teacher"), async (req, res) => {
   const m = await ownedModule(req, res, req.params.id);
   if (!m) return;
-  const sections = unwrap(
-    await supabase.from("sections").select("id").eq("module_id", m.id),
-  ) as { id: string }[];
-  if (await sectionHasHistory(sections.map((section) => section.id)))
-    return res
-      .status(409)
-      .json({
-        error:
-          "This module has student attempts or submissions and cannot be deleted",
-      });
+  // Student progress, attempts, submissions and comments reference the module's rows with ON DELETE CASCADE,
+  // so they go with it; the teacher is warned in the confirmation dialog.
   unwrap(await supabase.from("modules").delete().eq("id", m.id));
   emitModuleDeleted({
     type: "module_deleted",
