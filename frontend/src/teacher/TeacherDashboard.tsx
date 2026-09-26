@@ -182,9 +182,11 @@ export default function TeacherDashboard() {
                   : `${live.length} ${live.length === 1 ? "class is" : "classes are"} live now.`}
           </p>
         </div>
-        <Button disabled={creating} onClick={() => void createClassroom()}>
-          {creating ? "Creating…" : "＋ New classroom"}
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="primary" disabled={creating} onClick={() => void createClassroom()}>
+            {creating ? "Creating…" : "＋ New classroom"}
+          </Button>
+        </div>
       </div>
 
       {error && (

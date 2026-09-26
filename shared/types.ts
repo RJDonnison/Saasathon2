@@ -1,7 +1,7 @@
 // Single source of truth for entities and REST contracts.
 export type Role = "student" | "teacher";
 export type ProgressStatus = "not_started" | "in_progress" | "completed";
-export type QuestionKind = "mcq" | "short" | "code" | "math";
+export type QuestionKind = "mcq" | "short" | "long" | "code" | "math";
 export type ModuleStatus = "draft" | "published";
 
 export interface Classroom {
@@ -805,6 +805,64 @@ export interface AiDraftRequest {
 }
 export interface AiDraftResponse {
   reply: string;
+}
+export type LessonPlanStatus = "draft" | "planned" | "taught";
+export interface LessonPlanSequenceItem {
+  phase: string;
+  duration: string;
+  teacherMoves: string;
+  studentTask: string;
+  support: string;
+}
+/** Editable planning content kept separate from the student coding-module format. */
+export interface LessonPlanDocument {
+  title: string;
+  framework: string;
+  yearLevel: string;
+  learningArea: string;
+  curriculumFocus: string;
+  walt: string;
+  wilf: string;
+  tib: string;
+  keyCompetencies: string[];
+  culturalContext: string;
+  priorLearning: string;
+  learnerNeeds: string;
+  resources: string;
+  sequence: LessonPlanSequenceItem[];
+  assessmentEvidence: string;
+  relieverBriefing: string;
+  reflection: string;
+}
+export interface TeacherLessonPlan {
+  id: string;
+  classroomId: string;
+  classroomName: string;
+  teacherId: string;
+  moduleId: string | null;
+  document: LessonPlanDocument;
+  status: LessonPlanStatus;
+  lessonDate: string | null;
+  taughtAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface SaveTeacherLessonPlanRequest {
+  document: LessonPlanDocument;
+  status: LessonPlanStatus;
+  lessonDate: string | null;
+  moduleId?: string | null;
+}
+export interface AiLessonPlanRequest {
+  topic: string;
+  framework: string;
+  yearLevel: string;
+  learningArea: string;
+  curriculumFocus: string;
+  classContext: string;
+}
+export interface AiLessonPlanResponse {
+  document: LessonPlanDocument;
 }
 /** POST /api/ai/code-test-candidates (teacher only). Candidates are editable and not persisted. */
 export interface AiCodeTestCandidatesRequest {

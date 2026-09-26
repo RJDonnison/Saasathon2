@@ -8,7 +8,7 @@ import MathText from "../ui/MathText.tsx";
 import QuestionConversation from "../ui/QuestionConversation.tsx";
 import Markdown from "../ui/Markdown.tsx";
 import { CheckIcon, PencilIcon } from "../ui/icons.tsx";
-import { CARD, GRADED_CARD_SHADOW, INPUT, TINT } from "../ui/styles.ts";
+import { CARD, GRADED_CARD_SHADOW, GRADED_FEEDBACK, INPUT, TINT } from "../ui/styles.ts";
 import CodeEditor from "./CodeEditor.tsx";
 import { onModuleChanged } from "../socket.ts";
 import { useWorkspace } from "./useWorkspace.ts";
@@ -597,9 +597,9 @@ function AnswerQuestion({
               className={`flex cursor-pointer items-center gap-3 rounded-[10px] border px-3.5 py-2.5 text-sm transition ${
                 answer === o.text
                   ? result === true
-                    ? "border-mint-ink/35 bg-mint text-mint-ink"
+                    ? GRADED_FEEDBACK.correct
                     : result === false
-                      ? "border-peach-ink/35 bg-peach text-peach-ink"
+                      ? GRADED_FEEDBACK.incorrect
                       : "border-mint-ink/25 bg-mint/30 text-ink"
                   : "border-border bg-surface hover:bg-surface-soft"
               }`}
@@ -627,20 +627,38 @@ function AnswerQuestion({
           <label className="sr-only" htmlFor={`answer-${question.id}`}>
             Your answer
           </label>
-          <input
-            id={`answer-${question.id}`}
-            disabled={locked}
-            className={`${INPUT} h-10 w-full`}
-            value={answer}
-            onChange={(e) => {
-              setAnswer(e.target.value);
-              setEdited(true);
-              startAnswering();
-              setResult(undefined);
-            }}
-            onFocus={startAnswering}
-            placeholder="Type your answer"
-          />
+          {question.kind === "long" ? (
+            <textarea
+              id={`answer-${question.id}`}
+              disabled={locked}
+              className={`${INPUT} min-h-36 w-full resize-y py-3`}
+              value={answer}
+              onChange={(e) => {
+                setAnswer(e.target.value);
+                setEdited(true);
+                startAnswering();
+                setResult(undefined);
+              }}
+              onFocus={startAnswering}
+              placeholder="Write your explanation here"
+              rows={5}
+            />
+          ) : (
+            <input
+              id={`answer-${question.id}`}
+              disabled={locked}
+              className={`${INPUT} h-10 w-full`}
+              value={answer}
+              onChange={(e) => {
+                setAnswer(e.target.value);
+                setEdited(true);
+                startAnswering();
+                setResult(undefined);
+              }}
+              onFocus={startAnswering}
+              placeholder="Type your answer"
+            />
+          )}
         </>
       )}
       <div className="flex flex-wrap items-center gap-3">
@@ -650,16 +668,19 @@ function AnswerQuestion({
           onClick={() => void check()}
           disabled={locked || checking || !answer.trim()}
         >
-          {checking ? "Checking…" : "Check"}
+          {checking ? (question.kind === "long" ? "Saving…" : "Checking…") : question.kind === "long" ? "Save response" : "Check"}
         </Button>
         {result !== undefined && (
           <p
-            className={`m-0 text-sm font-medium ${result === true ? "text-mint-ink" : result === false ? "text-peach-ink" : "text-muted"}`}
+            role="status"
+            className={`m-0 rounded-lg px-3 py-2 text-sm font-semibold ${result === true ? GRADED_FEEDBACK.correct : result === false ? GRADED_FEEDBACK.incorrect : "text-muted"}`}
           >
             {result === true
-              ? "Correct."
+              ? "Correct. Nice work!"
               : result === false
-                ? "Incorrect."
+                ? "Not quite yet. Check your thinking and try again."
+              : question.kind === "long"
+                ? "Response saved for your teacher."
                 : "This question does not have a defined answer yet."}
           </p>
         )}
@@ -817,13 +838,14 @@ function MathQuestion({
         </p>
       </div>
       {syntaxError && (
-        <p className="m-0! text-xs text-peach-ink">{syntaxError}</p>
+        <p className="m-0! rounded-lg border border-peach-ink/15 bg-peach/20 px-3 py-2 text-xs text-peach-ink" role="alert">{syntaxError}</p>
       )}
       {isCorrect !== null && (
         <p
-          className={`m-0! text-sm font-semibold! ${isCorrect ? "text-mint-ink" : "text-peach-ink"}`}
+          role="status"
+          className={`m-0! rounded-lg px-3 py-2 text-sm! font-semibold! ${isCorrect ? GRADED_FEEDBACK.correct : GRADED_FEEDBACK.incorrect}`}
         >
-          {isCorrect ? "Correct." : "Incorrect."}
+          {isCorrect ? "Correct. Nice work!" : "Not quite yet. Try a different expression."}
         </p>
       )}
       {locked && isCorrect === null && (

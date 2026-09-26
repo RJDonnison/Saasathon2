@@ -14,7 +14,6 @@ import { useRaisedHands } from "../hooks/useRaisedHands.ts";
 import ClassroomGrid from "./ClassroomGrid.tsx";
 import StudentDetailPanel from "./StudentDetailPanel.tsx";
 import AnnouncementsCard from "./AnnouncementsCard.tsx";
-import LessonPlanner from "./LessonPlanner.tsx";
 import LiveLessonControl from "./LiveLessonControl.tsx";
 import RaiseHandAlert from "./RaiseHandAlert.tsx";
 import Button from "../ui/Button.tsx";
@@ -392,6 +391,12 @@ export default function TeacherHome() {
         >
           Manage class
         </Link>
+        <Link
+          to={`/teacher/class/${user!.classroomId}/plan`}
+          className={`rounded-lg px-3 py-2 text-sm! font-semibold! transition ${pathname.endsWith("/plan") ? "bg-surface text-ink shadow-sm" : "text-muted hover:text-ink"}`}
+        >
+          Plan lesson
+        </Link>
       </nav>
 
       {error && (
@@ -411,19 +416,6 @@ export default function TeacherHome() {
           students={studentCount}
           hands={hands.length}
         />
-      )}
-
-      {managing && (
-        <>
-          <div className="flex flex-col gap-1">
-            <Heading as="h2">Plan with AI</Heading>
-            <p className="m-0 text-sm text-muted">
-              Start with a complete lesson draft, then review and refine it in
-              the builder.
-            </p>
-          </div>
-          <LessonPlanner />
-        </>
       )}
 
       {managing && (
@@ -453,6 +445,11 @@ export default function TeacherHome() {
               onSelect={setSelectedId}
               activity={activity}
               liveProgress={liveProgress}
+              fallbackModuleId={session?.moduleId}
+              onConnect={(studentId, moduleId, questionId) => {
+                const question = questionId ? `?questionId=${encodeURIComponent(questionId)}` : "";
+                navigate(`/teacher/student-work/${encodeURIComponent(studentId)}/${encodeURIComponent(moduleId)}${question}`);
+              }}
               showLiveProgress={!!session}
             />
           </div>
@@ -625,6 +622,11 @@ export default function TeacherHome() {
           </div>
         </div>
       </div>
+      {managing && (
+        <Card title="Plan a lesson" eyebrow={classroom?.name ?? "This classroom"} icon={<BookIcon className="size-[18px]" />} tint="lavender" action={<Button onClick={() => navigate(`/teacher/class/${classroomId}/plan`)}>Open planner</Button>}>
+          <p className="m-0 max-w-2xl text-sm text-muted">Draft and save a curriculum-linked lesson, keep a record of what was taught, and prepare a clear handover for a reliever.</p>
+        </Card>
+      )}
     </div>
   );
 }
