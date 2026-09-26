@@ -32,6 +32,29 @@ root/
 
 The frontend dev server proxies `/api` and `/socket.io` to the backend.
 
+## Docker (development)
+
+The Docker image installs the root, backend, and frontend dependencies by running the existing
+`npm run install-all` script. The source tree is mounted into the container so frontend and backend
+changes reload while the container is running.
+
+1. Copy `.env.example` to `.env` and fill in `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`,
+   `VITE_SUPABASE_URL`, and `VITE_SUPABASE_PUBLISHABLE_KEY` as described below.
+2. Start the app:
+
+   ```bash
+   docker compose up --build
+   ```
+
+3. Open [http://localhost:5173](http://localhost:5173). The backend is also available at
+   [http://localhost:4000](http://localhost:4000).
+
+Stop the app with `Ctrl+C`, or run `docker compose down`. If you change dependencies, recreate the
+container's dependency volumes with `docker compose down -v`, then run `docker compose up --build`.
+
+If Piston runs on your host machine, set `PISTON_API_URL=http://host.docker.internal:2000/api/v2` in
+`.env` so the backend container can reach it.
+
 ## Run
 
 ```bash
