@@ -241,6 +241,8 @@ export interface ModuleBuilderDocument {
           mathTolerance?: number | null;
           options: string[];
           language?: string;
+          /** Deterministic server exercise id for an already saved code question. */
+          codeExerciseId?: string;
           starterCode?: string;
           instructions?: string;
           /** Named function used by teacher-configured automated checks. */
@@ -523,12 +525,15 @@ export interface AiCodeTestCandidatesRequest {
   request: string;
 }
 export interface AiCodeTestCandidate {
-  functionName: string;
+  /** Teacher-editable label for this proposed case. */
+  name: string;
   args: unknown[];
   expected: unknown;
 }
 export interface AiCodeTestCandidatesResponse {
   candidates: AiCodeTestCandidate[];
+  /** Present when the model returned no safe, usable candidates. */
+  warning?: string;
 }
 export interface ApiError {
   error: string;
