@@ -246,20 +246,23 @@ export interface SaveModuleBuilderRequest {
 export interface SaveModuleBuilderResponse {
   module: TeacherModule;
 }
-/** AI suggestions may edit module-level text only; structural edits stay in the builder. */
-export interface ModuleBuilderSuggestionPatch {
-  title?: string;
-  content?: string;
-}
+/**
+ * A teacher-only builder suggestion. `document` is a complete, reviewable replacement for the
+ * in-progress builder document, so it can add reading blocks and questions as well as edit text.
+ * It is omitted when the assistant is only giving advice.
+ */
 export interface AiModuleSuggestion {
   id: string;
   label: string;
-  patch: ModuleBuilderSuggestionPatch;
+  reply: string;
+  document?: ModuleBuilderDocument;
 }
 export interface AiModuleSuggestionsRequest {
-  moduleId: string;
   request: string;
-  itemId?: string;
+  /** The teacher's current, possibly unsaved builder state. It is the source for any replacement. */
+  document: ModuleBuilderDocument;
+  /** The lesson item the teacher has selected for focused help, if any. */
+  selectedItemId?: string;
 }
 export interface AiModuleSuggestionsResponse {
   suggestions: AiModuleSuggestion[];
