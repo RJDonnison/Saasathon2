@@ -6,7 +6,6 @@ import { useClassroomPresence } from "../hooks/useClassroomPresence.ts";
 import { useLiveSession } from "../useLiveSession.ts";
 import ModuleView from "./ModuleView.tsx";
 import AiChatPanel from "./AiChatPanel.tsx";
-import InvitationBell from "./InvitationBell.tsx";
 import RaiseHandButton from "./RaiseHandButton.tsx";
 import { WorkspaceProvider } from "./WorkspaceContext.tsx";
 import Button from "../ui/Button.tsx";
