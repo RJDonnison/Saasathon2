@@ -4,14 +4,13 @@ import { useAuth } from '../auth/useAuth.ts'
 export default function StudentLayout() {
   const { user, signOut } = useAuth()
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="flex items-center justify-between border-b bg-white px-6 py-3">
-        <h1 className="font-semibold">Student — {user?.name}</h1>
-        <button onClick={() => void signOut()} className="text-sm text-blue-600 underline">
+    <div className="app-shell">
+      <header className="app-header"><a className="landing-brand" href="/student">loop<span>.</span></a>
+        <div className="header-user"><span>Student · {user?.name}</span><button onClick={() => void signOut()} className="text-button">
           Sign out
-        </button>
+        </button></div>
       </header>
-      <main className="p-6">
+      <main className="app-main">
         <Outlet />
       </main>
     </div>
