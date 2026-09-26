@@ -13,21 +13,64 @@ import type { AiChatMessage, AiCodeHighlight } from '../../../shared/types'
 /** `spot` is where the tutor pointed in `code` (the editor text at send time), so the link can be disabled once it's stale. */
 type Msg = { from: 'me' | 'ai' | 'error'; text: string; spot?: { editorKey: string; code: string; highlight: AiCodeHighlight } }
 
+const EMPTY: Msg[] = []
+const MAX_SAVED = 40
+
+// Conversations are kept per student and lesson in this browser (the server is stateless by design). Storage can be
+// unavailable or full (private windows, blocked site data), so every access is best-effort.
+const storageKey = (userId: string, moduleId: string) => `loop:tutor-chat:${userId}:${moduleId}`
+
+function loadChat(userId: string, moduleId: string): Msg[] {
+  try {
+    const raw = localStorage.getItem(storageKey(userId, moduleId))
+    const data: unknown = raw ? JSON.parse(raw) : []
+    if (!Array.isArray(data)) return EMPTY
+    return data.filter(
+      (m): m is Msg => !!m && (m.from === 'me' || m.from === 'ai' || m.from === 'error') && typeof m.text === 'string',
+    )
+  } catch {
+    return EMPTY
+  }
+}
+
+function saveChat(userId: string, moduleId: string, messages: Msg[]) {
+  try {
+    if (messages.length === 0) localStorage.removeItem(storageKey(userId, moduleId))
+    else localStorage.setItem(storageKey(userId, moduleId), JSON.stringify(messages.slice(-MAX_SAVED)))
+  } catch {
+    // Not persisted; the conversation still works for this session.
+  }
+}
+
 const STARTERS = ["I don't understand the question", 'Can I get a hint?', "My code doesn't work"]
 const FIND_ERROR = 'Something is wrong with my code. Can you tell me where to look?'
 
 // "I'm stuck" chat, scoped to the module the student is on. The AI gives hints, not answers.
+// Each module keeps its own conversation: it survives switching modules and reloading the page (see loadChat).
+// The panel stays mounted across modules, so a reply that arrives after switching lands in the module it was asked in.
 // The server is stateless: we re-send the transcript (minus errors) with every question, plus the code of the
 // editor the student last touched. When the tutor can locate a problem, the editor marks and scrolls to it.
-// Mount with key={moduleId} so switching modules starts a fresh conversation.
 export default function AiChatPanel({ moduleId }: { moduleId: string }) {
   const { user } = useAuth()
   const { active, codes, runErrors, helpRequest, showHighlight } = useWorkspace()
   const [question, setQuestion] = useState('')
-  const [messages, setMessages] = useState<Msg[]>([])
-  const [thinking, setThinking] = useState(false)
+  const [chats, setChats] = useState<Record<string, Msg[]>>({})
+  const [thinkingIn, setThinkingIn] = useState<Record<string, boolean>>({})
+  // Load a module's saved conversation the first time we see it. Adjusting state during render re-renders
+  // immediately, before anything is committed or saved, so the empty placeholder is never written back.
+  const loaded = moduleId in chats
+  if (user && !loaded) setChats((c) => ({ ...c, [moduleId]: loadChat(user.id, moduleId) }))
+  const messages = chats[moduleId] ?? EMPTY
+  const thinking = thinkingIn[moduleId] ?? false
   const listRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (user && loaded) saveChat(user.id, moduleId, messages)
+  }, [user, loaded, moduleId, messages])
+
+  const addMessage = (forModule: string, msg: Msg) =>
+    setChats((c) => ({ ...c, [forModule]: [...(c[forModule] ?? EMPTY), msg] }))
 
   // Keep the newest message in view (scroll the log itself, not the whole page).
   useEffect(() => {
@@ -36,13 +79,14 @@ export default function AiChatPanel({ moduleId }: { moduleId: string }) {
   }, [messages, thinking])
 
   // The freshest editor state, read at send time so a queued "find the error" never sends stale code.
-  const latest = useRef({ active, codes, runErrors, messages, thinking })
+  const latest = useRef({ moduleId, active, codes, runErrors, messages, thinking })
   useEffect(() => {
-    latest.current = { active, codes, runErrors, messages, thinking }
+    latest.current = { moduleId, active, codes, runErrors, messages, thinking }
   })
 
   async function send(q: string, requestedError?: string) {
     const { active, codes, runErrors, messages, thinking } = latest.current
+    const asked = moduleId // this conversation, even if the student switches modules while we wait
     if (!user || !q || thinking) return
     const history: AiChatMessage[] = messages
       .filter((m) => m.from !== 'error')
@@ -52,8 +96,8 @@ export default function AiChatPanel({ moduleId }: { moduleId: string }) {
     // reliable even if it is clicked immediately after a run state update.
     const runError = active ? runErrors[active.key] ?? requestedError : requestedError
     setQuestion('')
-    setMessages((m) => [...m, { from: 'me', text: q }])
-    setThinking(true)
+    addMessage(asked, { from: 'me', text: q })
+    setThinkingIn((t) => ({ ...t, [asked]: true }))
     try {
       const { reply, highlight } = await api.aiHint({
         moduleId,
@@ -66,13 +110,16 @@ export default function AiChatPanel({ moduleId }: { moduleId: string }) {
       let spot: Msg['spot']
       if (highlight && active && code) {
         spot = { editorKey: active.key, code, highlight }
-        showHighlight({ editorKey: active.key, line: highlight.line, endLine: highlight.endLine ?? highlight.line, note: highlight.note })
+        // The editors on screen belong to whichever module is open now; only mark them if that's still this one.
+        if (latest.current.moduleId === asked) {
+          showHighlight({ editorKey: active.key, line: highlight.line, endLine: highlight.endLine ?? highlight.line, note: highlight.note })
+        }
       }
-      setMessages((m) => [...m, { from: 'ai', text: reply, spot }])
+      addMessage(asked, { from: 'ai', text: reply, spot })
     } catch (err) {
-      setMessages((m) => [...m, { from: 'error', text: err instanceof Error ? err.message : 'Request failed' }])
+      addMessage(asked, { from: 'error', text: err instanceof Error ? err.message : 'Request failed' })
     } finally {
-      setThinking(false)
+      setThinkingIn((t) => ({ ...t, [asked]: false }))
     }
   }
 
@@ -96,10 +143,15 @@ export default function AiChatPanel({ moduleId }: { moduleId: string }) {
         <span className={`grid size-9 flex-none place-items-center rounded-xl ${TINT.lavender}`}>
           <SparklesIcon className="size-[18px]" />
         </span>
-        <div className="flex min-w-0 flex-col gap-1.5">
+        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
           <Eyebrow>Hints, not answers</Eyebrow>
           <Heading>I’m stuck</Heading>
         </div>
+        {messages.length > 0 && (
+          <Button size="sm" disabled={thinking} onClick={() => setChats((c) => ({ ...c, [moduleId]: EMPTY }))}>
+            Clear chat
+          </Button>
+        )}
       </header>
 
       <p className="m-0 flex flex-none items-center gap-2 border-b border-border bg-surface-soft px-5 py-2 text-xs text-muted">
