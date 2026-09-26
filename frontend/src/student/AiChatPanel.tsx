@@ -160,11 +160,7 @@ export default function AiChatPanel({
         role: m.from === "me" ? "user" : "assistant",
         text: m.text,
       }));
-    const code = activeQuestionId
-      ? undefined
-      : active
-        ? codes[active.key]
-        : undefined;
+    const code = !activeQuestionId && active ? codes[active.key] : undefined;
     // Prefer the current editor's stored result; the explicit value keeps the Find the error action
     // reliable even if it is clicked immediately after a run state update.
     const runError = active
@@ -246,7 +242,10 @@ export default function AiChatPanel({
             </span>
           </div>
         </div>
-        <p className="m-0 text-[13px] leading-relaxed text-muted">Hints, not answers. Ask about the lesson you’re on and it will nudge you in the right direction.</p>
+        <p className="m-0 text-[13px] leading-relaxed text-muted">
+          Hints, not answers. Ask about the lesson you’re on and it will nudge
+          you in the right direction.
+        </p>
       </header>
 
       <p className="m-0 flex flex-none items-center gap-2 border-b border-border bg-surface-soft px-5 py-2 text-xs text-muted">
@@ -269,23 +268,33 @@ export default function AiChatPanel({
       >
         {messages.length === 0 && !thinking ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
-            <p className="m-0 max-w-56 text-sm leading-relaxed text-muted">
-              Tell the tutor where you’re stuck. It’ll nudge you in the right
-              direction.
-            </p>
-            <div className="flex flex-wrap justify-center gap-2">
-              {STARTERS.map((s) => (
-                <Button
-                  key={s}
-                  size="sm"
-                  onClick={() => {
-                    setQuestion(s);
-                    inputRef.current?.focus();
-                  }}
-                >
-                  {s}
-                </Button>
-              ))}
+            <div className="flex flex-col gap-1.5">
+              <span className="text-sm font-semibold text-ink">
+                Where are you stuck?
+              </span>
+              <p className="m-0 max-w-64 text-sm leading-relaxed text-muted">
+                Tell the tutor what you have tried. It will nudge you, not give
+                the answer.
+              </p>
+            </div>
+            <div className="flex flex-col items-center gap-2">
+              <span className="text-xs font-semibold text-muted">
+                TRY A PROMPT
+              </span>
+              <div className="flex flex-wrap justify-center gap-2">
+                {STARTERS.map((s) => (
+                  <Button
+                    key={s}
+                    size="sm"
+                    onClick={() => {
+                      setQuestion(s);
+                      inputRef.current?.focus();
+                    }}
+                  >
+                    {s}
+                  </Button>
+                ))}
+              </div>
             </div>
           </div>
         ) : (
@@ -350,10 +359,19 @@ export default function AiChatPanel({
         )}
       </div>
 
-      <form onSubmit={ask} className="flex flex-none flex-col gap-2 border-t border-border bg-surface p-4">
-        <label htmlFor="helper-question" className="text-[13px] font-semibold text-muted">
-          Ask the helper
-        </label>
+      <form
+        onSubmit={ask}
+        className="flex flex-none flex-col gap-3 border-t border-border bg-surface p-4"
+      >
+        <div className="flex items-center justify-between gap-3">
+          <label
+            htmlFor="helper-question"
+            className="text-[13px] font-semibold text-muted"
+          >
+            Ask the helper
+          </label>
+          <span className="text-xs text-muted">Hints only</span>
+        </div>
         <div className="flex items-center gap-2">
           <input
             id="helper-question"
@@ -364,11 +382,22 @@ export default function AiChatPanel({
             placeholder="Ask for a hint"
             maxLength={2000}
           />
-          <Button type="submit" variant="primary" size="lg" disabled={thinking || !question.trim()} className="size-11 flex-none p-0" aria-label="Send">
+          <Button
+            type="submit"
+            variant="primary"
+            size="lg"
+            disabled={thinking || !question.trim()}
+            className="h-11 flex-none px-3"
+            aria-label="Send hint request"
+          >
             <SendIcon className="size-4" />
+            <span>Send</span>
           </Button>
         </div>
-        <p className="m-0 text-xs text-muted">The helper gives hints, never full answers.</p>
+        <p className="m-0 text-xs text-muted">
+          The helper gives hints, never full answers. Include what you have
+          tried for a more useful nudge.
+        </p>
       </form>
     </section>
   );
