@@ -189,13 +189,6 @@ export interface CodeTest {
   expected: unknown;
   position: number;
 }
-export interface ReferenceAnswer {
-  id: string;
-  codeExerciseId: string;
-  title: string;
-  answer: string;
-  position: number;
-}
 export interface CodeCheck {
   id: string;
   codeExerciseId: string;
@@ -222,7 +215,7 @@ export interface LessonSummary extends Omit<Module, "status"> {
 /** GET /api/classrooms/:id/lessons (student) — every lesson in order, with the caller's progress. */
 export type ListLessonSummariesResponse = LessonSummary[];
 
-/** Teacher aggregate. Includes answer keys, reference answers and checks. */
+/** Teacher aggregate. Includes answer keys and checks. */
 export interface TeacherQuestion extends Question {
   answerKey: string | null;
   /** Teacher-only target values; student aggregates deliberately omit both fields. */
@@ -231,7 +224,6 @@ export interface TeacherQuestion extends Question {
   codeExercise?: CodeExercise & {
     /** Appended by the server at run time; deliberately absent from student aggregates. */
     hiddenCode: string;
-    referenceAnswers: ReferenceAnswer[];
     checks: CodeCheck[];
     tests: CodeTest[];
   };
@@ -244,7 +236,7 @@ export interface TeacherSection extends Section {
 export interface TeacherModule extends Module {
   sections: TeacherSection[];
 }
-/** Student aggregate. Deliberately excludes answer keys, reference answers and checks. */
+/** Student aggregate. Deliberately excludes answer keys and checks. */
 export interface StudentQuestion extends Question {
   codeExercise?: CodeExercise;
 }
@@ -366,11 +358,6 @@ export interface ModuleBuilderDocument {
           functionName?: string;
           /** Teacher-only test harness appended on the server when this exercise runs. */
           hiddenCode?: string;
-          referenceAnswers?: Array<{
-            id: string;
-            title: string;
-            answer: string;
-          }>;
           checks?: Array<{ id: string; name: string; description: string }>;
           tests?: Array<{
             id: string;
@@ -479,16 +466,6 @@ export interface UpdateCodeTestRequest {
   expected?: unknown;
   position?: number;
 }
-export interface CreateReferenceAnswerRequest {
-  title: string;
-  answer: string;
-  position?: number;
-}
-export interface UpdateReferenceAnswerRequest {
-  title?: string;
-  answer?: string;
-  position?: number;
-}
 export interface CreateCodeCheckRequest {
   name: string;
   description: string;
@@ -587,7 +564,7 @@ export interface AiChatMessage {
 
 /**
  * POST /api/ai/hint (student only) — "I'm stuck" tutor. Gives hints, never the solution, scoped to `moduleId`.
- * The server loads the module itself (student-safe view: no answer keys/reference answers/checks).
+ * The server loads the module itself (student-safe view: no answer keys/checks).
  * Limits: question <= 2000 chars, history <= 20 turns of <= 2000 chars, code <= 8000 chars, error <= 2000 chars.
  * Errors: 503 if the server has no OPENAI_API_KEY, 502 if OpenAI fails, 429 if rate limited.
  * When `code` is sent and the tutor can point at the problem (a syntax error, a crash), the response carries a

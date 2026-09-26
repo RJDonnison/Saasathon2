@@ -11,7 +11,6 @@ import {
   toModule,
   toOption,
   toQuestion,
-  toReference,
   toSection,
   toTest,
   toSectionItem,
@@ -22,7 +21,6 @@ import {
   type ModuleRow,
   type OptionRow,
   type QuestionRow,
-  type ReferenceRow,
   type SectionRow,
   type SectionItemRow,
   type TestRow,
@@ -33,7 +31,6 @@ import type {
   CreateModuleRequest,
   CreateOptionRequest,
   CreateQuestionRequest,
-  CreateReferenceAnswerRequest,
   CreateSectionRequest,
   CreateCodeTestRequest,
   GetModuleResponse,
@@ -43,7 +40,6 @@ import type {
   UpdateModuleRequest,
   UpdateOptionRequest,
   UpdateQuestionRequest,
-  UpdateReferenceAnswerRequest,
   UpdateSectionRequest,
   UpdateCodeExerciseRequest,
   UpdateCodeTestRequest,
@@ -60,6 +56,38 @@ const validPosition = (value: unknown) =>
 const FUNCTION_NAME = /^[A-Za-z_$][A-Za-z0-9_$]{0,63}$/;
 const MAX_TESTS_PER_EXERCISE = 20;
 const MAX_JSON_BYTES = 8_000;
+const MAX_MODULE_MARKDOWN = 50_000;
+const MAX_BLOCK_MARKDOWN = 25_000;
+
+/** Markdown is rendered for students. Keep it deliberately boring: no HTML, MDX, images or directives. */
+function validMarkdown(value: unknown, maximum: number): value is string {
+  if (typeof value !== "string" || value.length > maximum) return false;
+  if (
+    /<\/?[A-Za-z][^>]*>|<!--|!\[|^\s*:::/m.test(value) ||
+    /(^|\n)\s*(?:import|export)\s+/m.test(value) ||
+    /\{[#/]?[A-Za-z][^}]*\}/.test(value)
+  )
+    return false;
+
+  const links = value.matchAll(/(?<!!)\[[^\]]*\]\(([^)\s]+)(?:\s+[^)]*)?\)/g);
+  for (const link of links) {
+    const target = link[1].replace(/^<|>$/g, "");
+    if (
+      !/^(?:https?:|mailto:|\/|#|\.\.?\/)/i.test(target) ||
+      /^(?:javascript|data|vbscript):/i.test(target)
+    )
+      return false;
+  }
+  return true;
+}
+
+function validBlock(type: unknown, content: unknown): boolean {
+  if (typeof type !== "string" || !type.trim()) return false;
+  return (
+    type !== "markdown" ||
+    (typeof content === "string" && validMarkdown(content, MAX_BLOCK_MARKDOWN))
+  );
+}
 function jsonValue(
   value: unknown,
   seen = new Set<object>(),
@@ -121,6 +149,27 @@ const validMathQuestion = (
     : (expected === undefined || expected === null) &&
       (tolerance === undefined || tolerance === null);
 
+function hasLegacyBuilderReferenceAnswers(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  const sections = (value as { sections?: unknown }).sections;
+  return (
+    Array.isArray(sections) &&
+    sections.some(
+      (section) =>
+        section &&
+        typeof section === "object" &&
+        Array.isArray((section as { items?: unknown }).items) &&
+        (section as { items: unknown[] }).items.some(
+          (item) =>
+            item &&
+            typeof item === "object" &&
+            (item as { type?: unknown }).type === "question" &&
+            Object.hasOwn(item, "referenceAnswers"),
+        ),
+    )
+  );
+}
+
 /** Shared by the teacher-only AI route before an AI-proposed document is returned to the browser. */
 export function validBuilderDocument(
   value: unknown,
@@ -129,7 +178,7 @@ export function validBuilderDocument(
   const d = value as ModuleBuilderDocument;
   return (
     typeof d.title === "string" &&
-    typeof d.content === "string" &&
+    validMarkdown(d.content, MAX_MODULE_MARKDOWN) &&
     (d.status === "draft" || d.status === "published") &&
     Array.isArray(d.sections) &&
     d.sections.every(
@@ -141,7 +190,7 @@ export function validBuilderDocument(
           (i) =>
             typeof i.id === "string" &&
             (i.type === "block"
-              ? typeof i.blockType === "string" && Object.hasOwn(i, "content")
+              ? validBlock(i.blockType, i.content)
               : i.type === "question" &&
                 typeof i.prompt === "string" &&
                 kinds.includes(i.kind) &&
@@ -165,15 +214,6 @@ export function validBuilderDocument(
                     FUNCTION_NAME.test(i.functionName))) &&
                 (i.hiddenCode === undefined ||
                   typeof i.hiddenCode === "string") &&
-                (i.referenceAnswers === undefined ||
-                  (Array.isArray(i.referenceAnswers) &&
-                    i.referenceAnswers.every(
-                      (reference) =>
-                        reference &&
-                        typeof reference.id === "string" &&
-                        typeof reference.title === "string" &&
-                        typeof reference.answer === "string",
-                    ))) &&
                 (i.checks === undefined ||
                   (Array.isArray(i.checks) &&
                     i.checks.every(
@@ -197,179 +237,24 @@ export function validBuilderDocument(
   );
 }
 
-/** Replaces a draft document after a compare-and-swap revision bump. Writes are serialized by the revision guard. */
+/**
+ * Reconciles a draft through the SQL RPC. PostgREST cannot make a multi-table
+ * builder save atomic; the function owns the revision guard and child ordering.
+ */
 async function saveBuilder(
   current: ModuleRow,
   document: ModuleBuilderDocument,
   revision: number,
 ) {
-  const claimed = unwrap(
-    await supabase
-      .from("modules")
-      .update({
-        title: document.title.trim(),
-        content: document.content,
-        status: document.status,
-        revision: revision + 1,
-      })
-      .eq("id", current.id)
-      .eq("revision", revision)
-      .select("*")
-      .maybeSingle(),
-  ) as ModuleRow | null;
-  if (!claimed) return null;
-  // Delete/recreate is one compact document write. IDs from the editor are stable UUIDs; child tables cascade.
-  const oldSections = unwrap(
-    await supabase.from("sections").select("id").eq("module_id", current.id),
-  ) as { id: string }[];
-  if (oldSections.length)
-    unwrap(
-      await supabase
-        .from("sections")
-        .delete()
-        .in(
-          "id",
-          oldSections.map((s) => s.id),
-        ),
-    );
-  for (
-    let sectionPosition = 0;
-    sectionPosition < document.sections.length;
-    sectionPosition++
-  ) {
-    const section = document.sections[sectionPosition];
-    unwrap(
-      await supabase.from("sections").insert({
-        id: section.id,
-        module_id: current.id,
-        title: section.title.trim() || "Untitled section",
-        position: sectionPosition,
-      }),
-    );
-    for (let position = 0; position < section.items.length; position++) {
-      const item = section.items[position];
-      if (item.type === "block") {
-        unwrap(
-          await supabase.from("section_blocks").insert({
-            id: item.id,
-            section_id: section.id,
-            type: item.blockType,
-            content: item.content,
-            position,
-          }),
-        );
-        unwrap(
-          await supabase.from("section_items").insert({
-            id: randomUUID(),
-            section_id: section.id,
-            item_type: "block",
-            item_id: item.id,
-            position,
-          }),
-        );
-      } else {
-        unwrap(
-          await supabase.from("questions").insert({
-            id: item.id,
-            section_id: section.id,
-            prompt: item.prompt,
-            kind: item.kind,
-            answer_key: item.answerKey,
-            math_expected_result: item.mathExpectedResult ?? null,
-            math_tolerance: item.mathTolerance ?? null,
-            position,
-          }),
-        );
-        unwrap(
-          await supabase.from("section_items").insert({
-            id: randomUUID(),
-            section_id: section.id,
-            item_type: "question",
-            item_id: item.id,
-            position,
-          }),
-        );
-        if (item.kind === "mcq")
-          for (
-            let optionPosition = 0;
-            optionPosition < item.options.length;
-            optionPosition++
-          )
-            unwrap(
-              await supabase.from("question_options").insert({
-                id: randomUUID(),
-                question_id: item.id,
-                text: item.options[optionPosition],
-                position: optionPosition,
-              }),
-            );
-        if (item.kind === "code") {
-          const exerciseId = `exercise-${item.id}`;
-          unwrap(
-            await supabase.from("code_exercises").insert({
-              id: exerciseId,
-              question_id: item.id,
-              language: item.language || "javascript",
-              starter_code: item.starterCode || "",
-              instructions: item.instructions || "",
-              function_name: item.functionName || "solution",
-              hidden_code: item.hiddenCode || "",
-            }),
-          );
-          for (
-            let referencePosition = 0;
-            referencePosition < (item.referenceAnswers?.length ?? 0);
-            referencePosition++
-          ) {
-            const reference = item.referenceAnswers![referencePosition];
-            unwrap(
-              await supabase.from("reference_answers").insert({
-                id: reference.id,
-                code_exercise_id: exerciseId,
-                title: reference.title,
-                answer: reference.answer,
-                position: referencePosition,
-              }),
-            );
-          }
-          for (
-            let checkPosition = 0;
-            checkPosition < (item.checks?.length ?? 0);
-            checkPosition++
-          ) {
-            const check = item.checks![checkPosition];
-            unwrap(
-              await supabase.from("code_checks").insert({
-                id: check.id,
-                code_exercise_id: exerciseId,
-                name: check.name,
-                description: check.description,
-                position: checkPosition,
-              }),
-            );
-          }
-          for (
-            let testPosition = 0;
-            testPosition < (item.tests?.length ?? 0);
-            testPosition++
-          ) {
-            const test = item.tests![testPosition];
-            unwrap(
-              await supabase.from("code_tests").insert({
-                id: test.id,
-                code_exercise_id: exerciseId,
-                name: test.name.trim(),
-                args: test.args,
-                expected: test.expected,
-                position: testPosition,
-              }),
-            );
-          }
-        }
-      }
-    }
-  }
-  return claimed;
+  const rows = unwrap(
+    await supabase.rpc("save_module_builder", {
+      p_module_id: current.id,
+      p_classroom_id: current.classroom_id,
+      p_revision: revision,
+      p_document: document,
+    }),
+  ) as ModuleRow[];
+  return rows[0] ?? null;
 }
 const nextPosition = async (
   table: string,
@@ -442,15 +327,9 @@ export async function aggregate(
       ]).then((r) => r.map(unwrap))) as [OptionRow[], ExerciseRow[]])
     : [[], []];
   const exerciseIds = exercises.map((e) => e.id);
-  const [references, checks, tests] =
+  const [checks, tests] =
     teacher && exerciseIds.length
       ? ((await Promise.all([
-          supabase
-            .from("reference_answers")
-            .select("*")
-            .in("code_exercise_id", exerciseIds)
-            .order("position")
-            .order("id"),
           supabase
             .from("code_checks")
             .select("*")
@@ -463,12 +342,8 @@ export async function aggregate(
             .in("code_exercise_id", exerciseIds)
             .order("position")
             .order("id"),
-        ]).then((r) => r.map(unwrap))) as [
-          ReferenceRow[],
-          CheckRow[],
-          TestRow[],
-        ])
-      : [[], [], []];
+        ]).then((r) => r.map(unwrap))) as [CheckRow[], TestRow[]])
+      : [[], []];
   const result = {
     ...toModule(module),
     sections: sections.map((section) => ({
@@ -496,9 +371,6 @@ export async function aggregate(
                     ? {
                         ...toExercise(exercise),
                         hiddenCode: exercise.hidden_code,
-                        referenceAnswers: references
-                          .filter((r) => r.code_exercise_id === exercise.id)
-                          .map(toReference),
                         checks: checks
                           .filter((c) => c.code_exercise_id === exercise.id)
                           .map(toCheck),
@@ -585,8 +457,50 @@ async function ownedQuestion(
   return question;
 }
 
+async function questionHasHistory(questionIds: string[]): Promise<boolean> {
+  if (!questionIds.length) return false;
+  const [attempts, exercises] = (
+    await Promise.all([
+      supabase
+        .from("attempts")
+        .select("id")
+        .in("question_id", questionIds)
+        .limit(1),
+      supabase
+        .from("code_exercises")
+        .select("id")
+        .in("question_id", questionIds),
+    ])
+  ).map(unwrap) as [{ id: string }[], { id: string }[]];
+  if (attempts.length) return true;
+  if (!exercises.length) return false;
+  const submissions = unwrap(
+    await supabase
+      .from("code_submissions")
+      .select("id")
+      .in(
+        "code_exercise_id",
+        exercises.map((exercise) => exercise.id),
+      )
+      .limit(1),
+  ) as { id: string }[];
+  return submissions.length > 0;
+}
+
+async function sectionHasHistory(sectionIds: string[]): Promise<boolean> {
+  if (!sectionIds.length) return false;
+  const questions = unwrap(
+    await supabase.from("questions").select("id").in("section_id", sectionIds),
+  ) as { id: string }[];
+  return questionHasHistory(questions.map((question) => question.id));
+}
+
 modulesRouter.post("/builder", requireRole("teacher"), async (req, res) => {
   const document = (req.body ?? {}).document as unknown;
+  if (hasLegacyBuilderReferenceAnswers(document))
+    return res
+      .status(400)
+      .json({ error: "referenceAnswers is no longer supported" });
   if (!validBuilderDocument(document) || !document.title.trim())
     return res.status(400).json({ error: "Invalid module document" });
   const position = await nextPosition(
@@ -628,6 +542,10 @@ modulesRouter.put("/:id/builder", requireRole("teacher"), async (req, res) => {
   const current = await ownedModule(req, res, req.params.id);
   const body = (req.body ?? {}) as Partial<SaveModuleBuilderRequest>;
   if (!current) return;
+  if (hasLegacyBuilderReferenceAnswers(body.document))
+    return res
+      .status(400)
+      .json({ error: "referenceAnswers is no longer supported" });
   if (
     !Number.isInteger(body.revision) ||
     body.revision! < 0 ||
@@ -666,7 +584,8 @@ modulesRouter.post("/", requireRole("teacher"), async (req, res) => {
   if (
     typeof body.title !== "string" ||
     !body.title.trim() ||
-    (body.content !== undefined && typeof body.content !== "string") ||
+    (body.content !== undefined &&
+      !validMarkdown(body.content, MAX_MODULE_MARKDOWN)) ||
     !validPosition(body.position)
   )
     return res
@@ -700,7 +619,8 @@ modulesRouter.patch("/:id", requireRole("teacher"), async (req, res) => {
   if (
     (body.title !== undefined &&
       (typeof body.title !== "string" || !body.title.trim())) ||
-    (body.content !== undefined && typeof body.content !== "string") ||
+    (body.content !== undefined &&
+      !validMarkdown(body.content, MAX_MODULE_MARKDOWN)) ||
     !validPosition(body.position)
   )
     return res.status(400).json({ error: "Invalid module fields" });
@@ -721,6 +641,16 @@ modulesRouter.patch("/:id", requireRole("teacher"), async (req, res) => {
 modulesRouter.delete("/:id", requireRole("teacher"), async (req, res) => {
   const m = await ownedModule(req, res, req.params.id);
   if (!m) return;
+  const sections = unwrap(
+    await supabase.from("sections").select("id").eq("module_id", m.id),
+  ) as { id: string }[];
+  if (await sectionHasHistory(sections.map((section) => section.id)))
+    return res
+      .status(409)
+      .json({
+        error:
+          "This module has student attempts or submissions and cannot be deleted",
+      });
   unwrap(await supabase.from("modules").delete().eq("id", m.id));
   emitModuleDeleted({
     type: "module_deleted",
@@ -799,6 +729,13 @@ modulesRouter.delete(
   async (req, res) => {
     const s = await ownedSection(req, res, req.params.id);
     if (!s) return;
+    if (await sectionHasHistory([s.id]))
+      return res
+        .status(409)
+        .json({
+          error:
+            "This section has student attempts or submissions and cannot be deleted",
+        });
     unwrap(await supabase.from("sections").delete().eq("id", s.id));
     res.status(204).end();
   },
@@ -815,6 +752,7 @@ modulesRouter.post(
       typeof b?.type !== "string" ||
       !b.type.trim() ||
       b.content === undefined ||
+      !validBlock(b.type, b.content) ||
       !validPosition(b.position)
     )
       return res.status(400).json({ error: "Invalid block fields" });
@@ -851,6 +789,7 @@ modulesRouter.patch("/blocks/:id", requireRole("teacher"), async (req, res) => {
   if (!block || !(await ownedSection(req, res, block.section_id))) return;
   if (
     (b.type !== undefined && (typeof b.type !== "string" || !b.type.trim())) ||
+    (b.content !== undefined && !validBlock(b.type ?? block.type, b.content)) ||
     !validPosition(b.position)
   )
     return res.status(400).json({ error: "Invalid block fields" });
@@ -994,12 +933,19 @@ modulesRouter.delete(
   async (req, res) => {
     const q = await ownedQuestion(req, res, req.params.id);
     if (!q) return;
+    if (await questionHasHistory([q.id]))
+      return res
+        .status(409)
+        .json({
+          error:
+            "This question has student attempts or submissions and cannot be deleted",
+        });
     unwrap(await supabase.from("questions").delete().eq("id", q.id));
     res.status(204).end();
   },
 );
 
-// Options, exercise, references and checks all resolve their parent question/exercise before writes.
+// Options, exercise, and checks all resolve their parent question/exercise before writes.
 modulesRouter.post(
   "/questions/:id/options",
   requireRole("teacher"),
@@ -1269,7 +1215,7 @@ async function exerciseFor(
 }
 function childCrud(
   base: string,
-  table: "reference_answers" | "code_checks",
+  table: "code_checks",
   create: (
     b: any,
     exerciseId: string,
@@ -1338,22 +1284,6 @@ function childCrud(
     },
   );
 }
-childCrud(
-  "references",
-  "reference_answers",
-  (b: CreateReferenceAnswerRequest, id, position) => ({
-    id: randomUUID(),
-    code_exercise_id: id,
-    title: b.title,
-    answer: b.answer,
-    position,
-  }),
-  (b: UpdateReferenceAnswerRequest, old) => ({
-    title: b.title ?? old.title,
-    answer: b.answer ?? old.answer,
-    position: b.position ?? old.position,
-  }),
-);
 childCrud(
   "checks",
   "code_checks",

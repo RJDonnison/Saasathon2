@@ -6,8 +6,8 @@ import type {
 
 // ---------- Context builders: module -> plain text for the prompt ----------
 //
-// The student builder takes a StudentModule, which by construction has no answer keys, reference
-// answers or checks (see aggregate(module, false) in routes/modules.ts), and it never reads those
+// The student builder takes a StudentModule, which by construction has no answer keys or checks
+// (see aggregate(module, false) in routes/modules.ts), and it never reads those
 // fields. Keep it that way: a tutor can't leak a solution it was never given.
 
 const MAX_CONTEXT_CHARS = 24_000;
@@ -54,7 +54,7 @@ export function studentModuleContext(m: StudentModule): string {
   return clip(out.join("\n"));
 }
 
-/** The teacher's own material, so it includes answer keys, reference solutions and checks. */
+/** The teacher's own material, so it includes answer keys and checks. */
 export function teacherModuleContext(m: TeacherModule): string {
   const out: string[] = [`# Module: ${m.title}`];
   if (m.content?.trim()) out.push(m.content.trim());
@@ -72,9 +72,6 @@ export function teacherModuleContext(m: TeacherModule): string {
           "  Starter code:",
           indent(ex.starterCode),
         );
-        for (const r of ex.referenceAnswers) {
-          out.push(`  Reference answer "${r.title}":`, indent(r.answer));
-        }
         for (const c of ex.checks)
           out.push(`  Check "${c.name}": ${c.description}`);
         for (const test of ex.tests)
@@ -145,7 +142,7 @@ export function draftSystemPrompt(
   ]
     .filter(Boolean)
     .join("\n\n");
-  return `You help a teacher draft and plan modules for a classroom coding platform. A module has a title, an intro, and sections. Sections hold explanatory blocks and questions (multiple choice, short answer, or code exercises with starter code, reference solutions and checks).
+  return `You help a teacher draft and plan modules for a classroom coding platform. A module has a title, an intro, and sections. Sections hold explanatory blocks and questions (multiple choice, short answer, or code exercises with starter code and checks).
 
 - Be concrete and practical: produce material the teacher can paste in. Use Markdown.
 - When asked to draft or extend, match the existing module's level, tone and structure. Improve rather than rewrite unless asked to.
@@ -166,7 +163,7 @@ export function builderSystemPrompt(
 ): string {
   return `You are a writing assistant inside a teacher's classroom module builder. Help with the
 teacher's request using the source document below. The teacher owns this material, including
-answer keys and reference solutions.
+answer keys.
 
 Reply with one JSON object only, with this exact top-level shape:
 {"label":"Short action summary","reply":"Brief explanation for the teacher","document":null}
@@ -189,7 +186,7 @@ Document rules:
   "mcq", "short", "code", and "math". Use an answerKey string or null. MCQs need plausible
   option strings and an answerKey equal to the correct option. Short questions use a brief model
   answer. Code questions use options:[] and should include language, instructions, starterCode,
-  hiddenCode, referenceAnswers, and checks. Math questions use options:[], mathExpectedResult, and
+  hiddenCode, and checks. Math questions use options:[], mathExpectedResult, and
   a non-negative mathTolerance.
 - Make student-facing material age-appropriate, clear, and original. Keep exercises small and
   self-contained. Do not claim code has been run or verified.

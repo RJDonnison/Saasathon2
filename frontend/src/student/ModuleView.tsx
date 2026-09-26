@@ -118,9 +118,9 @@ function Lesson({
           {module.title}
         </Heading>
         {intro && (
-          <p className="m-0 max-w-2xl text-[15px] leading-relaxed whitespace-pre-line text-ink">
-            <MathText text={intro} />
-          </p>
+          <div className="max-w-2xl text-[15px] leading-relaxed text-ink">
+            <Markdown text={intro} />
+          </div>
         )}
       </section>
 
