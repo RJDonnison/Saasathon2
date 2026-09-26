@@ -1,36 +1,53 @@
+import { useEffect, useState } from 'react'
+import { api } from '../api.ts'
+import { plural, STATUS_LABEL, timeAgo } from '../student/lessons.ts'
 import Avatar from '../ui/Avatar.tsx'
-import Button from '../ui/Button.tsx'
 import Card from '../ui/Card.tsx'
 import Dot from '../ui/Dot.tsx'
 import Eyebrow from '../ui/Eyebrow.tsx'
 import Heading from '../ui/Heading.tsx'
-import { BookIcon, PencilIcon } from '../ui/icons.tsx'
-import type { StudentActivity, StudentActivitySnapshot, User } from '../../../shared/types'
+import { BookIcon } from '../ui/icons.tsx'
+import { TINT } from '../ui/styles.ts'
+import type { Module, ProgressStatus, TeacherStudentAggregate, User } from '../../../shared/types'
 
-const label: Record<StudentActivity['type'], string> = {
-  viewing_lesson: 'Opened the lesson',
-  answering_question: 'Answering a question',
-  checking_answer: 'Checked an answer',
-  writing_code: 'Writing code',
-  running_code: 'Ran their code',
-  checking_code: 'Checked their code',
-}
+const STATUS_TINT: Record<ProgressStatus, string> = { not_started: 'bg-surface-soft text-muted', in_progress: TINT.peach, completed: TINT.mint }
 
+/** The selected student's real lesson progress and code runs, from the teacher aggregate endpoint. */
 export default function StudentDetailPanel({
   student,
   online,
-  activity,
-  onOpenQuestion,
+  classroomId,
+  lessons,
 }: {
   student: User | null
   online: boolean
-  activity?: StudentActivitySnapshot
-  onOpenQuestion: (activity: StudentActivity) => void
+  classroomId: string
+  lessons: Module[]
 }) {
-  const current = activity?.active
-  const currentWork = current?.questionId
-    ? activity?.work.find((work) => work.questionId === current.questionId)
-    : undefined
+  const [data, setData] = useState<{ studentId: string; aggregate: TeacherStudentAggregate | null } | null>(null)
+  const studentId = student?.id
+
+  useEffect(() => {
+    if (!studentId) return
+    let active = true
+    const load = () =>
+      api
+        .getTeacherStudentAggregate(classroomId, studentId)
+        .then((aggregate) => active && setData({ studentId, aggregate }))
+        .catch(() => active && setData({ studentId, aggregate: null }))
+    void load()
+    const interval = window.setInterval(() => void load(), 20000)
+    return () => {
+      active = false
+      window.clearInterval(interval)
+    }
+  }, [classroomId, studentId])
+
+  const aggregate = data && data.studentId === studentId ? data.aggregate : null
+  const loading = !!student && (!data || data.studentId !== studentId)
+  const statusOf = (moduleId: string): ProgressStatus => aggregate?.moduleProgress.find((p) => p.moduleId === moduleId)?.status ?? 'not_started'
+  const runs = [...(aggregate?.submissions ?? [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  const done = lessons.filter((l) => statusOf(l.id) === 'completed').length
   return (
     <Card title="Student detail" eyebrow="Focus" icon={<BookIcon className="size-[18px]" />} tint="mint">
       {!student ? (
@@ -45,41 +62,51 @@ export default function StudentDetailPanel({
             </div>
           </div>
 
-          {current ? (
-            <div className="flex flex-col gap-3 rounded-xl border border-border bg-surface-soft p-3.5">
-              <Eyebrow>Currently</Eyebrow>
-              <p className="m-0 text-sm font-medium text-ink">{label[current.type]}</p>
-              {current.questionId && (
-                <Button size="sm" variant="primary" onClick={() => onOpenQuestion(current)}>
-                  <BookIcon className="size-3.5" /> View live work
-                </Button>
-              )}
-              {currentWork && (
-                <p className="m-0 line-clamp-3 text-xs leading-relaxed text-muted font-mono">
-                  {currentWork.code ?? currentWork.answer}
-                </p>
-              )}
-            </div>
+          {loading ? (
+            <div className="h-24 animate-pulse rounded-xl bg-surface-soft motion-reduce:animate-none" aria-busy="true" />
+          ) : !aggregate ? (
+            <p className="m-0 text-sm text-muted">Couldn’t load this student’s work.</p>
           ) : (
-            <p className="m-0 rounded-xl border border-dashed border-border px-3.5 py-3 text-sm text-muted">No recent lesson activity yet.</p>
-          )}
+            <>
+              <div className="flex flex-col gap-2">
+                <Eyebrow>Lesson progress</Eyebrow>
+                {lessons.length === 0 ? (
+                  <p className="m-0 text-sm text-muted">No lessons yet.</p>
+                ) : (
+                  <>
+                    <p className="m-0 text-sm">{done} of {plural(lessons.length, 'lesson')} complete</p>
+                    <ul className="m-0 flex list-none flex-col p-0">
+                      {lessons.map((l) => (
+                        <li key={l.id} className="flex items-center justify-between gap-3 border-t border-border py-2 text-[13px] first:border-0">
+                          <span className="min-w-0 truncate">{l.title}</span>
+                          <span className={`flex-none rounded-full px-2.5 py-1 text-[11px] font-semibold ${STATUS_TINT[statusOf(l.id)]}`}>{STATUS_LABEL[statusOf(l.id)]}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+              </div>
 
-          <div className="flex flex-col gap-2">
-            <Eyebrow>Recent activity</Eyebrow>
-            {activity?.recent.length ? (
-              <ul className="m-0 flex list-none flex-col gap-2 p-0">
-                {activity.recent.map((entry) => (
-                  <li key={entry.id} className="flex items-center gap-3 rounded-xl border border-border px-3 py-2.5 text-sm">
-                    <PencilIcon className="size-3.5 text-subtle" />
-                    <span className="min-w-0 flex-1 truncate text-ink">{label[entry.type]}</span>
-                    <span className="text-xs text-muted">{new Date(entry.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="m-0 text-sm text-muted">Activity will appear as they work.</p>
-            )}
-          </div>
+              <div className="flex flex-col gap-2">
+                <Eyebrow>Code runs</Eyebrow>
+                {runs.length === 0 ? (
+                  <p className="m-0 text-sm text-muted">No code runs yet.</p>
+                ) : (
+                  <>
+                    <p className="m-0 text-sm">{plural(runs.length, 'run')} in total, last {timeAgo(runs[0].createdAt)}</p>
+                    <ul className="m-0 flex list-none flex-col p-0">
+                      {runs.slice(0, 4).map((run) => (
+                        <li key={run.id} className="flex items-center justify-between gap-3 border-t border-border py-2 text-[13px] first:border-0">
+                          <span className="text-muted">{timeAgo(run.createdAt)}</span>
+                          <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${run.passed === false ? TINT.peach : TINT.mint}`}>{run.passed === false ? 'Error' : 'Worked'}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+              </div>
+            </>
+          )}
         </div>
       )}
     </Card>

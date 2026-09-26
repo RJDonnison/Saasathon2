@@ -5,9 +5,14 @@ import Button from "../ui/Button.tsx";
 import Card from "../ui/Card.tsx";
 import Eyebrow from "../ui/Eyebrow.tsx";
 import Heading from "../ui/Heading.tsx";
+import Markdown from "../ui/Markdown.tsx";
 import { INPUT, TINT } from "../ui/styles.ts";
+import { onModuleDeleted } from "../socket.ts";
+import CodeTestEditor from "./CodeTestEditor.tsx";
+import TeacherCodeEditor from "./TeacherCodeEditor.tsx";
 import type {
   AiModuleSuggestion,
+  AiCodeTestCandidate,
   ModuleBuilderDocument,
   QuestionKind,
   TeacherModule,
@@ -30,6 +35,24 @@ const questionLabel: Record<QuestionKind, string> = {
   code: "Code exercise",
   math: "Math question",
 };
+const supportedLanguages = ["javascript", "typescript", "python"] as const;
+type SupportedLanguage = (typeof supportedLanguages)[number];
+const isSupportedLanguage = (language: string): language is SupportedLanguage =>
+  supportedLanguages.some((supported) => supported === language);
+const codeTemplates: Record<SupportedLanguage, string> = {
+  javascript: "function solution(input) {\n  // Return your result\n}\n",
+  typescript:
+    "function solution(input: unknown): unknown {\n  // Return your result\n}\n",
+  python: "def solution(input):\n    # Return your result\n    pass\n",
+};
+const languageGuidance: Record<SupportedLanguage, string> = {
+  javascript:
+    "Use a synchronous JavaScript function. Automated checks call the function name below.",
+  typescript:
+    "Use a synchronous TypeScript function. Keep the function name aligned with automated checks.",
+  python:
+    "Use a synchronous Python function. Set the function name below to the Python function students define.",
+};
 
 function newQuestion(kind: QuestionKind): BuilderQuestion {
   return {
@@ -39,17 +62,17 @@ function newQuestion(kind: QuestionKind): BuilderQuestion {
     kind,
     answerKey: null,
     options: kind === "mcq" ? ["", ""] : [],
-    ...(kind === "math"
-      ? { mathExpectedResult: 0, mathTolerance: 0 }
-      : {}),
+    ...(kind === "math" ? { mathExpectedResult: 0, mathTolerance: 0 } : {}),
     ...(kind === "code"
       ? {
           language: "javascript",
           starterCode: "",
           instructions: "",
           hiddenCode: "",
+          functionName: "solution",
           referenceAnswers: [],
           checks: [],
+          tests: [],
         }
       : {}),
   };
@@ -92,8 +115,10 @@ function documentFrom(module: TeacherModule): ModuleBuilderDocument {
               mathTolerance: question.mathTolerance,
               options: question.options.map((option) => option.text),
               language: question.codeExercise?.language,
+              codeExerciseId: question.codeExercise?.id,
               starterCode: question.codeExercise?.starterCode,
               instructions: question.codeExercise?.instructions,
+              functionName: question.codeExercise?.functionName,
               hiddenCode: question.codeExercise?.hiddenCode,
               referenceAnswers: question.codeExercise?.referenceAnswers.map(
                 (reference) => ({
@@ -106,6 +131,12 @@ function documentFrom(module: TeacherModule): ModuleBuilderDocument {
                 id: check.id,
                 name: check.name,
                 description: check.description,
+              })),
+              tests: question.codeExercise?.tests.map((test) => ({
+                id: test.id,
+                name: test.name,
+                args: test.args,
+                expected: test.expected,
               })),
             },
           ];
@@ -128,11 +159,13 @@ function withFreshIds(document: ModuleBuilderDocument): ModuleBuilderDocument {
           : {
               ...item,
               id: id(),
+              codeExerciseId: undefined,
               referenceAnswers: item.referenceAnswers?.map((reference) => ({
                 ...reference,
                 id: id(),
               })),
               checks: item.checks?.map((check) => ({ ...check, id: id() })),
+              tests: item.tests?.map((test) => ({ ...test, id: id() })),
             },
       ),
     })),
@@ -153,6 +186,9 @@ export default function ModuleBuilder() {
   const [askingAi, setAskingAi] = useState(false);
   const [suggestions, setSuggestions] = useState<AiModuleSuggestion[]>([]);
   const [undo, setUndo] = useState<ModuleBuilderDocument | null>(null);
+  const [introductionTab, setIntroductionTab] = useState<"write" | "preview">(
+    "write",
+  );
 
   useEffect(() => {
     if (!moduleId) return;
@@ -166,7 +202,9 @@ export default function ModuleBuilder() {
         if (questionId) setSelected(questionId);
       })
       .catch((error) =>
-        setNotice(error instanceof Error ? error.message : "Could not load module"),
+        setNotice(
+          error instanceof Error ? error.message : "Could not load module",
+        ),
       )
       .finally(() => setLoading(false));
   }, [moduleId, searchParams]);
@@ -178,6 +216,16 @@ export default function ModuleBuilder() {
       block: "center",
     });
   }, [selected]);
+
+  useEffect(() => {
+    if (!moduleId) return;
+    return onModuleDeleted((event) => {
+      if (event.moduleId === moduleId) {
+        setNotice("This module was deleted.");
+        navigate("/teacher", { replace: true });
+      }
+    });
+  }, [moduleId, navigate]);
 
   const itemCount = useMemo(
     () =>
@@ -192,7 +240,10 @@ export default function ModuleBuilder() {
     setDocument(fn);
   }
 
-  function updateItem(itemId: string, patch: (item: BuilderItem) => BuilderItem) {
+  function updateItem(
+    itemId: string,
+    patch: (item: BuilderItem) => BuilderItem,
+  ) {
     change((old) => ({
       ...old,
       sections: old.sections.map((section) => ({
@@ -211,7 +262,11 @@ export default function ModuleBuilder() {
         if (section.id !== sectionId) return section;
         const current = section.items.findIndex((item) => item.id === itemId);
         const destination = current + direction;
-        if (current < 0 || destination < 0 || destination >= section.items.length)
+        if (
+          current < 0 ||
+          destination < 0 ||
+          destination >= section.items.length
+        )
           return section;
         const items = [...section.items];
         [items[current], items[destination]] = [
@@ -234,12 +289,12 @@ export default function ModuleBuilder() {
     }));
   }
 
-  async function save(publish = false) {
+  async function save(status?: "draft" | "published") {
     setSaving(true);
     setNotice(null);
     const next = {
       ...document,
-      status: publish ? ("published" as const) : document.status,
+      status: status ?? document.status,
     };
     try {
       const result = moduleId
@@ -267,6 +322,28 @@ export default function ModuleBuilder() {
     }
   }
 
+  async function removeModule() {
+    if (
+      !moduleId ||
+      !window.confirm(
+        "Permanently delete this module and all of its lesson content?",
+      )
+    )
+      return;
+    setSaving(true);
+    setNotice(null);
+    try {
+      await api.deleteModule(moduleId);
+      navigate("/teacher", { replace: true });
+    } catch (error) {
+      setNotice(
+        error instanceof Error ? error.message : "Could not delete module",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function askAi() {
     if (!idea.trim() || askingAi) return;
     setAskingAi(true);
@@ -279,7 +356,9 @@ export default function ModuleBuilder() {
       });
       setSuggestions(result.suggestions);
       if (result.suggestions.length === 0)
-        setNotice("The assistant could not make a usable suggestion. Please try again.");
+        setNotice(
+          "The assistant could not make a usable suggestion. Please try again.",
+        );
     } catch (error) {
       setNotice(
         error instanceof Error ? error.message : "Could not get suggestions",
@@ -322,12 +401,43 @@ export default function ModuleBuilder() {
           >
             Back to classroom
           </Link>
-          <Button variant="default" disabled={saving} onClick={() => void save()}>
-            {saving ? "Saving…" : "Save draft"}
+          <Button
+            variant="default"
+            disabled={saving}
+            onClick={() => void save()}
+          >
+            {saving
+              ? "Saving…"
+              : document.status === "published"
+                ? "Save published"
+                : "Save draft"}
           </Button>
-          <Button variant="primary" disabled={saving} onClick={() => void save(true)}>
-            Publish
-          </Button>
+          {moduleId && (
+            <Button
+              variant="default"
+              disabled={saving}
+              onClick={() => void removeModule()}
+            >
+              Delete module
+            </Button>
+          )}
+          {document.status === "published" ? (
+            <Button
+              variant="default"
+              disabled={saving}
+              onClick={() => void save("draft")}
+            >
+              Unpublish
+            </Button>
+          ) : (
+            <Button
+              variant="primary"
+              disabled={saving}
+              onClick={() => void save("published")}
+            >
+              Publish
+            </Button>
+          )}
         </div>
       </div>
 
@@ -354,17 +464,14 @@ export default function ModuleBuilder() {
                 }
               />
             </label>
-            <label className="flex flex-col gap-2 text-sm text-muted">
-              Introduction
-              <textarea
-                className={`${INPUT} min-h-28 py-2.5`}
-                value={document.content}
-                onChange={(event) =>
-                  change((old) => ({ ...old, content: event.target.value }))
-                }
-                placeholder="What will students learn in this module?"
-              />
-            </label>
+            <MarkdownTabs
+              label="Introduction"
+              value={document.content}
+              tab={introductionTab}
+              onTabChange={setIntroductionTab}
+              onChange={(content) => change((old) => ({ ...old, content }))}
+              placeholder="What will students learn in this module?"
+            />
           </Card>
 
           {document.sections.map((section, sectionIndex) => (
@@ -564,7 +671,8 @@ function SectionEditor({
             Build this section in order
           </span>
           <span className="text-xs leading-relaxed text-muted">
-            Add reading, then a question or code exercise for students to practise.
+            Add reading, then a question or code exercise for students to
+            practise.
           </span>
         </div>
       ) : (
@@ -669,32 +777,18 @@ function ItemEditor({
           >
             Down
           </Button>
-          <Button size="sm" onClick={onRemove} aria-label={`Delete ${itemName}`}>
+          <Button
+            size="sm"
+            onClick={onRemove}
+            aria-label={`Delete ${itemName}`}
+          >
             Delete
           </Button>
         </div>
       </div>
 
       {item.type === "block" ? (
-        <label className="flex flex-col gap-2 text-sm text-muted">
-          Reading content (Markdown supported)
-          <textarea
-            className={`${INPUT} min-h-36 py-2.5 font-mono! text-[13px]!`}
-            value={
-              typeof item.content === "string"
-                ? item.content
-                : JSON.stringify(item.content, null, 2)
-            }
-            onChange={(event) =>
-              onUpdate((current) =>
-                current.type === "block"
-                  ? { ...current, content: event.target.value }
-                  : current,
-              )
-            }
-            placeholder="Explain the idea, then add an example…"
-          />
-        </label>
+        <ReadingEditor item={item} onUpdate={onUpdate} />
       ) : (
         <QuestionEditor item={item} onUpdate={onUpdate} />
       )}
@@ -709,7 +803,9 @@ function QuestionEditor({
   item: BuilderQuestion;
   onUpdate: (patch: (item: BuilderItem) => BuilderItem) => void;
 }) {
-  function updateQuestion(patch: (question: BuilderQuestion) => BuilderQuestion) {
+  function updateQuestion(
+    patch: (question: BuilderQuestion) => BuilderQuestion,
+  ) {
     onUpdate((current) =>
       current.type === "question" ? patch(current) : current,
     );
@@ -725,7 +821,10 @@ function QuestionEditor({
             value={item.kind}
             onChange={(event) =>
               updateQuestion((question) =>
-                changeQuestionKind(question, event.target.value as QuestionKind),
+                changeQuestionKind(
+                  question,
+                  event.target.value as QuestionKind,
+                ),
               )
             }
           >
@@ -749,7 +848,6 @@ function QuestionEditor({
           />
         </label>
       </div>
-
       {item.kind === "mcq" && (
         <MultipleChoiceEditor item={item} update={updateQuestion} />
       )}
@@ -776,6 +874,148 @@ function QuestionEditor({
         <MathQuestionEditor item={item} update={updateQuestion} />
       )}
     </div>
+  );
+}
+
+function MarkdownTabs({
+  label,
+  value,
+  tab,
+  onTabChange,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  tab: "write" | "preview";
+  onTabChange: (tab: "write" | "preview") => void;
+  onChange: (value: string) => void;
+  placeholder: string;
+}) {
+  const editorId = `${label.replace(/\s/g, "-").toLowerCase()}-write`;
+  const previewId = `${label.replace(/\s/g, "-").toLowerCase()}-preview`;
+  const insert = (text: string) =>
+    onChange(`${value}${value ? "\n\n" : ""}${text}`);
+  const onTabsKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+      event.preventDefault();
+      onTabChange(tab === "write" ? "preview" : "write");
+      document.getElementById(tab === "write" ? previewId : editorId)?.focus();
+    }
+  };
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-sm text-muted">
+          {label} <span className="text-xs">(Markdown supported)</span>
+        </span>
+        <div
+          role="tablist"
+          aria-label={`${label} editor`}
+          className="flex rounded-[10px] border border-border bg-surface-soft p-1"
+          onKeyDown={onTabsKeyDown}
+        >
+          <button
+            id={editorId}
+            type="button"
+            role="tab"
+            aria-selected={tab === "write"}
+            aria-controls={`${editorId}-panel`}
+            tabIndex={tab === "write" ? 0 : -1}
+            className={`rounded-[7px] px-3 py-1.5 text-sm! font-semibold! ${tab === "write" ? "bg-surface text-ink" : "text-muted"}`}
+            onClick={() => onTabChange("write")}
+          >
+            Writing
+          </button>
+          <button
+            id={previewId}
+            type="button"
+            role="tab"
+            aria-selected={tab === "preview"}
+            aria-controls={`${previewId}-panel`}
+            tabIndex={tab === "preview" ? 0 : -1}
+            className={`rounded-[7px] px-3 py-1.5 text-sm! font-semibold! ${tab === "preview" ? "bg-surface text-ink" : "text-muted"}`}
+            onClick={() => onTabChange("preview")}
+          >
+            Preview
+          </button>
+        </div>
+      </div>
+      {tab === "write" ? (
+        <div
+          id={`${editorId}-panel`}
+          role="tabpanel"
+          aria-labelledby={editorId}
+          className="flex flex-col gap-2"
+        >
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" onClick={() => insert("## Heading")}>
+              + Heading
+            </Button>
+            <Button size="sm" onClick={() => insert("- List item")}>
+              + List
+            </Button>
+            <Button size="sm" onClick={() => insert("**Important idea**")}>
+              + Bold
+            </Button>
+            <Button size="sm" onClick={() => insert("```\nexample code\n```")}>
+              + Code
+            </Button>
+          </div>
+          <label className="sr-only" htmlFor={`${editorId}-input`}>
+            {label}
+          </label>
+          <textarea
+            id={`${editorId}-input`}
+            className={`${INPUT} min-h-28 py-2.5 font-mono! text-[13px]!`}
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            placeholder={placeholder}
+          />
+        </div>
+      ) : (
+        <div
+          id={`${previewId}-panel`}
+          role="tabpanel"
+          aria-labelledby={previewId}
+          className="rounded-xl border border-border bg-surface-soft p-4"
+        >
+          {value ? (
+            <Markdown text={value} />
+          ) : (
+            <p className="m-0 text-sm text-muted">Nothing to preview yet.</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ReadingEditor({
+  item,
+  onUpdate,
+}: {
+  item: Extract<BuilderItem, { type: "block" }>;
+  onUpdate: (patch: (item: BuilderItem) => BuilderItem) => void;
+}) {
+  const [tab, setTab] = useState<"write" | "preview">("write");
+  const content =
+    typeof item.content === "string"
+      ? item.content
+      : JSON.stringify(item.content, null, 2);
+  return (
+    <MarkdownTabs
+      label="Reading content"
+      value={content}
+      tab={tab}
+      onTabChange={setTab}
+      placeholder="Explain the idea, then add an example…"
+      onChange={(content) =>
+        onUpdate((current) =>
+          current.type === "block" ? { ...current, content } : current,
+        )
+      }
+    />
   );
 }
 
@@ -829,7 +1069,9 @@ function MathQuestionEditor({
           min="0"
           step="any"
           value={item.mathTolerance ?? 0}
-          onChange={(event) => updateNumber("mathTolerance", event.target.value)}
+          onChange={(event) =>
+            updateNumber("mathTolerance", event.target.value)
+          }
         />
       </label>
     </div>
@@ -852,7 +1094,10 @@ function MultipleChoiceEditor({
         </span>
       </div>
       {item.options.map((option, optionIndex) => (
-        <div key={`${item.id}-${optionIndex}`} className="flex items-center gap-2">
+        <div
+          key={`${item.id}-${optionIndex}`}
+          className="flex items-center gap-2"
+        >
           <input
             type="radio"
             name={`correct-${item.id}`}
@@ -930,6 +1175,63 @@ function CodeExerciseEditor({
 }) {
   const references = item.referenceAnswers ?? [];
   const checks = item.checks ?? [];
+  const [testRequest, setTestRequest] = useState("");
+  const [candidates, setCandidates] = useState<AiCodeTestCandidate[]>([]);
+  const [generating, setGenerating] = useState(false);
+  const [candidateNotice, setCandidateNotice] = useState<string | null>(null);
+  const language = item.language ?? "javascript";
+  const supportedLanguage = isSupportedLanguage(language)
+    ? language
+    : undefined;
+  const applyTemplate = () => {
+    if (!supportedLanguage) return;
+    if (
+      (item.starterCode ?? "").trim() &&
+      !window.confirm(
+        "Replace the current starter code with this language template?",
+      )
+    )
+      return;
+    update((question) => ({
+      ...question,
+      starterCode: codeTemplates[supportedLanguage],
+    }));
+  };
+  const generateCandidates = async () => {
+    if (!item.codeExerciseId || !testRequest.trim() || generating) return;
+    setGenerating(true);
+    setCandidateNotice(null);
+    try {
+      const result = await api.aiCodeTestCandidates({
+        exerciseId: item.codeExerciseId,
+        request: testRequest,
+      });
+      setCandidates(result.candidates);
+      setCandidateNotice(result.warning ?? null);
+    } catch (error) {
+      setCandidateNotice(
+        error instanceof Error
+          ? error.message
+          : "Could not generate test cases.",
+      );
+    } finally {
+      setGenerating(false);
+    }
+  };
+  const addCandidate = (candidate: AiCodeTestCandidate) => {
+    update((question) => ({
+      ...question,
+      tests: [
+        ...(question.tests ?? []),
+        {
+          id: id(),
+          name: candidate.name,
+          args: candidate.args,
+          expected: candidate.expected,
+        },
+      ],
+    }));
+  };
   return (
     <div className="flex flex-col gap-5 border-t border-border pt-4">
       <div className="grid gap-4 sm:grid-cols-[11rem_minmax(0,1fr)]">
@@ -937,14 +1239,22 @@ function CodeExerciseEditor({
           Language
           <select
             className={`${INPUT} h-10`}
-            value={item.language ?? "javascript"}
+            value={language}
             onChange={(event) =>
-              update((question) => ({ ...question, language: event.target.value }))
+              update((question) => ({
+                ...question,
+                language: event.target.value,
+              }))
             }
           >
             <option value="javascript">JavaScript</option>
             <option value="typescript">TypeScript</option>
             <option value="python">Python</option>
+            {!supportedLanguage && (
+              <option value={language}>
+                Unsupported saved language: {language}
+              </option>
+            )}
           </select>
         </label>
         <label className="flex flex-col gap-2 text-sm text-muted">
@@ -962,44 +1272,75 @@ function CodeExerciseEditor({
           />
         </label>
       </div>
-      <label className="flex flex-col gap-2 text-sm text-muted">
-        Starter code / skeleton
-        <textarea
-          className={`${INPUT} min-h-44 py-2.5 font-mono! text-[13px]!`}
-          value={item.starterCode ?? ""}
-          onChange={(event) =>
-            update((question) => ({
-              ...question,
-              starterCode: event.target.value,
-            }))
-          }
-          placeholder={'function solve(input) {\n  // Start here\n}'}
-          spellCheck={false}
-        />
-      </label>
-      <label className="flex flex-col gap-2 text-sm text-muted">
-        Hidden test code
-        <span className="text-xs leading-relaxed text-muted">
-          Appended only on the server when a student runs this exercise. Use it to call their function with test cases and throw an error when one fails; it is never returned in lesson data.
+      <p className="m-0 text-xs text-muted">
+        {supportedLanguage
+          ? languageGuidance[supportedLanguage]
+          : "Unsupported saved runtime value is preserved. Select a supported runtime before editing language-specific guidance."}
+      </p>
+      <div className="flex flex-col gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="text-sm text-muted">Starter code / skeleton</span>
+          {supportedLanguage && (
+            <Button size="sm" onClick={applyTemplate}>
+              Use {supportedLanguage} template
+            </Button>
+          )}
+        </div>
+        <span className="text-xs text-muted">
+          {supportedLanguage
+            ? "Templates are optional and only replace code after confirmation."
+            : "This saved language is not a supported runtime. Choose a supported language to use a template."}
         </span>
-        <textarea
-          className={`${INPUT} min-h-36 py-2.5 font-mono! text-[13px]!`}
-          value={item.hiddenCode ?? ""}
+        <TeacherCodeEditor
+          label="Starter code / skeleton"
+          language={language}
+          value={item.starterCode ?? ""}
+          onChange={(starterCode) =>
+            update((question) => ({ ...question, starterCode }))
+          }
+          placeholder="Start students with a small function skeleton…"
+        />
+      </div>
+      <label className="flex flex-col gap-2 text-sm text-muted">
+        Function name for automated checks
+        <input
+          className={`${INPUT} h-10 font-mono!`}
+          value={item.functionName ?? "solution"}
           onChange={(event) =>
             update((question) => ({
               ...question,
-              hiddenCode: event.target.value,
+              functionName: event.target.value,
             }))
           }
-          placeholder={'// Example: call the student\'s function with several inputs\nif (add(2, 3) !== 5) throw new Error("2 + 3 should equal 5")'}
-          spellCheck={false}
+          placeholder="solution"
         />
       </label>
+      <div className="flex flex-col gap-2 text-sm text-muted">
+        <span>Hidden test code</span>
+        <span className="text-xs leading-relaxed text-muted">
+          Appended only on the server when a student runs this exercise. Use it
+          to call their function with test cases and throw an error when one
+          fails; it is never returned in lesson data.
+        </span>
+        <TeacherCodeEditor
+          label="Hidden test code"
+          language={language}
+          value={item.hiddenCode ?? ""}
+          onChange={(hiddenCode) =>
+            update((question) => ({ ...question, hiddenCode }))
+          }
+          placeholder={
+            "// Call the student function and throw when a check fails"
+          }
+        />
+      </div>
 
       <div className="flex flex-col gap-3">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <div className="flex flex-col gap-1">
-            <span className="text-sm font-medium text-ink">Reference answers</span>
+            <span className="text-sm font-medium text-ink">
+              Reference answers
+            </span>
             <span className="text-xs text-muted">
               Teacher-only examples; students never see these.
             </span>
@@ -1049,16 +1390,14 @@ function CodeExerciseEditor({
                 Remove
               </Button>
             </div>
-            <textarea
-              className={`${INPUT} min-h-28 py-2.5 font-mono! text-[13px]!`}
+            <TeacherCodeEditor
+              label={`Reference answer ${referenceIndex + 1}`}
+              language={language}
               value={reference.answer}
-              onChange={(event) =>
-                updateReference(update, referenceIndex, {
-                  answer: event.target.value,
-                })
+              onChange={(answer) =>
+                updateReference(update, referenceIndex, { answer })
               }
               placeholder="A teacher-only solution…"
-              spellCheck={false}
             />
           </div>
         ))}
@@ -1128,8 +1467,194 @@ function CodeExerciseEditor({
           </div>
         ))}
       </div>
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <div className="flex flex-col gap-1">
+            <span className="text-sm font-medium text-ink">
+              Automated tests
+            </span>
+            <span className="text-xs text-muted">
+              Teacher-only JSON inputs and expected values used when students
+              grade their code.
+            </span>
+          </div>
+          <Button
+            size="sm"
+            onClick={() =>
+              update((question) => ({
+                ...question,
+                tests: [
+                  ...(question.tests ?? []),
+                  { id: id(), name: "New test", args: [], expected: null },
+                ],
+              }))
+            }
+          >
+            + Add test
+          </Button>
+        </div>
+        {(item.tests ?? []).map((test, testIndex) => (
+          <BuilderTestEditor
+            key={test.id}
+            test={test}
+            onChange={(patch) =>
+              update((question) => ({
+                ...question,
+                tests: (question.tests ?? []).map((current, index) =>
+                  index === testIndex ? { ...current, ...patch } : current,
+                ),
+              }))
+            }
+            onRemove={() =>
+              update((question) => ({
+                ...question,
+                tests: (question.tests ?? []).filter(
+                  (_, index) => index !== testIndex,
+                ),
+              }))
+            }
+          />
+        ))}
+        <div className="flex flex-col gap-3 rounded-xl border border-border bg-surface-soft p-3">
+          <div className="flex flex-col gap-1">
+            <span className="text-sm font-medium text-ink">
+              Generate test candidates
+            </span>
+            <span className="text-xs text-muted">
+              Describe behavior in plain language. Review suggestions before
+              adding them to this draft.
+            </span>
+          </div>
+          {item.codeExerciseId ? (
+            <>
+              <label className="flex flex-col gap-2 text-xs text-muted">
+                Behavior to test
+                <textarea
+                  className={`${INPUT} min-h-20 py-2 font-mono! text-[13px]!`}
+                  value={testRequest}
+                  onChange={(event) => setTestRequest(event.target.value)}
+                  placeholder="Add boundary cases for empty input and repeated values."
+                />
+              </label>
+              <Button
+                size="sm"
+                className="self-start"
+                variant="primary"
+                disabled={generating || !testRequest.trim()}
+                onClick={() => void generateCandidates()}
+              >
+                {generating ? "Generating…" : "Generate candidates"}
+              </Button>
+            </>
+          ) : (
+            <p className="m-0 text-xs text-muted">
+              Save this module first to generate AI test candidates for this
+              exercise.
+            </p>
+          )}
+          {candidateNotice && (
+            <p className={`m-0 rounded-xl px-3 py-2 text-xs ${TINT.peach}`}>
+              {candidateNotice}
+            </p>
+          )}
+          {candidates.length > 0 && (
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-xs text-muted">
+                  Review each candidate before adding it.
+                </span>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      candidates.forEach(addCandidate);
+                      setCandidates([]);
+                    }}
+                  >
+                    Add all
+                  </Button>
+                  <Button size="sm" onClick={() => setCandidates([])}>
+                    Dismiss all
+                  </Button>
+                </div>
+              </div>
+              {candidates.map((candidate, index) => (
+                <CandidateTestEditor
+                  key={`${candidate.name}-${index}`}
+                  candidate={candidate}
+                  onChange={(next) =>
+                    setCandidates((current) =>
+                      current.map((value, currentIndex) =>
+                        currentIndex === index ? next : value,
+                      ),
+                    )
+                  }
+                  onAdd={() => {
+                    addCandidate(candidate);
+                    setCandidates((current) =>
+                      current.filter(
+                        (_, currentIndex) => currentIndex !== index,
+                      ),
+                    );
+                  }}
+                  onDismiss={() =>
+                    setCandidates((current) =>
+                      current.filter(
+                        (_, currentIndex) => currentIndex !== index,
+                      ),
+                    )
+                  }
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
+}
+
+function CandidateTestEditor({
+  candidate,
+  onChange,
+  onAdd,
+  onDismiss,
+}: {
+  candidate: AiCodeTestCandidate;
+  onChange: (candidate: AiCodeTestCandidate) => void;
+  onAdd: () => void;
+  onDismiss: () => void;
+}) {
+  return (
+    <CodeTestEditor
+      test={candidate}
+      onChange={onChange}
+      actions={
+        <>
+          <Button size="sm" onClick={onAdd}>
+            Add
+          </Button>
+          <Button size="sm" onClick={onDismiss}>
+            Dismiss
+          </Button>
+        </>
+      }
+    />
+  );
+}
+
+function BuilderTestEditor({
+  test,
+  onChange,
+  onRemove,
+}: {
+  test: NonNullable<BuilderQuestion["tests"]>[number];
+  onChange: (
+    patch: Partial<NonNullable<BuilderQuestion["tests"]>[number]>,
+  ) => void;
+  onRemove: () => void;
+}) {
+  return <CodeTestEditor test={test} onChange={onChange} onRemove={onRemove} />;
 }
 
 function updateReference(

@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth.ts'
+import InvitationList from '../student/InvitationList.tsx'
 import type { Role } from '../../../shared/types'
 
 function Arrow() {
@@ -8,9 +9,9 @@ function Arrow() {
 }
 
 export default function JoinPage() {
-  const { session, user, loading, signInWithGoogle, joinClassroom, signOut } = useAuth()
+  const { session, user, loading, signInWithGoogle, createClassroom, signOut } = useAuth()
   const navigate = useNavigate()
-  const [roomCode, setRoomCode] = useState('')
+  const [classroomName, setClassroomName] = useState('')
   const [role, setRole] = useState<Role>('student')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -23,9 +24,9 @@ export default function JoinPage() {
     try { await signInWithGoogle() }
     catch (err) { setError(err instanceof Error ? err.message : 'Could not start Google sign-in'); setBusy(false) }
   }
-  async function onJoin(e: FormEvent) {
+  async function onCreate(e: FormEvent) {
     e.preventDefault(); setError(null); setBusy(true)
-    try { const joined = await joinClassroom({ roomCode, role }); navigate(`/${joined.role}`, { replace: true }) }
+    try { const created = await createClassroom(classroomName.trim()); navigate(`/${created.role}`, { replace: true }) }
     catch (err) { setError(err instanceof Error ? err.message : 'Something went wrong'); setBusy(false) }
   }
 
@@ -34,13 +35,12 @@ export default function JoinPage() {
       <div className="landing-grain" aria-hidden="true" />
       <nav className="landing-nav">
         <a className="brand" href="/" aria-label="Loop home"><img className="brand-icon" src="/favicon.svg" alt="" /><span>loop<span className="brand-dot">.</span></span></a>
-        <div className="nav-note">CODE TOGETHER</div>
         <a className="nav-cta" href="#get-started">Get started <Arrow /></a>
       </nav>
 
       <section className="hero">
         <div className="hero-copy">
-          <div className="eyebrow"><span>THE CLASSROOM, REWIRED</span><i /></div>
+          <div className="eyebrow"><span>The classroom, rewired</span></div>
           <h1>Big ideas<br />start with <span className="headline-highlight">a line.</span></h1>
           <p className="hero-description">A creative coding classroom where students make, explore, and learn together.</p>
           <div className="hero-actions">
@@ -72,18 +72,32 @@ export default function JoinPage() {
       </section>
 
       <section className="join-section" id="get-started">
-        <div className="join-copy"><span className="section-kicker">GET STARTED</span><h2>Make room<br/>to <em>create.</em></h2><p>Sign in and join your classroom.</p></div>
+        <div className="join-copy"><span className="section-kicker">GET STARTED</span><h2>Make room<br/>to <em>create.</em></h2><p>Sign in to create a classroom, or to accept your teacher’s invitation.</p></div>
         <div className="join-card">
           {!session ? <>
             <span className="card-step">01 <i/> YOUR WORKSPACE</span>
             <h3>Come on in.</h3><p className="card-description">Sign in with Google to join your classroom and get creating.</p>
             {error && <p className="form-error">{error}</p>}
             <button onClick={onGoogle} disabled={busy} className="google-button"><svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 24.5c0-1.4-.1-2.8-.4-4.1H24v7.8h11a9.4 9.4 0 0 1-4.1 6.2v5.1h6.7c3.9-3.6 6-8.8 6-15Z"/><path fill="#34A853" d="M24 44c5.5 0 10.1-1.8 13.5-4.8l-6.7-5.1c-1.8 1.2-4.1 2-6.8 2-5.2 0-9.6-3.5-11.2-8.2H5.9v5.3A20 20 0 0 0 24 44Z"/><path fill="#4A90E2" d="M12.8 27.9a12 12 0 0 1 0-7.8v-5.3H5.9a20 20 0 0 0 0 18.4l6.9-5.3Z"/><path fill="#EA4335" d="M24 11.9c3 0 5.6 1 7.7 3l5.8-5.8C34 5.7 29.5 4 24 4A20 20 0 0 0 5.9 14.8l6.9 5.3c1.6-4.7 6-8.2 11.2-8.2Z"/></svg>{busy ? 'Opening Google…' : 'Continue with Google'}<Arrow /></button>
-            <p className="card-footnote">No new password to remember. Your teacher will have a room code for you.</p>
+            <p className="card-footnote">Students join by accepting an invitation from their teacher.</p>
           </> : <>
-            <span className="card-step">02 <i/> JOIN YOUR CLASS</span><h3>Find your room.</h3>
-            <p className="card-description">Signed in as <strong>{(session.user.user_metadata?.full_name as string | undefined) ?? session.user.email}</strong>. <button type="button" onClick={() => void signOut()} className="signout-link">Sign out</button></p>
-            <form onSubmit={onJoin} className="join-form"><label>ROOM CODE<input value={roomCode} onChange={(e) => setRoomCode(e.target.value)} placeholder="e.g. DEMO123" required /></label><label>JOIN AS<select value={role} onChange={(e) => setRole(e.target.value as Role)}><option value="student">Student</option><option value="teacher">Teacher</option></select></label>{error && <p className="form-error">{error}</p>}<button type="submit" disabled={busy} className="button-primary join-submit">{busy ? 'Joining…' : 'Enter the classroom'}<Arrow /></button></form>
+            <span className="card-step">02 <i/> YOUR CLASSROOM</span>
+            <p className="card-description">Signed in as <strong>{(session.user.user_metadata?.full_name as string | undefined) ?? session.user.email}</strong>.</p>
+            {role === 'student' ? <>
+              <h3>Waiting for an invitation.</h3>
+              <p className="card-description">Ask your teacher to invite this email address. Invitations show up here, and you choose whether to join.</p>
+              <InvitationList />
+              <div className="mt-5 flex flex-col items-start gap-3">
+                <button type="button" onClick={() => setRole('teacher')} className="signout-link">Are you a teacher? Set up a classroom</button>
+                <button type="button" onClick={() => void signOut()} className="signout-link">Sign out</button>
+              </div>
+            </> : <>
+              <h3>Create your classroom</h3>
+              <p className="card-description">Name it, then invite your students by email. They choose whether to join.</p>
+              <form onSubmit={onCreate} className="join-form"><label>CLASSROOM NAME<input value={classroomName} onChange={(e) => setClassroomName(e.target.value)} placeholder="For example, Year 11 Digital Technologies" maxLength={80} required /></label>{error && <p className="form-error">{error}</p>}<button type="submit" disabled={busy} className="button-primary join-submit">{busy ? 'Creating…' : 'Create classroom'}<Arrow /></button></form>
+              <button type="button" onClick={() => setRole('student')} className="signout-link">I’m a student</button>
+              <button type="button" onClick={() => void signOut()} className="signout-link">Sign out</button>
+            </>}
           </>}
           <div className="card-bottom"><span><i/> PRIVATE CLASSROOMS</span><span>MADE FOR LEARNING&nbsp; ✳</span></div>
         </div>

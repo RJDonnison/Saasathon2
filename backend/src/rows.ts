@@ -2,6 +2,8 @@ import type { PostgrestError } from "@supabase/supabase-js";
 import type {
   Attempt,
   Classroom,
+  ClassroomInvitation,
+  LessonSession,
   CodeCheck,
   CodeExercise,
   CodeTest,
@@ -23,14 +25,34 @@ import type {
   User,
 } from "../../shared/types.js";
 
-export type ClassroomRow = { id: string; name: string; room_code: string };
-export type UserRow = { id: string; name: string };
+export type ClassroomRow = { id: string; name: string };
+export type UserRow = { id: string; name: string; email?: string | null };
 export type MembershipRow = {
   id: string;
   user_id: string;
   classroom_id: string;
   role: User["role"];
   created_at: string;
+};
+export type InvitationRow = {
+  id: string;
+  classroom_id: string;
+  email: string;
+  student_name: string | null;
+  invited_by: string;
+  status: ClassroomInvitation["status"];
+  user_id: string | null;
+  created_at: string;
+  responded_at: string | null;
+};
+export type SessionRow = {
+  id: string;
+  classroom_id: string;
+  module_id: string;
+  phase: LessonSession["phase"];
+  started_by: string;
+  started_at: string;
+  ended_at: string | null;
 };
 export type ModuleRow = {
   id: string;
@@ -177,10 +199,10 @@ export type StudentActivityRow = {
 };
 
 const iso = (value: string) => new Date(value).toISOString();
-export const toClassroom = (r: ClassroomRow): Classroom => ({
+export const toClassroom = (r: ClassroomRow, teacherName: string | null = null): Classroom => ({
   id: r.id,
   name: r.name,
-  roomCode: r.room_code,
+  teacherName,
 });
 export const toMembership = (r: MembershipRow): Membership => ({
   id: r.id,
@@ -195,6 +217,23 @@ export const toUser = (u: UserRow, m: MembershipRow): User => ({
   role: m.role,
   classroomId: m.classroom_id,
   membershipId: m.id,
+});
+export const toInvitation = (r: InvitationRow): ClassroomInvitation => ({
+  id: r.id,
+  classroomId: r.classroom_id,
+  email: r.email,
+  studentName: r.student_name,
+  status: r.status,
+  createdAt: r.created_at,
+  respondedAt: r.responded_at,
+});
+export const toSession = (r: SessionRow, moduleTitle: string): LessonSession => ({
+  id: r.id,
+  classroomId: r.classroom_id,
+  moduleId: r.module_id,
+  moduleTitle,
+  phase: r.phase,
+  startedAt: r.started_at,
 });
 export const toModule = (r: ModuleRow): Module => ({
   id: r.id,

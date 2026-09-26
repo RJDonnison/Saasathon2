@@ -8,7 +8,7 @@ import InlineText from "../ui/InlineText.tsx";
 import MathText from "../ui/MathText.tsx";
 import QuestionConversation from "../ui/QuestionConversation.tsx";
 import Markdown from "../ui/Markdown.tsx";
-import { BookIcon, PencilIcon } from "../ui/icons.tsx";
+import { PencilIcon } from "../ui/icons.tsx";
 import { CARD, INPUT, TINT } from "../ui/styles.ts";
 import CodeEditor from "./CodeEditor.tsx";
 import { onModuleChanged } from "../socket.ts";
@@ -36,7 +36,7 @@ export default function ModuleView({
   index,
   total,
 }: {
-  module: Module | null;
+  module: Omit<Module, "status"> | null;
   index: number;
   total: number;
 }) {
@@ -55,7 +55,7 @@ function Lesson({
   index,
   total,
 }: {
-  module: Module;
+  module: Omit<Module, "status">;
   index: number;
   total: number;
 }) {
@@ -118,32 +118,20 @@ function Lesson({
 
   return (
     <div className="flex flex-col gap-6">
-      <section className={`relative overflow-hidden ${CARD} p-6 sm:p-7`}>
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute -top-16 -right-16 size-48 rounded-full bg-accent/15 blur-2xl"
-        />
-        <div className="relative flex flex-col gap-5">
-          <div className="flex items-start gap-4">
-            <span
-              className={`grid size-11 flex-none place-items-center rounded-2xl ${TINT.mint}`}
-            >
-              <BookIcon className="size-5" />
-            </span>
-            <div className="flex min-w-0 flex-col gap-2.5">
-              <Eyebrow>
-                Lesson {String(index + 1).padStart(2, "0")} of{" "}
-                {String(total).padStart(2, "0")}
-              </Eyebrow>
-              <Heading variant="title">{module.title}</Heading>
-            </div>
-          </div>
-          {intro && (
-            <p className="m-0 max-w-2xl text-[15px] leading-relaxed whitespace-pre-line text-muted">
-              <MathText text={intro} />
-            </p>
-          )}
+      <section className={`flex flex-col gap-3 ${CARD} p-6 sm:p-7`}>
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="rounded-lg border border-border bg-surface-soft px-2.5 py-1 text-xs font-semibold text-ink">
+            Lesson {index + 1} of {total}
+          </span>
         </div>
+        <Heading as="h1" variant="title">
+          {module.title}
+        </Heading>
+        {intro && (
+          <p className="m-0 max-w-2xl text-[15px] leading-relaxed whitespace-pre-line text-ink">
+            <MathText text={intro} />
+          </p>
+        )}
       </section>
 
       {error && (

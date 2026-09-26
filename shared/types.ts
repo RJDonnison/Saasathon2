@@ -7,7 +7,8 @@ export type ModuleStatus = "draft" | "published";
 export interface Classroom {
   id: string;
   name: string;
-  roomCode: string;
+  /** The classroom's first teacher, for display; null if it has none. */
+  teacherName: string | null;
 }
 /** A user projected into the currently selected classroom for auth compatibility. */
 export interface User {
@@ -23,6 +24,107 @@ export interface Membership {
   classroomId: string;
   role: Role;
   createdAt: string;
+}
+export type InvitationStatus = "pending" | "accepted" | "declined";
+/** Teacher's view of an invitation. Nobody is enrolled until the invited student accepts. */
+export interface ClassroomInvitation {
+  id: string;
+  classroomId: string;
+  email: string;
+  studentName: string | null;
+  status: InvitationStatus;
+  createdAt: string;
+  respondedAt: string | null;
+}
+/** Student's view of a pending invitation addressed to their Google email. */
+export interface MyInvitation {
+  id: string;
+  classroomId: string;
+  classroomName: string;
+  invitedByName: string;
+  createdAt: string;
+}
+export interface CreateClassroomInvitationsRequest {
+  students: Array<{ email: string; name?: string }>;
+}
+export interface CreateClassroomInvitationsResponse {
+  invitations: ClassroomInvitation[];
+  /** Emails not invited because they already belong to the classroom. */
+  skipped: string[];
+}
+export type ListClassroomInvitationsResponse = ClassroomInvitation[];
+/** GET /api/invitations (signed in, no classroom needed) — pending invitations for the caller's Google email. */
+export type ListMyInvitationsResponse = MyInvitation[];
+/**
+ * POST /api/invitations/:id/accept enrols the caller as a student and makes that classroom their active one.
+ * POST /api/invitations/:id/decline returns 204. Both are 404 unless the invitation is pending and addressed
+ * to the caller's email.
+ */
+export interface AcceptInvitationResponse {
+  user: User;
+}
+
+/** Teach = follow the teacher (helper paused); work = students work on their own with the helper. */
+export type LessonPhase = "teach" | "work";
+/**
+ * A live lesson: the teacher has started a lesson for the class. While one is live, students who follow it see the
+ * lesson and phase the teacher chose. At most one per classroom.
+ */
+export interface LessonSession {
+  id: string;
+  classroomId: string;
+  moduleId: string;
+  moduleTitle: string;
+  phase: LessonPhase;
+  startedAt: string;
+}
+/**
+ * GET /api/classrooms/:id/session (any member) — the live lesson, or null.
+ * POST (teacher) `{ moduleId, phase? }` starts one (409 if already live; phase defaults to teach).
+ * PATCH (teacher) `{ moduleId?, phase? }` moves the class to another lesson and/or phase (409 if not live).
+ * DELETE (teacher) ends it. All return the resulting state, and every change is also pushed as `session_update`.
+ */
+export interface GetSessionResponse {
+  session: LessonSession | null;
+}
+export interface StartSessionRequest {
+  moduleId: string;
+  phase?: LessonPhase;
+}
+export interface UpdateSessionRequest {
+  moduleId?: string;
+  phase?: LessonPhase;
+}
+
+/** A teacher's note to the class. */
+export interface Announcement {
+  id: string;
+  classroomId: string;
+  authorName: string;
+  text: string;
+  createdAt: string;
+}
+export interface CreateAnnouncementRequest {
+  text: string;
+}
+export type ListAnnouncementsResponse = Announcement[];
+
+/** One of the caller's classrooms, with their own progress through its lessons. */
+export interface MyClassroom {
+  id: string;
+  name: string;
+  teacherName: string | null;
+  role: Role;
+  lessonCount: number;
+  completedCount: number;
+  /** The classroom the app is currently showing (the most recently joined). */
+  active: boolean;
+}
+/** GET /api/classrooms — every classroom the caller belongs to. */
+export type ListMyClassroomsResponse = MyClassroom[];
+/** POST /api/classrooms/:id/activate — makes one of the caller's classrooms the active one. */
+export interface ActivateClassroomResponse {
+  user: User;
 }
 
 export interface Module {
@@ -101,6 +203,24 @@ export interface CodeCheck {
   description: string;
   position: number;
 }
+
+/** A student's own run history for one code exercise. */
+export interface ExerciseSummary {
+  id: string;
+  /** The question prompt. */
+  title: string;
+  runs: number;
+  /** Outcome of the most recent run: it finished cleanly, or it ended in an error. null = never run. */
+  lastRun: "ok" | "error" | null;
+}
+/** A lesson as one student sees it: the module plus their progress and what is in it. */
+export interface LessonSummary extends Omit<Module, "status"> {
+  status: ProgressStatus;
+  sections: Array<{ id: string; title: string }>;
+  exercises: ExerciseSummary[];
+}
+/** GET /api/classrooms/:id/lessons (student) — every lesson in order, with the caller's progress. */
+export type ListLessonSummariesResponse = LessonSummary[];
 
 /** Teacher aggregate. Includes answer keys, reference answers and checks. */
 export interface TeacherQuestion extends Question {
@@ -241,25 +361,22 @@ export interface TeacherStudentAggregate {
  * token as `Authorization: Bearer <access_token>`; the backend never issues its own tokens.
  */
 
-/**
- * POST /api/auth/join (signed in, not yet in a classroom — or switching classroom/role)
- * The user's name comes from their Google profile. Their User.id is their Supabase auth user id.
- */
-export interface JoinRequest {
-  roomCode: string;
-  role: Role;
-}
-export interface JoinResponse {
-  user: User;
-}
-/** GET /api/auth/me (signed in) — `user` is null until they have joined a classroom. */
+/** GET /api/auth/me (signed in) — `user` is null until they have created or been invited into a classroom. */
 export interface MeResponse {
   user: User | null;
 }
 
+/**
+ * POST /api/classrooms (signed in; no classroom needed) — a teacher creates a classroom and becomes its teacher.
+ * There are no join codes: students only get in by accepting an invitation. Refused (403) for students.
+ * The new classroom becomes the caller's active one.
+ */
 export interface CreateClassroomRequest {
   name: string;
-  roomCode: string;
+}
+export interface CreateClassroomResponse {
+  classroom: Classroom;
+  user: User;
 }
 export interface CreateModuleRequest {
   title: string;
@@ -286,6 +403,8 @@ export interface ModuleBuilderDocument {
           mathTolerance?: number | null;
           options: string[];
           language?: string;
+          /** Deterministic server exercise id for an already saved code question. */
+          codeExerciseId?: string;
           starterCode?: string;
           instructions?: string;
           /** Named function used by teacher-configured automated checks. */
@@ -298,6 +417,12 @@ export interface ModuleBuilderDocument {
             answer: string;
           }>;
           checks?: Array<{ id: string; name: string; description: string }>;
+          tests?: Array<{
+            id: string;
+            name: string;
+            args: unknown[];
+            expected: unknown;
+          }>;
         }
     >;
   }>;
@@ -586,12 +711,15 @@ export interface AiCodeTestCandidatesRequest {
   request: string;
 }
 export interface AiCodeTestCandidate {
-  functionName: string;
+  /** Teacher-editable label for this proposed case. */
+  name: string;
   args: unknown[];
   expected: unknown;
 }
 export interface AiCodeTestCandidatesResponse {
   candidates: AiCodeTestCandidate[];
+  /** Present when the model returned no safe, usable candidates. */
+  warning?: string;
 }
 export interface ApiError {
   error: string;

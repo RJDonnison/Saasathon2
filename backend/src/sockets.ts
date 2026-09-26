@@ -6,11 +6,13 @@ import type {
   ClientToServerEvents,
   ModuleChangedPayload,
   QuestionCommentCreatedPayload,
+  ModuleDeletedPayload,
   PresenceUpdatePayload,
   RaisedHandsUpdatePayload,
   StudentActivityUpdatePayload,
   ServerToClientEvents,
 } from "../../shared/events.js";
+import type { LessonSession } from "../../shared/types.js";
 
 type SocketData = { user: AuthUser };
 type AppServer = Server<
@@ -30,15 +32,36 @@ type AppSocket = Socket<
 const online = new Map<string, Map<string, number>>();
 // Unacknowledged hands survive page navigation and reconnects while this server is running.
 const raisedHands = new Map<string, Map<string, number>>();
-let appIo: AppServer | null = null;
-export function emitModuleChanged(payload: ModuleChangedPayload) {
-  appIo?.to(payload.classroomId).emit("module_changed", payload);
+let activeIo: AppServer | null = null;
+
+/** Tell everyone in the classroom the live lesson changed (null = it ended). */
+export function emitSessionUpdate(classroomId: string, session: LessonSession | null): void {
+  activeIo?.to(classroomId).emit("session_update", { type: "session_update", classroomId, session });
+}
+
+/** Tell everyone in the classroom a module was edited. */
+export function emitModuleChanged(payload: ModuleChangedPayload): void {
+  activeIo?.to(payload.classroomId).emit("module_changed", payload);
+}
+
+/** Close live classroom sockets as soon as a teacher removes a student. */
+export async function disconnectClassroomMember(classroomId: string, userId: string): Promise<void> {
+  if (!activeIo) return;
+  const sockets = await activeIo.in(classroomId).fetchSockets();
+  await Promise.all(
+    sockets
+      .filter((socket) => socket.data.user.userId === userId)
+      .map((socket) => socket.disconnect(true)),
+  );
+}
+export function emitModuleDeleted(payload: ModuleDeletedPayload) {
+  activeIo?.to(payload.classroomId).emit("module_deleted", payload);
 }
 export function emitStudentActivityUpdate(payload: StudentActivityUpdatePayload) {
-  appIo?.to(payload.classroomId).emit("student_activity_update", payload);
+  activeIo?.to(payload.classroomId).emit("student_activity_update", payload);
 }
 export function emitQuestionCommentCreated(payload: QuestionCommentCreatedPayload) {
-  appIo?.to(payload.classroomId).emit("question_comment_created", payload);
+  activeIo?.to(payload.classroomId).emit("question_comment_created", payload);
 }
 
 function onlineStudentIds(classroomId: string): string[] {
@@ -61,14 +84,14 @@ function raisedHandsPayload(classroomId: string): RaisedHandsUpdatePayload {
 }
 
 function emitRaisedHands(classroomId: string) {
-  appIo?.to(classroomId).emit("raised_hands_update", raisedHandsPayload(classroomId));
+  activeIo?.to(classroomId).emit("raised_hands_update", raisedHandsPayload(classroomId));
 }
 
 export function attachSockets(httpServer: HttpServer): AppServer {
   const io: AppServer = new Server(httpServer, {
     cors: { origin: CLIENT_ORIGIN },
   });
-  appIo = io;
+  activeIo = io;
 
   // Authenticate the handshake with the same Supabase access token used for REST:
   // io(url, { auth: { token } }). The user must also have joined a classroom.
