@@ -123,8 +123,9 @@ live page is self-paced.
 
 ## Student screens
 
-- **Home** (`StudentDashboard`): invitations, a "pick up where you left off" banner, the class's lessons with status, a
-  to-do list, the teacher's notes, and "My classes" (switchable).
+- **Home** (`StudentDashboard`): invitations, a "Live now" section (every class of the student's with a live lesson, from
+  `liveSession` on `GET /api/classrooms`, refreshed by a 15s poll since socket pushes only reach the active class) and "All my
+  classes" (progress, Open). Opening a class first activates it, because the class pages read the active classroom.
 - **Class page** (`StudentClassPage`, `/student/class/:id`): continue card, per-lesson sections and code-run status,
   progress, up next, teacher notes. It and the live lesson bring their own `ClassTopBar`; `AppShell` steps aside for
   `/student/class/*`.
