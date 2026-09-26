@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth.ts'
 import { onPresenceUpdate } from '../socket.ts'
@@ -16,10 +16,28 @@ import { BookIcon, CheckIcon } from '../ui/icons.tsx'
 import { CARD, FOCUS_RING, TINT } from '../ui/styles.ts'
 import { pickCurrent, plural } from './lessons.ts'
 import { useClassData } from './useClassData.ts'
+import { useWorkspace } from './useWorkspace.ts'
+
+type Pane = 'lessons' | 'lesson' | 'helper'
+const PANES: { id: Pane; label: string }[] = [
+  { id: 'lessons', label: 'Lessons' },
+  { id: 'lesson', label: 'Lesson' },
+  { id: 'helper', label: 'Helper' },
+]
+
+/** When the tutor points at a line, bring the editor's pane forward (only matters when the panes are tabs). */
+function ShowLessonOnHighlight({ onHighlight }: { onHighlight: () => void }) {
+  const nonce = useWorkspace().highlight?.nonce
+  useEffect(() => {
+    if (nonce !== undefined) onHighlight()
+  }, [nonce, onHighlight])
+  return null
+}
 
 /**
- * The live lesson: top bar (class, phase, help), then three columns — the lesson list, the work, and the helper.
- * On large screens each column scrolls on its own so the helper stays put; on phones they stack.
+ * The live lesson: top bar (class, phase, help), then three panes — the lesson list, the work, and the helper.
+ * The page always fits the screen and each pane scrolls on its own. On large screens the panes are columns;
+ * below that they are tabs, so nothing stacks into a page-length scroll.
  */
 export default function StudentHome() {
   const { user } = useAuth()
@@ -34,6 +52,7 @@ export default function StudentHome() {
     setSeenSession(session?.id ?? null)
     setFollowing(true)
   }
+  const [pane, setPane] = useState<Pane>('lesson')
   const [inClass, setInClass] = useState<number | null>(null)
   const lessonNav = useRef<HTMLElement>(null)
 
@@ -50,6 +69,7 @@ export default function StudentHome() {
   /** Pick a lesson from the list or the Next button. Leaving the teacher's lesson unfollows; returning to it re-follows. */
   function browse(id: string) {
     setPickedId(id)
+    setPane('lesson')
     if (session) setFollowing(id === session.moduleId)
   }
 
@@ -77,9 +97,12 @@ export default function StudentHome() {
     lessonNav.current?.querySelector('[aria-current="true"]')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
   }, [currentId, modules])
 
+  const showLesson = useCallback(() => setPane('lesson'), [])
+
   function imLost() {
     // The helper is paused while the teacher is teaching, so asking for help means stepping off their pace.
     if (followingNow && session!.phase === 'teach') setFollowing(false)
+    setPane('helper')
     // Wait a tick so the helper is mounted if it was paused.
     window.setTimeout(() => document.getElementById('helper-question')?.focus(), 0)
   }
@@ -90,7 +113,7 @@ export default function StudentHome() {
   const teacher = classroom?.teacherName ?? 'Your teacher'
 
   return (
-    <div className="flex min-h-screen flex-col lg:h-screen">
+    <div className="flex h-dvh flex-col overflow-hidden">
       <ClassTopBar
         wide
         backTo="/student"
@@ -135,8 +158,23 @@ export default function StudentHome() {
       />
 
       <WorkspaceProvider moduleId={currentId}>
-        <div className="grid min-h-0 flex-1 lg:grid-cols-[16.5rem_minmax(0,1fr)_22rem]">
-          <aside ref={lessonNav} aria-label="Lessons" className="flex flex-col gap-6 border-b border-border p-5 lg:overflow-y-auto lg:border-r lg:border-b-0">
+        <ShowLessonOnHighlight onHighlight={showLesson} />
+        <div role="tablist" aria-label="Lesson panes" className="flex flex-none gap-1 border-b border-border bg-surface p-2 lg:hidden">
+          {PANES.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              role="tab"
+              aria-selected={pane === p.id}
+              onClick={() => setPane(p.id)}
+              className={`flex-1 rounded-lg px-3 py-2 text-[13px]! leading-none! font-semibold! text-muted aria-selected:bg-mint/70 aria-selected:text-ink ${FOCUS_RING}`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+        <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)] lg:grid-cols-[16.5rem_minmax(0,1fr)_22rem]">
+          <aside ref={lessonNav} aria-label="Lessons" className={`${pane === 'lessons' ? 'flex' : 'hidden'} relative flex-col gap-6 overflow-y-auto overscroll-contain p-5 lg:flex lg:border-r lg:border-border`}>
             {session && followingNow ? (
               <div className={`flex flex-col gap-1.5 rounded-xl p-4 ${TINT.mint}`}>
                 <strong className="flex items-center gap-2 text-sm">
@@ -198,7 +236,7 @@ export default function StudentHome() {
             </div>
           </aside>
 
-          <main className="flex min-w-0 flex-col gap-4 p-4 sm:p-6 lg:overflow-y-auto">
+          <main className={`${pane === 'lesson' ? 'flex' : 'hidden'} relative min-w-0 flex-col gap-4 overflow-y-auto overscroll-contain p-4 sm:p-6 lg:flex`}>
             {error && <p className={`m-0 rounded-xl px-4 py-3 text-sm ${TINT.peach}`}>{error}</p>}
 
             {modules === null && !error && (
@@ -243,7 +281,7 @@ export default function StudentHome() {
           </main>
 
           {current && (
-            <aside aria-label="Helper" className="flex min-h-[30rem] flex-col border-t border-border bg-surface lg:min-h-0 lg:overflow-hidden lg:border-t-0 lg:border-l">
+            <aside aria-label="Helper" className={`${pane === 'helper' ? 'flex' : 'hidden'} relative min-h-0 flex-col overflow-hidden bg-surface lg:flex lg:border-l lg:border-border`}>
               {phase === 'work' ? (
                 <AiChatPanel moduleId={current.id} />
               ) : (
