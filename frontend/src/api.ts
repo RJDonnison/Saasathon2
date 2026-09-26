@@ -1,6 +1,7 @@
 import type {
   ActivateClassroomResponse,
   GetSessionResponse,
+  GetLiveModuleProgressResponse,
   LessonPhase,
   CreateAttemptRequest,
   CreateAttemptResponse,
@@ -201,6 +202,10 @@ export const api = {
     post<Module>("/api/modules", body),
   getSession: (classroomId: string) =>
     request<GetSessionResponse>(`/api/classrooms/${classroomId}/session`),
+  getLiveModuleProgress: (classroomId: string) =>
+    request<GetLiveModuleProgressResponse>(
+      `/api/classrooms/${classroomId}/session/progress`,
+    ),
   startSession: (
     classroomId: string,
     moduleId: string,

@@ -258,6 +258,11 @@ export interface ModuleProgress {
   status: ProgressStatus;
   updatedAt: string;
 }
+/** One student's durable progress in the module currently being taught live. */
+export interface LiveModuleProgress {
+  studentId: string;
+  status: ProgressStatus;
+}
 export interface SectionProgress {
   id: string;
   studentId: string;
@@ -581,6 +586,15 @@ export type GetModuleResponse = StudentModule | TeacherModule;
 export type ListModulesResponse = Module[];
 export type GetClassroomResponse = Classroom;
 export type GetClassroomStudentsResponse = User[];
+/**
+ * GET /api/classrooms/:id/session/progress (teacher only) — durable progress for every student in the active
+ * classroom's current live module. Returns 409 when the classroom has no live lesson.
+ */
+export interface GetLiveModuleProgressResponse {
+  sessionId: string;
+  moduleId: string;
+  progress: LiveModuleProgress[];
+}
 export type GetStudentProgressResponse = ModuleProgress[];
 export type UpsertProgressRequest = UpsertModuleProgressRequest;
 export type UpsertProgressResponse = ModuleProgress;
