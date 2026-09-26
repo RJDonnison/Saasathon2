@@ -23,6 +23,9 @@ import type {
   AiHintResponse,
   StudentModule,
   TeacherModule,
+  AiModuleSuggestionsRequest,
+  AiModuleSuggestionsResponse,
+  AiModuleSuggestion,
 } from "../../../shared/types.js";
 
 // Both endpoints are stateless: the module is loaded server-side (scoped to the caller's classroom),
@@ -44,9 +47,13 @@ const RATE_MAX = 20;
 const hits = new Map<string, number[]>();
 const rateLimit: RequestHandler = (req, res, next) => {
   const now = Date.now();
-  const recent = (hits.get(req.user!.userId) ?? []).filter((t) => now - t < RATE_WINDOW_MS);
+  const recent = (hits.get(req.user!.userId) ?? []).filter(
+    (t) => now - t < RATE_WINDOW_MS,
+  );
   if (recent.length >= RATE_MAX) {
-    res.status(429).json({ error: "Too many AI requests. Please wait a minute and try again." });
+    res.status(429).json({
+      error: "Too many AI requests. Please wait a minute and try again.",
+    });
     return;
   }
   recent.push(now);
@@ -59,20 +66,32 @@ const rateLimit: RequestHandler = (req, res, next) => {
 // Only that view (no answer keys, reference answers or checks) is cached; the caller's classroom check
 // still runs on every request. Teacher drafting is deliberately uncached so edits show up immediately.
 const CONTEXT_TTL_MS = 60_000;
-const contextCache = new Map<string, { text: string; module: StudentModule; expires: number }>();
-async function studentViewFor(row: ModuleRow): Promise<{ text: string; module: StudentModule }> {
+const contextCache = new Map<
+  string,
+  { text: string; module: StudentModule; expires: number }
+>();
+async function studentViewFor(
+  row: ModuleRow,
+): Promise<{ text: string; module: StudentModule }> {
   const hit = contextCache.get(row.id);
   if (hit && hit.expires > Date.now()) return hit;
   // teacher=false: the aggregate is loaded WITHOUT answer keys, reference answers or checks.
   const module = (await aggregate(row, false)) as StudentModule;
-  const entry = { text: studentModuleContext(module), module, expires: Date.now() + CONTEXT_TTL_MS };
+  const entry = {
+    text: studentModuleContext(module),
+    module,
+    expires: Date.now() + CONTEXT_TTL_MS,
+  };
   if (contextCache.size > 200) contextCache.clear();
   contextCache.set(row.id, entry);
   return entry;
 }
 
 /** The prompt + starter task of one code exercise, from the student-safe view only. */
-function exerciseNote(module: StudentModule, exerciseId: string): string | null {
+function exerciseNote(
+  module: StudentModule,
+  exerciseId: string,
+): string | null {
   for (const s of module.sections) {
     for (const q of s.questions) {
       if (q.codeExercise?.id === exerciseId) {
@@ -101,15 +120,26 @@ function parseLocated(raw: string, lineCount: number): AiHintResponse {
   } catch {
     return { reply: raw };
   }
-  const obj = (data && typeof data === "object" ? data : {}) as { reply?: unknown; highlight?: unknown };
-  const text = typeof obj.reply === "string" && obj.reply.trim() ? obj.reply.trim() : raw;
+  const obj = (data && typeof data === "object" ? data : {}) as {
+    reply?: unknown;
+    highlight?: unknown;
+  };
+  const text =
+    typeof obj.reply === "string" && obj.reply.trim() ? obj.reply.trim() : raw;
   const h = obj.highlight as Partial<AiCodeHighlight> | null | undefined;
-  if (!h || typeof h !== "object" || !Number.isInteger(h.line)) return { reply: text };
+  if (!h || typeof h !== "object" || !Number.isInteger(h.line))
+    return { reply: text };
   const line = h.line as number;
   if (line < 1 || line > lineCount) return { reply: text };
-  const end = Number.isInteger(h.endLine) ? Math.min(Math.max(h.endLine as number, line), lineCount) : line;
-  const note = typeof h.note === "string" ? h.note.trim().slice(0, MAX_NOTE) : "";
-  return { reply: text, highlight: { line, ...(end > line ? { endLine: end } : {}), note } };
+  const end = Number.isInteger(h.endLine)
+    ? Math.min(Math.max(h.endLine as number, line), lineCount)
+    : line;
+  const note =
+    typeof h.note === "string" ? h.note.trim().slice(0, MAX_NOTE) : "";
+  return {
+    reply: text,
+    highlight: { line, ...(end > line ? { endLine: end } : {}), note },
+  };
 }
 
 /** undefined -> []; malformed -> null. Keeps only the most recent turns and trims each. */
@@ -118,14 +148,24 @@ function parseHistory(raw: unknown): ChatTurn[] | null {
   if (!Array.isArray(raw)) return null;
   const turns: ChatTurn[] = [];
   for (const m of raw.slice(-MAX_HISTORY_TURNS)) {
-    if (!m || (m.role !== "user" && m.role !== "assistant") || typeof m.text !== "string") return null;
+    if (
+      !m ||
+      (m.role !== "user" && m.role !== "assistant") ||
+      typeof m.text !== "string"
+    )
+      return null;
     turns.push({ role: m.role, text: m.text.slice(0, MAX_TURN_TEXT) });
   }
   return turns;
 }
 
 /** Runs the completion and maps failures to clean JSON errors (never leaks OpenAI's error text or status). */
-async function reply(res: Response, run: () => Promise<AiHintResponse | AiDraftResponse>): Promise<void> {
+async function reply(
+  res: Response,
+  run: () => Promise<
+    AiHintResponse | AiDraftResponse | AiModuleSuggestionsResponse
+  >,
+): Promise<void> {
   try {
     res.json(await run());
   } catch (err) {
@@ -133,16 +173,37 @@ async function reply(res: Response, run: () => Promise<AiHintResponse | AiDraftR
       res.status(503).json({ error: err.message });
       return;
     }
-    console.error("[ai] completion failed:", err instanceof Error ? err.message : err);
-    res.status(502).json({ error: "The AI service is unavailable right now. Please try again." });
+    console.error(
+      "[ai] completion failed:",
+      err instanceof Error ? err.message : err,
+    );
+    res.status(502).json({
+      error: "The AI service is unavailable right now. Please try again.",
+    });
   }
 }
 
 const notConfigured = (res: Response) =>
   res.status(503).json({ error: new AiNotConfiguredError().message });
 
+function suggestionPatch(value: unknown): AiModuleSuggestion["patch"] | null {
+  if (!value || typeof value !== "object") return null;
+  const { title, content } = value as Record<string, unknown>;
+  if (title === undefined && content === undefined) return null;
+  if (
+    (title !== undefined && typeof title !== "string") ||
+    (content !== undefined && typeof content !== "string")
+  )
+    return null;
+  return {
+    ...(title !== undefined ? { title } : {}),
+    ...(content !== undefined ? { content } : {}),
+  };
+}
+
 aiRouter.post("/hint", requireRole("student"), rateLimit, async (req, res) => {
-  const { moduleId, studentId, question, code, exerciseId, error } = (req.body ?? {}) as Partial<AiHintRequest>;
+  const { moduleId, studentId, question, code, exerciseId, error } =
+    (req.body ?? {}) as Partial<AiHintRequest>;
   const history = parseHistory(req.body?.history);
   if (
     typeof moduleId !== "string" ||
@@ -151,9 +212,11 @@ aiRouter.post("/hint", requireRole("student"), rateLimit, async (req, res) => {
     !question.trim() ||
     question.length > MAX_QUESTION ||
     !history ||
-    (code !== undefined && (typeof code !== "string" || code.length > MAX_CODE)) ||
+    (code !== undefined &&
+      (typeof code !== "string" || code.length > MAX_CODE)) ||
     (exerciseId !== undefined && typeof exerciseId !== "string") ||
-    (error !== undefined && (typeof error !== "string" || error.length > MAX_RUN_ERROR))
+    (error !== undefined &&
+      (typeof error !== "string" || error.length > MAX_RUN_ERROR))
   ) {
     res.status(400).json({
       error: `moduleId, studentId and a question (max ${MAX_QUESTION} chars) are required; history, code, exerciseId and error must be well-formed`,
@@ -187,19 +250,25 @@ aiRouter.post("/hint", requireRole("student"), rateLimit, async (req, res) => {
 
   await reply(res, async () => {
     const text = await complete({
-      system: hintSystemPrompt(context, { locate: hasCode, exerciseNote: note }),
+      system: hintSystemPrompt(context, {
+        locate: hasCode,
+        exerciseNote: note,
+      }),
       history,
       message,
       maxTokens: hasCode ? 500 : 400, // hints are short by design
       json: hasCode,
     });
-    return hasCode ? parseLocated(text, code!.split("\n").length) : { reply: text };
+    return hasCode
+      ? parseLocated(text, code!.split("\n").length)
+      : { reply: text };
   });
 });
 
 // Stretch: teacher-facing drafting/planning assistant.
 aiRouter.post("/draft", requireRole("teacher"), rateLimit, async (req, res) => {
-  const { request, moduleId, draft } = (req.body ?? {}) as Partial<AiDraftRequest>;
+  const { request, moduleId, draft } = (req.body ??
+    {}) as Partial<AiDraftRequest>;
   const history = parseHistory(req.body?.history);
   if (
     typeof request !== "string" ||
@@ -207,7 +276,8 @@ aiRouter.post("/draft", requireRole("teacher"), rateLimit, async (req, res) => {
     request.length > MAX_DRAFT_REQUEST ||
     !history ||
     (moduleId !== undefined && typeof moduleId !== "string") ||
-    (draft !== undefined && (typeof draft !== "string" || draft.length > MAX_DRAFT))
+    (draft !== undefined &&
+      (typeof draft !== "string" || draft.length > MAX_DRAFT))
   ) {
     res.status(400).json({
       error: `A request (max ${MAX_DRAFT_REQUEST} chars) is required; moduleId, draft and history must be well-formed`,
@@ -223,7 +293,9 @@ aiRouter.post("/draft", requireRole("teacher"), rateLimit, async (req, res) => {
       res.status(404).json({ error: "Module not found" });
       return;
     }
-    moduleContext = teacherModuleContext((await aggregate(row, true)) as TeacherModule);
+    moduleContext = teacherModuleContext(
+      (await aggregate(row, true)) as TeacherModule,
+    );
   }
 
   await reply(res, async () => ({
@@ -235,3 +307,64 @@ aiRouter.post("/draft", requireRole("teacher"), rateLimit, async (req, res) => {
     }),
   }));
 });
+
+/** Builder suggestions intentionally use only teacher-owned context. They are never available to students. */
+aiRouter.post(
+  "/module-suggestions",
+  requireRole("teacher"),
+  rateLimit,
+  async (req, res) => {
+    const { moduleId, request, itemId } = (req.body ??
+      {}) as Partial<AiModuleSuggestionsRequest>;
+    if (
+      typeof moduleId !== "string" ||
+      typeof request !== "string" ||
+      !request.trim() ||
+      request.length > MAX_DRAFT_REQUEST ||
+      (itemId !== undefined && typeof itemId !== "string")
+    )
+      return res
+        .status(400)
+        .json({ error: "moduleId and a request are required" });
+    if (!isAiConfigured()) return notConfigured(res);
+    const row = await moduleInClassroom(moduleId, req.user!.classroomId);
+    if (!row) return res.status(404).json({ error: "Module not found" });
+    const module = (await aggregate(row, true)) as TeacherModule;
+    await reply(res, async () => {
+      const raw = await complete({
+        system: `${draftSystemPrompt(teacherModuleContext(module), null)}\nReturn JSON only: {"suggestions":[{"id":"short-id","label":"short label","patch":{"title":"optional title","content":"optional intro"}}]}. Give up to three safe, small editorial suggestions. ${itemId ? `The selected item id is ${itemId}; put its replacement in patch only when it can be represented as a module title/content change.` : ""}`,
+        history: [],
+        message: request.trim(),
+        maxTokens: 900,
+        json: true,
+      });
+      try {
+        const parsed: unknown = JSON.parse(raw);
+        if (
+          parsed &&
+          typeof parsed === "object" &&
+          Array.isArray((parsed as AiModuleSuggestionsResponse).suggestions)
+        )
+          return {
+            suggestions: (parsed as AiModuleSuggestionsResponse).suggestions
+              .flatMap((suggestion) => {
+                if (
+                  !suggestion ||
+                  typeof suggestion.id !== "string" ||
+                  typeof suggestion.label !== "string"
+                )
+                  return [];
+                const patch = suggestionPatch(suggestion.patch);
+                return patch
+                  ? [{ id: suggestion.id, label: suggestion.label, patch }]
+                  : [];
+              })
+              .slice(0, 3),
+          };
+      } catch {
+        /* generic fallback below */
+      }
+      return { suggestions: [] };
+    });
+  },
+);
