@@ -213,6 +213,10 @@ export interface LessonSummary extends Omit<Module, "status"> {
   status: ProgressStatus;
   sections: Array<{ id: string; title: string }>;
   exercises: ExerciseSummary[];
+  /** All student-visible questions in this lesson, including non-code questions. */
+  questionCount: number;
+  /** Questions with saved work, an answer attempt, or a code submission from this student. */
+  startedQuestionCount: number;
 }
 /** GET /api/classrooms/:id/lessons (student) — every lesson in order, with the caller's progress. */
 export type ListLessonSummariesResponse = LessonSummary[];
