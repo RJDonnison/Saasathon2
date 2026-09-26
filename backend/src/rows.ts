@@ -11,6 +11,7 @@ import type {
   Module,
   ModuleProgress,
   Question,
+  QuestionComment,
   QuestionOption,
   ReferenceAnswer,
   Section,
@@ -128,6 +129,14 @@ export type CommentRow = {
   text: string;
   line_start: number | null;
   line_end: number | null;
+  created_at: string;
+};
+export type QuestionCommentRow = {
+  id: string;
+  question_id: string;
+  student_id: string;
+  author_id: string;
+  text: string;
   created_at: string;
 };
 export type AttemptRow = {
@@ -281,6 +290,14 @@ export const toComment = (r: CommentRow): Comment => ({
   text: r.text,
   lineStart: r.line_start,
   lineEnd: r.line_end,
+  createdAt: iso(r.created_at),
+});
+export const toQuestionComment = (r: QuestionCommentRow): QuestionComment => ({
+  id: r.id,
+  questionId: r.question_id,
+  studentId: r.student_id,
+  authorId: r.author_id,
+  text: r.text,
   createdAt: iso(r.created_at),
 });
 export const toAttempt = (r: AttemptRow): Attempt => ({

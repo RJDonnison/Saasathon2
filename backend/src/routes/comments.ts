@@ -1,21 +1,25 @@
 import { randomUUID } from "node:crypto";
 import { Router } from "express";
-import { moduleInClassroom } from "../access.js";
+import { moduleInClassroom, studentInClassroom } from "../access.js";
+import { emitQuestionCommentCreated } from "../sockets.js";
 import { supabase } from "../supabase.js";
 import {
   toComment,
   toAttempt,
   toSubmission,
+  toQuestionComment,
   unwrap,
   type AttemptRow,
   type CommentRow,
   type CodeSubmissionRow,
   type ExerciseRow,
+  type QuestionCommentRow,
 } from "../rows.js";
 import type {
   CreateAttemptRequest,
   CreateCommentRequest,
   CreateSubmissionRequest,
+  CreateQuestionCommentRequest,
 } from "../../../shared/types.js";
 export const commentsRouter = Router();
 async function ownedExercise(
@@ -47,6 +51,27 @@ async function ownedExercise(
         .maybeSingle(),
     ) as { module_id: string } | null);
   return s && (await moduleInClassroom(s.module_id, classroomId)) ? e : null;
+}
+async function questionInClassroom(
+  questionId: string,
+  classroomId: string,
+): Promise<boolean> {
+  const question = unwrap(
+    await supabase
+      .from("questions")
+      .select("section_id")
+      .eq("id", questionId)
+      .maybeSingle(),
+  ) as { section_id: string } | null;
+  if (!question) return false;
+  const section = unwrap(
+    await supabase
+      .from("sections")
+      .select("module_id")
+      .eq("id", question.section_id)
+      .maybeSingle(),
+  ) as { module_id: string } | null;
+  return !!section && !!(await moduleInClassroom(section.module_id, classroomId));
 }
 commentsRouter.post("/attempts", async (req, res) => {
   const b = (req.body ?? {}) as Partial<CreateAttemptRequest>;
@@ -203,4 +228,70 @@ commentsRouter.post("/comments", async (req, res) => {
       .single(),
   ) as CommentRow;
   res.status(201).json(toComment(row));
+});
+
+commentsRouter.get("/questions/:id/comments", async (req, res) => {
+  const questionId = String(req.params.id);
+  const requestedStudentId = req.query.studentId;
+  const studentId =
+    req.user!.role === "student"
+      ? req.user!.userId
+      : typeof requestedStudentId === "string"
+        ? requestedStudentId
+        : null;
+  if (
+    !studentId ||
+    (req.user!.role === "student" && requestedStudentId !== undefined && requestedStudentId !== studentId) ||
+    !(await studentInClassroom(studentId, req.user!.classroomId))
+  )
+    return res.status(403).json({ error: "Not allowed to view this conversation" });
+  if (!(await questionInClassroom(questionId, req.user!.classroomId)))
+    return res.status(404).json({ error: "Question not found" });
+  const rows = unwrap(
+    await supabase
+      .from("question_comments")
+      .select("*")
+      .eq("question_id", questionId)
+      .eq("student_id", studentId)
+      .order("created_at"),
+  ) as QuestionCommentRow[];
+  res.json(rows.map(toQuestionComment));
+});
+
+commentsRouter.post("/questions/:id/comments", async (req, res) => {
+  const questionId = String(req.params.id);
+  const body = (req.body ?? {}) as Partial<CreateQuestionCommentRequest>;
+  const text = typeof body.text === "string" ? body.text.trim() : "";
+  const studentId =
+    req.user!.role === "student"
+      ? req.user!.userId
+      : typeof body.studentId === "string"
+        ? body.studentId
+        : null;
+  if (!text || text.length > 4_000)
+    return res.status(400).json({ error: "A comment must be between 1 and 4,000 characters" });
+  if (!studentId || !(await studentInClassroom(studentId, req.user!.classroomId)))
+    return res.status(403).json({ error: "Not allowed to comment for this student" });
+  if (!(await questionInClassroom(questionId, req.user!.classroomId)))
+    return res.status(404).json({ error: "Question not found" });
+  const row = unwrap(
+    await supabase
+      .from("question_comments")
+      .insert({
+        id: randomUUID(),
+        question_id: questionId,
+        student_id: studentId,
+        author_id: req.user!.userId,
+        text,
+      })
+      .select("*")
+      .single(),
+  ) as QuestionCommentRow;
+  const comment = toQuestionComment(row);
+  emitQuestionCommentCreated({
+    type: "question_comment_created",
+    classroomId: req.user!.classroomId,
+    comment,
+  });
+  res.status(201).json(comment);
 });

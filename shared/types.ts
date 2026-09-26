@@ -214,6 +214,16 @@ export interface Comment {
   lineEnd: number | null;
   createdAt: string;
 }
+/** A persisted conversation attached directly to a lesson question, visible to that student and their teachers. */
+export interface QuestionComment {
+  id: string;
+  questionId: string;
+  /** The learner whose question conversation this belongs to. */
+  studentId: string;
+  authorId: string;
+  text: string;
+  createdAt: string;
+}
 export interface TeacherStudentAggregate {
   studentId: string;
   moduleProgress: ModuleProgress[];
@@ -453,6 +463,11 @@ export interface CreateCommentRequest {
   lineStart?: number | null;
   lineEnd?: number | null;
 }
+export interface CreateQuestionCommentRequest {
+  text: string;
+  /** Teachers select the learner; students are always forced to their own id server-side. */
+  studentId?: string;
+}
 
 export type GetModuleResponse = StudentModule | TeacherModule;
 export type ListModulesResponse = Module[];
@@ -462,6 +477,8 @@ export type GetStudentProgressResponse = ModuleProgress[];
 export type UpsertProgressRequest = UpsertModuleProgressRequest;
 export type UpsertProgressResponse = ModuleProgress;
 export type CreateCommentResponse = Comment;
+export type ListQuestionCommentsResponse = QuestionComment[];
+export type CreateQuestionCommentResponse = QuestionComment;
 export type CreateAttemptResponse = Attempt;
 export type CreateSubmissionResponse = CodeSubmission;
 export type ListSubmissionCommentsResponse = Comment[];

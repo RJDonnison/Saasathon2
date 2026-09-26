@@ -5,6 +5,7 @@ import { CLIENT_ORIGIN } from "./config.js";
 import type {
   ClientToServerEvents,
   ModuleChangedPayload,
+  QuestionCommentCreatedPayload,
   PresenceUpdatePayload,
   RaisedHandsUpdatePayload,
   StudentActivityUpdatePayload,
@@ -35,6 +36,9 @@ export function emitModuleChanged(payload: ModuleChangedPayload) {
 }
 export function emitStudentActivityUpdate(payload: StudentActivityUpdatePayload) {
   appIo?.to(payload.classroomId).emit("student_activity_update", payload);
+}
+export function emitQuestionCommentCreated(payload: QuestionCommentCreatedPayload) {
+  appIo?.to(payload.classroomId).emit("question_comment_created", payload);
 }
 
 function onlineStudentIds(classroomId: string): string[] {

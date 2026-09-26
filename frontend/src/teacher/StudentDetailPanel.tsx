@@ -51,7 +51,7 @@ export default function StudentDetailPanel({
               <p className="m-0 text-sm font-medium text-ink">{label[current.type]}</p>
               {current.questionId && (
                 <Button size="sm" variant="primary" onClick={() => onOpenQuestion(current)}>
-                  <BookIcon className="size-3.5" /> Open current question
+                  <BookIcon className="size-3.5" /> View live work
                 </Button>
               )}
               {currentWork && (
