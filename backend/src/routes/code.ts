@@ -13,11 +13,7 @@ import { requireRole } from "../auth.js";
 import { supabase } from "../supabase.js";
 import { liveModuleStudentAggregate } from "../questionOutcomes.js";
 import { emitLiveModuleAggregateUpdate } from "../sockets.js";
-import {
-  unwrap,
-  type ExerciseRow,
-  type TestRow,
-} from "../rows.js";
+import { unwrap, type ExerciseRow, type TestRow } from "../rows.js";
 
 export const codeRouter = Router();
 
@@ -138,15 +134,23 @@ async function exerciseInClassroom(
   ) as unknown as
     | (ExerciseRow & {
         questions:
-          | { sections: { module_id: string } | Array<{ module_id: string }> | null }
-          | Array<{ sections: { module_id: string } | Array<{ module_id: string }> | null }>
+          | {
+              sections:
+                { module_id: string } | Array<{ module_id: string }> | null;
+            }
+          | Array<{
+              sections:
+                { module_id: string } | Array<{ module_id: string }> | null;
+            }>
           | null;
       })
     | null;
   if (!row) return null;
   const { questions, ...exercise } = row;
   const question = Array.isArray(questions) ? questions[0] : questions;
-  const section = Array.isArray(question?.sections) ? question.sections[0] : question?.sections;
+  const section = Array.isArray(question?.sections)
+    ? question.sections[0]
+    : question?.sections;
   if (!section) return null;
   return (await moduleForUser(section.module_id, classroomId, role))
     ? exercise
@@ -243,6 +247,11 @@ codeRouter.post("/run", async (req, res) => {
         payload && "message" in payload && typeof payload.message === "string"
           ? payload.message
           : null;
+      console.error("Piston execution request failed", {
+        status: response.status,
+        statusText: response.statusText,
+        message,
+      });
       res
         .status(response.status === 400 ? 400 : 502)
         .json({ error: message ?? "Code execution service is unavailable" });
@@ -279,6 +288,13 @@ codeRouter.post("/run", async (req, res) => {
     res.json(body);
   } catch (err) {
     const timedOut = err instanceof Error && err.name === "AbortError";
+    console.error("Piston execution request could not be completed", {
+      error: err instanceof Error ? err.message : String(err),
+      cause:
+        err instanceof Error && err.cause instanceof Error
+          ? err.cause.message
+          : undefined,
+    });
     res.status(502).json({
       error: timedOut
         ? "Code execution timed out. Please try again."
@@ -403,6 +419,12 @@ codeRouter.post("/grade", requireRole("student"), async (req, res) => {
     const payload = (await response
       .json()
       .catch(() => null)) as PistonResponse | null;
+    if (!response.ok) {
+      console.error("Piston grading request failed", {
+        status: response.status,
+        statusText: response.statusText,
+      });
+    }
     const output = [
       stageText(payload?.compile, "stdout"),
       stageText(payload?.run, "stdout"),
@@ -476,7 +498,14 @@ codeRouter.post("/grade", requireRole("student"), async (req, res) => {
             : {}),
       } satisfies GradeCodeExerciseResponse);
     }
-  } catch {
+  } catch (err) {
+    console.error("Piston grading request could not be completed", {
+      error: err instanceof Error ? err.message : String(err),
+      cause:
+        err instanceof Error && err.cause instanceof Error
+          ? err.cause.message
+          : undefined,
+    });
     await persistGrade(
       exercise,
       req.user!.userId,
