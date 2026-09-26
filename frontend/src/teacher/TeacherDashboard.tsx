@@ -262,9 +262,7 @@ export default function TeacherDashboard() {
                         </h2>
                         <p className="mb-0! mt-2! text-sm! text-white/80">
                           {item.name}.{" "}
-                          {session.phase === "teach"
-                            ? "Teaching now."
-                            : "Work time, the helper is on."}
+                          Teaching now.
                         </p>
                       </div>
                       <Button

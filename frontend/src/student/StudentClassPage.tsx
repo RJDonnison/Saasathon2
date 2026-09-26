@@ -223,11 +223,7 @@ export default function StudentClassPage() {
                     {session.moduleTitle}
                   </h2>
                   <p className="mb-0! mt-1.5! text-sm! text-white/80">
-                    {teacher} is{" "}
-                    {session.phase === "teach"
-                      ? "teaching"
-                      : "running work time"}
-                    .
+                    {teacher} is teaching.
                   </p>
                 </div>
                 <Link to={`${classPath}/live`}>

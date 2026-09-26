@@ -19,6 +19,7 @@ import RaiseHandAlert from "./RaiseHandAlert.tsx";
 import Button from "../ui/Button.tsx";
 import Card from "../ui/Card.tsx";
 import Heading from "../ui/Heading.tsx";
+import Markdown from "../ui/Markdown.tsx";
 import { BookIcon, UsersIcon } from "../ui/icons.tsx";
 import { INPUT, TINT } from "../ui/styles.ts";
 import { useDialog } from "../ui/DialogContext.tsx";
@@ -28,8 +29,67 @@ import type {
   Module,
   LiveModuleStudentAggregate,
   StudentActivitySnapshot,
+  TeacherModule,
   User,
 } from "../../../shared/types";
+
+function LiveLessonQuestions({ moduleId }: { moduleId: string }) {
+  const [module, setModule] = useState<TeacherModule | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setModule(null);
+    setError(null);
+    void api.getModule(moduleId, { signal: controller.signal }).then((result) => {
+      if (!controller.signal.aborted) setModule(result as TeacherModule);
+    }).catch((err: unknown) => {
+      if (!controller.signal.aborted) setError(err instanceof Error ? err.message : "Could not load lesson questions.");
+    });
+    return () => controller.abort();
+  }, [moduleId]);
+
+  const questions = module?.sections.flatMap((section) =>
+    section.questions.map((question) => ({ section: section.title, prompt: question.prompt, kind: question.kind, id: question.id })),
+  ) ?? [];
+  const intro = module?.content.replace(/^#{1,6}[ \t]+.*\n+/, "").trim();
+
+  return (
+    <Card title="Questions in this lesson" eyebrow={module?.title ?? "Current lesson"} icon={<BookIcon className="size-[18px]" />} tint="mint">
+      {error ? <p className="m-0 text-sm text-muted">{error}</p>
+        : !module ? <p className="m-0 text-sm text-muted">Loading lesson content…</p>
+          : (
+            <div className="flex flex-col gap-4">
+              {intro && <div className="rounded-xl border border-border bg-surface p-4"><Markdown text={intro} /></div>}
+              {module.sections.map((section) => {
+                const blocks = new Map(section.blocks.map((block) => [block.id, block]));
+                const sectionQuestions = new Map(section.questions.map((question) => [question.id, question]));
+                const items = [...section.items].sort((a, b) => a.position - b.position);
+                return (
+                  <section key={section.id} className="flex flex-col gap-2">
+                    <h3 className="m-0! font-display! text-base! font-semibold!">{section.title}</h3>
+                    {items.map((item) => {
+                      if (item.itemType === "block") {
+                        const block = blocks.get(item.itemId);
+                        return block && typeof block.content === "string" ? <div key={item.id} className="rounded-xl border border-border bg-surface p-4"><Markdown text={block.content} /></div> : null;
+                      }
+                      const question = sectionQuestions.get(item.itemId);
+                      return question ? (
+                        <article key={item.id} className="flex flex-col gap-1 rounded-xl border border-border bg-surface p-3">
+                          <span className="text-xs font-medium text-muted">{question.kind}</span>
+                          <p className="m-0 whitespace-pre-wrap text-sm text-ink">{question.prompt}</p>
+                        </article>
+                      ) : null;
+                    })}
+                  </section>
+                );
+              })}
+              {!intro && questions.length === 0 && module.sections.length === 0 && <p className="m-0 text-sm text-muted">This lesson has no content yet.</p>}
+            </div>
+          )}
+    </Card>
+  );
+}
 
 const INVITATION_LABEL: Record<ClassroomInvitation["status"], string> = {
   pending: "Invited, waiting for a reply",
@@ -437,7 +497,7 @@ export default function TeacherHome() {
         className={`grid items-start gap-5 lg:grid-cols-[minmax(0,1.7fr)_minmax(290px,.95fr)] ${managing ? "rounded-2xl border border-border bg-surface-soft p-4 sm:p-5" : ""}`}
       >
         <div className="contents lg:flex lg:min-w-0 lg:flex-col lg:gap-5">
-          <div className={`order-2 min-w-0 ${managing ? "hidden" : ""}`}>
+          <div className={`order-2 flex min-w-0 flex-col gap-5 ${managing ? "hidden" : ""}`}>
             <ClassroomGrid
               students={students}
               online={online}
@@ -452,6 +512,7 @@ export default function TeacherHome() {
               }}
               showLiveProgress={!!session}
             />
+            {session && <LiveLessonQuestions moduleId={session.moduleId} />}
           </div>
           <div className={`order-5 min-w-0 ${managing ? "" : "hidden"}`}>
             <Card

@@ -3,18 +3,13 @@ import { useNavigate } from 'react-router-dom'
 import { api } from '../api.ts'
 import Button from '../ui/Button.tsx'
 import Dot from '../ui/Dot.tsx'
-import { FOCUS_RING, INPUT, TINT } from '../ui/styles.ts'
+import { INPUT, TINT } from '../ui/styles.ts'
 import { plural } from '../student/lessons.ts'
-import type { LessonPhase, LessonSession, Module } from '../../../shared/types'
-
-const PHASES: { id: LessonPhase; label: string; hint: string }[] = [
-  { id: 'teach', label: 'Teach', hint: 'Students follow along and the helper is paused.' },
-  { id: 'work', label: 'Work time', hint: 'Students work on their own with the helper.' },
-]
+import type { LessonSession, Module } from '../../../shared/types'
 
 /**
  * The teacher's lesson controls, styled as the dark banner: pick a lesson and start it; while it is live, move the
- * class to another lesson, switch between teaching and work time, or end it. Students follow along in real time.
+ * class to another lesson or end it. Students can see the current lesson in real time.
  */
 export default function LiveLessonControl({
   classroomId,
@@ -103,21 +98,6 @@ export default function LiveLessonControl({
         )
       ) : (
         <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
-          <div className="flex items-center gap-1 rounded-xl bg-white/10 p-1" role="group" aria-label="Lesson phase">
-            {PHASES.map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                title={p.hint}
-                aria-pressed={session.phase === p.id}
-                disabled={busy}
-                onClick={() => session.phase !== p.id && void run(() => api.updateSession(classroomId, { phase: p.id }))}
-                className={`rounded-lg px-3.5 py-2 text-[13px]! leading-none! font-semibold! transition ${FOCUS_RING} ${session.phase === p.id ? 'bg-white text-ink' : 'text-white/80 hover:text-white'}`}
-              >
-                {p.label}
-              </button>
-            ))}
-          </div>
           <div className="flex items-center gap-2">
             <Button
               size="sm"

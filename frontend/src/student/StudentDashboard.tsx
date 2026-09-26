@@ -155,9 +155,7 @@ export default function StudentDashboard() {
                     </h2>
                     <p className="mb-0! mt-2! text-sm! text-white/80">
                       {item.name} with {teacher}.{" "}
-                      {session.phase === "teach"
-                        ? "Teaching now. Join to follow along."
-                        : "Work time. Join to work with the helper."}
+                      Join to follow along with the class.
                     </p>
                   </div>
                   <Button
