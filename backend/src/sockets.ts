@@ -5,9 +5,11 @@ import { CLIENT_ORIGIN } from "./config.js";
 import type {
   ClientToServerEvents,
   ModuleChangedPayload,
+  QuestionCommentCreatedPayload,
   ModuleDeletedPayload,
   PresenceUpdatePayload,
   RaisedHandsUpdatePayload,
+  StudentActivityUpdatePayload,
   ServerToClientEvents,
 } from "../../shared/events.js";
 import type { LessonSession } from "../../shared/types.js";
@@ -54,6 +56,12 @@ export async function disconnectClassroomMember(classroomId: string, userId: str
 }
 export function emitModuleDeleted(payload: ModuleDeletedPayload) {
   activeIo?.to(payload.classroomId).emit("module_deleted", payload);
+}
+export function emitStudentActivityUpdate(payload: StudentActivityUpdatePayload) {
+  activeIo?.to(payload.classroomId).emit("student_activity_update", payload);
+}
+export function emitQuestionCommentCreated(payload: QuestionCommentCreatedPayload) {
+  activeIo?.to(payload.classroomId).emit("question_comment_created", payload);
 }
 
 function onlineStudentIds(classroomId: string): string[] {

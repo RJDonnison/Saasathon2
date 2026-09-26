@@ -32,7 +32,7 @@ export default function StudentDetailPanel({
     let active = true
     const load = () =>
       api
-        .getStudentAggregate(classroomId, studentId)
+        .getTeacherStudentAggregate(classroomId, studentId)
         .then((aggregate) => active && setData({ studentId, aggregate }))
         .catch(() => active && setData({ studentId, aggregate: null }))
     void load()
@@ -48,7 +48,6 @@ export default function StudentDetailPanel({
   const statusOf = (moduleId: string): ProgressStatus => aggregate?.moduleProgress.find((p) => p.moduleId === moduleId)?.status ?? 'not_started'
   const runs = [...(aggregate?.submissions ?? [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
   const done = lessons.filter((l) => statusOf(l.id) === 'completed').length
-
   return (
     <Card title="Student detail" eyebrow="Focus" icon={<BookIcon className="size-[18px]" />} tint="mint">
       {!student ? (
@@ -58,13 +57,8 @@ export default function StudentDetailPanel({
           <div className="flex items-center gap-4">
             <Avatar name={student.name} id={student.id} size="lg" />
             <div className="flex min-w-0 flex-col gap-1.5">
-              <Heading as="h3" variant="name" className="truncate">
-                {student.name}
-              </Heading>
-              <span className="flex items-center gap-1.5 text-xs text-muted">
-                <Dot live={online} />
-                {online ? 'Online now' : 'Offline'}
-              </span>
+              <Heading as="h3" variant="name" className="truncate">{student.name}</Heading>
+              <span className="flex items-center gap-1.5 text-xs text-muted"><Dot live={online} />{online ? 'Online now' : 'Offline'}</span>
             </div>
           </div>
 
