@@ -298,92 +298,60 @@ const nextPosition = async (
   return (rows[0]?.position ?? -1) + 1;
 };
 
+// One request returns the whole lesson tree through nested embeds (every hop is a foreign key), instead of a
+// waterfall of sections -> blocks/questions -> options/exercises -> checks/tests. Students get explicit column
+// lists so answer keys, hidden code, checks and tests are never even read for them.
+const STUDENT_TREE =
+  "*, section_blocks(*), section_items(*)," +
+  "questions(id,section_id,prompt,kind,position, question_options(*)," +
+  "code_exercises(id,question_id,language,starter_code,instructions,function_name))";
+const TEACHER_TREE =
+  "*, section_blocks(*), section_items(*)," +
+  "questions(*, question_options(*), code_exercises(*, code_checks(*), code_tests(*)))";
+
+type TreeQuestion = QuestionRow & {
+  question_options: OptionRow[] | null;
+  // question_id is unique on code_exercises, so PostgREST embeds it as an object (an array if that ever changes).
+  code_exercises:
+    | (ExerciseRow & { code_checks?: CheckRow[]; code_tests?: TestRow[] })
+    | Array<ExerciseRow & { code_checks?: CheckRow[]; code_tests?: TestRow[] }>
+    | null;
+};
+type TreeSection = SectionRow & {
+  section_blocks: BlockRow[] | null;
+  section_items: SectionItemRow[] | null;
+  questions: TreeQuestion[] | null;
+};
+const byPosition = <T extends { position: number; id: string }>(a: T, b: T) =>
+  a.position - b.position || a.id.localeCompare(b.id);
+
 export async function aggregate(
   module: ModuleRow,
   teacher: boolean,
 ): Promise<GetModuleResponse> {
-  const sections = unwrap(
+  const tree = unwrap(
     await supabase
       .from("sections")
-      .select("*")
+      .select(teacher ? TEACHER_TREE : STUDENT_TREE)
       .eq("module_id", module.id)
       .order("position")
       .order("id"),
-  ) as SectionRow[];
-  const sectionIds = sections.map((s) => s.id);
-  const [blocks, questions, items] = sectionIds.length
-    ? ((await Promise.all([
-        supabase
-          .from("section_blocks")
-          .select("*")
-          .in("section_id", sectionIds)
-          .order("position")
-          .order("id"),
-        supabase
-          .from("questions")
-          .select("*")
-          .in("section_id", sectionIds)
-          .order("position")
-          .order("id"),
-        supabase
-          .from("section_items")
-          .select("*")
-          .in("section_id", sectionIds)
-          .order("position")
-          .order("id"),
-      ]).then((r) => r.map(unwrap))) as [
-        BlockRow[],
-        QuestionRow[],
-        SectionItemRow[],
-      ])
-    : [[], [], []];
-  const questionIds = questions.map((q) => q.id);
-  const [options, exercises] = questionIds.length
-    ? ((await Promise.all([
-        supabase
-          .from("question_options")
-          .select("*")
-          .in("question_id", questionIds)
-          .order("position")
-          .order("id"),
-        supabase
-          .from("code_exercises")
-          .select("*")
-          .in("question_id", questionIds),
-      ]).then((r) => r.map(unwrap))) as [OptionRow[], ExerciseRow[]])
-    : [[], []];
-  const exerciseIds = exercises.map((e) => e.id);
-  const [checks, tests] =
-    teacher && exerciseIds.length
-      ? ((await Promise.all([
-          supabase
-            .from("code_checks")
-            .select("*")
-            .in("code_exercise_id", exerciseIds)
-            .order("position")
-            .order("id"),
-          supabase
-            .from("code_tests")
-            .select("*")
-            .in("code_exercise_id", exerciseIds)
-            .order("position")
-            .order("id"),
-        ]).then((r) => r.map(unwrap))) as [CheckRow[], TestRow[]])
-      : [[], []];
+  ) as unknown as TreeSection[];
+
   const result = {
     ...toModule(module),
-    sections: sections.map((section) => ({
-      ...toSection(section),
-      blocks: blocks.filter((b) => b.section_id === section.id).map(toBlock),
-      questions: questions
-        .filter((q) => q.section_id === section.id)
-        .map((q) => {
-          const exercise = exercises.find((e) => e.question_id === q.id);
+    sections: tree.map((section) => {
+      const blocks = [...(section.section_blocks ?? [])].sort(byPosition);
+      const questions = [...(section.questions ?? [])].sort(byPosition);
+      return {
+        ...toSection(section),
+        blocks: blocks.map(toBlock),
+        questions: questions.map((q) => {
+          const raw = q.code_exercises;
+          const exercise = Array.isArray(raw) ? raw[0] : raw;
           return {
             ...toQuestion(q),
-            options: options
-              .filter((o) => o.question_id === q.id)
-              .map(toOption),
+            options: [...(q.question_options ?? [])].sort(byPosition).map(toOption),
             ...(teacher
               ? {
                   answerKey: q.answer_key,
@@ -397,47 +365,38 @@ export async function aggregate(
                     ? {
                         ...toExercise(exercise),
                         hiddenCode: exercise.hidden_code,
-                        checks: checks
-                          .filter((c) => c.code_exercise_id === exercise.id)
-                          .map(toCheck),
-                        tests: tests
-                          .filter((t) => t.code_exercise_id === exercise.id)
-                          .map(toTest),
+                        checks: [...(exercise.code_checks ?? [])].sort(byPosition).map(toCheck),
+                        tests: [...(exercise.code_tests ?? [])].sort(byPosition).map(toTest),
                       }
                     : toExercise(exercise),
                 }
               : {}),
           };
         }),
-      items: (() => {
-        const stored = items
-          .filter((item) => item.section_id === section.id)
-          .map(toSectionItem);
-        if (stored.length) return stored;
-        const legacyBlocks = blocks.filter(
-          (block) => block.section_id === section.id,
-        );
-        const legacyQuestions = questions.filter(
-          (question) => question.section_id === section.id,
-        );
-        return [
-          ...legacyBlocks.map((block, position) => ({
-            id: `legacy-block-${block.id}`,
-            sectionId: section.id,
-            itemType: "block" as const,
-            itemId: block.id,
-            position,
-          })),
-          ...legacyQuestions.map((question, index) => ({
-            id: `legacy-question-${question.id}`,
-            sectionId: section.id,
-            itemType: "question" as const,
-            itemId: question.id,
-            position: legacyBlocks.length + index,
-          })),
-        ];
-      })(),
-    })),
+        items: (() => {
+          const stored = [...(section.section_items ?? [])]
+            .sort(byPosition)
+            .map(toSectionItem);
+          if (stored.length) return stored;
+          return [
+            ...blocks.map((block, position) => ({
+              id: `legacy-block-${block.id}`,
+              sectionId: section.id,
+              itemType: "block" as const,
+              itemId: block.id,
+              position,
+            })),
+            ...questions.map((question, index) => ({
+              id: `legacy-question-${question.id}`,
+              sectionId: section.id,
+              itemType: "question" as const,
+              itemId: question.id,
+              position: blocks.length + index,
+            })),
+          ];
+        })(),
+      };
+    }),
   };
   return result as GetModuleResponse;
 }
@@ -450,20 +409,26 @@ async function ownedModule(
   if (!module) res.status(404).json({ error: "Module not found" });
   return module;
 }
+// Ownership is checked by joining up to the module's classroom in the same query (inner joins), so a section is
+// one round trip and a question is one too — not one lookup per level of the tree.
 async function ownedSection(
   req: any,
   res: any,
   id: string | string[],
 ): Promise<SectionRow | null> {
-  const section = unwrap(
+  const row = unwrap(
     await supabase
       .from("sections")
-      .select("*")
+      .select("*, modules!inner(classroom_id)")
       .eq("id", String(id))
+      .eq("modules.classroom_id", req.user!.classroomId)
       .maybeSingle(),
-  ) as SectionRow | null;
-  if (!section || !(await ownedModule(req, res, section.module_id)))
+  ) as (SectionRow & { modules?: unknown }) | null;
+  if (!row) {
+    res.status(404).json({ error: "Module not found" });
     return null;
+  }
+  const { modules: _classroom, ...section } = row;
   return section;
 }
 async function ownedQuestion(
@@ -471,15 +436,19 @@ async function ownedQuestion(
   res: any,
   id: string | string[],
 ): Promise<QuestionRow | null> {
-  const question = unwrap(
+  const row = unwrap(
     await supabase
       .from("questions")
-      .select("*")
+      .select("*, sections!inner(modules!inner(classroom_id))")
       .eq("id", String(id))
+      .eq("sections.modules.classroom_id", req.user!.classroomId)
       .maybeSingle(),
-  ) as QuestionRow | null;
-  if (!question || !(await ownedSection(req, res, question.section_id)))
+  ) as (QuestionRow & { sections?: unknown }) | null;
+  if (!row) {
+    res.status(404).json({ error: "Module not found" });
     return null;
+  }
+  const { sections: _tree, ...question } = row;
   return question;
 }
 

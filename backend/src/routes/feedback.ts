@@ -67,17 +67,24 @@ function percent(numerator: number, denominator: number): number {
 function minutes(ms: number): number { return Math.max(0, Math.round(ms / 60_000)); }
 
 async function loadContext(sessionId: string, classroomId: string): Promise<Context | null> {
-  const session = unwrap(await supabase.from("lesson_sessions").select("*").eq("id", sessionId).eq("classroom_id", classroomId).maybeSingle()) as SessionRow | null;
-  if (!session || !session.ended_at) return null;
-  const [classroomResult, moduleResult, membershipsResult, eventsResult, activitiesResult] = await Promise.all([
-    supabase.from("classrooms").select("name").eq("id", classroomId).single(),
-    supabase.from("modules").select("title").eq("id", session.module_id).maybeSingle(),
+  // Wave 1: the session, with its lesson title and classroom name joined in.
+  const found = unwrap(
+    await supabase
+      .from("lesson_sessions")
+      .select("*, modules(title), classrooms(name)")
+      .eq("id", sessionId)
+      .eq("classroom_id", classroomId)
+      .maybeSingle(),
+  ) as unknown as (SessionRow & { modules: { title: string } | null; classrooms: { name: string } | null }) | null;
+  if (!found || !found.ended_at) return null;
+  const { modules: sessionModule, classrooms: classroom, ...session } = found;
+  const endedAt = session.ended_at!;
+  // Wave 2: everything keyed by the session or classroom.
+  const [membershipsResult, eventsResult, activitiesResult] = await Promise.all([
     supabase.from("memberships").select("user_id").eq("classroom_id", classroomId).eq("role", "student"),
     supabase.from("lesson_feedback_events").select("*").eq("session_id", sessionId).order("created_at"),
-    supabase.from("student_activities").select("id,student_id,module_id,question_id,type,created_at").eq("classroom_id", classroomId).gte("created_at", session.started_at).lte("created_at", session.ended_at).order("created_at"),
+    supabase.from("student_activities").select("id,student_id,module_id,question_id,type,created_at").eq("classroom_id", classroomId).gte("created_at", session.started_at).lte("created_at", endedAt).order("created_at"),
   ]);
-  const classroom = unwrap(classroomResult) as { name: string };
-  const module = unwrap(moduleResult) as { title: string } | null;
   const memberships = unwrap(membershipsResult) as Array<{ user_id: string }>;
   const events = unwrap(eventsResult) as FeedbackEvent[];
   const activities = unwrap(activitiesResult) as ActivityRow[];
@@ -87,25 +94,27 @@ async function loadContext(sessionId: string, classroomId: string): Promise<Cont
     ...events.map((event) => event.student_id).filter((id): id is string => Boolean(id)),
     ...activities.map((activity) => activity.student_id),
   ])];
-  const [studentsResult, sessionModulesResult] = await Promise.all([
+  // Wave 3: names, lesson titles and progress only need the ids from wave 2, so they go out together.
+  const [studentsResult, sessionModulesResult, progressResult] = await Promise.all([
     studentIds.length ? supabase.from("users").select("id,name").in("id", studentIds).order("name") : Promise.resolve({ data: [], error: null }),
     moduleIds.length ? supabase.from("modules").select("id,title").eq("classroom_id", classroomId).in("id", moduleIds) : Promise.resolve({ data: [], error: null }),
+    studentIds.length && moduleIds.length ? supabase.from("module_progress").select("student_id,module_id,status,updated_at").in("student_id", studentIds).in("module_id", moduleIds) : Promise.resolve({ data: [], error: null }),
   ]);
   const students = unwrap(studentsResult) as StudentRow[];
   const sessionModules = unwrap(sessionModulesResult) as Array<{ id: string; title: string }>;
+  const progress = unwrap(progressResult);
   const moduleTitles = Object.fromEntries(sessionModules.map((entry) => [entry.id, entry.title]));
   const started = Date.parse(session.started_at);
-  const ended = Date.parse(session.ended_at);
-  const progress = studentIds.length && moduleIds.length ? unwrap(await supabase.from("module_progress").select("student_id,module_id,status,updated_at").in("student_id", studentIds).in("module_id", moduleIds)) : [];
+  const ended = Date.parse(endedAt);
   return {
     session,
-    sessionView: { ...toSession(session, module?.title ?? "Lesson"), endedAt: session.ended_at, durationMinutes: minutes(ended - started) },
-    classroomName: classroom.name,
+    sessionView: { ...toSession(session, sessionModule?.title ?? "Lesson"), endedAt, durationMinutes: minutes(ended - started) },
+    classroomName: classroom?.name ?? "Classroom",
     students,
     events: events as FeedbackEvent[],
     activities: activities as ActivityRow[],
     progress: progress as DbProgress[],
-    moduleTitle: module?.title ?? "Lesson",
+    moduleTitle: sessionModule?.title ?? "Lesson",
     moduleIds,
     moduleTitles,
     started,
@@ -262,9 +271,14 @@ feedbackRouter.post("/follow", requireRole("student"), async (req, res) => {
   const { sessionId, following } = req.body ?? {};
   if (typeof sessionId !== "string" || typeof following !== "boolean") return res.status(400).json({ error: "sessionId and following are required" });
   const classroomId = req.user!.classroomId;
-  const session = unwrap(await supabase.from("lesson_sessions").select("id,module_id").eq("id", sessionId).eq("classroom_id", classroomId).is("ended_at", null).maybeSingle()) as { id: string; module_id: string } | null;
+  // Both lookups are keyed by the session id from the request, so they don't wait on each other.
+  const [sessionResult, previousResult] = await Promise.all([
+    supabase.from("lesson_sessions").select("id,module_id").eq("id", sessionId).eq("classroom_id", classroomId).is("ended_at", null).maybeSingle(),
+    supabase.from("lesson_feedback_events").select("payload,created_at").eq("session_id", sessionId).eq("student_id", req.user!.userId).eq("event_type", "follow_heartbeat").order("created_at", { ascending: false }).limit(1).maybeSingle(),
+  ]);
+  const session = unwrap(sessionResult) as { id: string; module_id: string } | null;
   if (!session) return res.status(409).json({ error: "This lesson is no longer live" });
-  const previous = unwrap(await supabase.from("lesson_feedback_events").select("payload,created_at").eq("session_id", sessionId).eq("student_id", req.user!.userId).eq("event_type", "follow_heartbeat").order("created_at", { ascending: false }).limit(1).maybeSingle()) as { payload: { following?: boolean }; created_at: string } | null;
+  const previous = unwrap(previousResult) as { payload: { following?: boolean }; created_at: string } | null;
   if (previous && previous.payload.following === following && Date.now() - Date.parse(previous.created_at) < 15_000) return res.status(204).end();
   await insertEvent({ id: randomUUID(), session_id: session.id, classroom_id: classroomId, student_id: req.user!.userId, module_id: session.module_id, event_type: "follow_heartbeat", payload: { following } });
   res.status(204).end();
