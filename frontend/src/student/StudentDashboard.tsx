@@ -6,7 +6,9 @@ import { onSessionUpdate } from "../socket.ts";
 import Button from "../ui/Button.tsx";
 import Dot from "../ui/Dot.tsx";
 import { useDialog } from "../ui/DialogContext.tsx";
+import DashboardEmptyState from "../ui/DashboardEmptyState.tsx";
 import Heading from "../ui/Heading.tsx";
+import { BookIcon } from "../ui/icons.tsx";
 import { CARD, TINT } from "../ui/styles.ts";
 import InvitationList from "./InvitationList.tsx";
 import { plural } from "./lessons.ts";
@@ -80,9 +82,19 @@ export default function StudentDashboard() {
   const live = (classes ?? []).filter((c) => c.liveSession);
 
   return (
-    <div className="mx-auto flex max-w-[1020px] flex-col gap-6 sm:gap-7">
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 sm:gap-7">
       <InvitationList />
 
+      {classes?.length === 0 ? (
+        <DashboardEmptyState
+          eyebrow="Your learning space"
+          title={`Your classes are on the way, ${firstName}`}
+          description="Your teacher can invite you to a class. Accept an invitation above, and your courses and lessons will be ready here."
+          icon={<BookIcon className="size-7" />}
+          notice={error ? <p className={`m-0! w-full rounded-xl px-4 py-3 text-sm! ${TINT.peach}`}>{error}</p> : undefined}
+        />
+      ) : (
+        <>
       <div className="pt-1">
         <p className="mb-1! text-[13px]! font-medium! text-muted">{today}</p>
         <Heading
@@ -236,6 +248,8 @@ export default function StudentDashboard() {
           </div>
         )}
       </section>
+        </>
+      )}
     </div>
   );
 }

@@ -6,7 +6,9 @@ import { onSessionUpdate } from "../socket.ts";
 import Button from "../ui/Button.tsx";
 import Dot from "../ui/Dot.tsx";
 import { useDialog } from "../ui/DialogContext.tsx";
+import DashboardEmptyState from "../ui/DashboardEmptyState.tsx";
 import Heading from "../ui/Heading.tsx";
+import { UsersIcon } from "../ui/icons.tsx";
 import { CARD, TINT } from "../ui/styles.ts";
 import { plural } from "../student/lessons.ts";
 import type { MyClassroom } from "../../../shared/types";
@@ -161,7 +163,40 @@ export default function TeacherDashboard() {
   const live = (classes ?? []).filter((c) => c.liveSession);
 
   return (
-    <div className="mx-auto flex max-w-[1020px] flex-col gap-6 sm:gap-7">
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 sm:gap-7">
+      {classes?.length === 0 ? (
+        <DashboardEmptyState
+          eyebrow="Your teaching space"
+          title={`Let’s get your classroom started, ${firstName}`}
+          description="Bring your students together, plan lessons, and see their work as it happens. Start by creating your first classroom."
+          icon={<UsersIcon className="size-7" />}
+          notice={error ? <p className={`m-0! w-full rounded-xl px-4 py-3 text-sm! ${TINT.peach}`}>{error}</p> : undefined}
+          action={(
+            <Button
+              variant="primary"
+              size="lg"
+              disabled={creating}
+              onClick={() => void createClassroom()}
+            >
+              {creating ? "Creating…" : "＋ Create classroom"}
+            </Button>
+          )}
+        >
+          <div className="grid w-full gap-2 border-t border-border pt-5 text-left sm:grid-cols-3">
+            {[
+              ["01", "Create a class"],
+              ["02", "Add your students"],
+              ["03", "Plan and teach"],
+            ].map(([number, label]) => (
+              <div key={number} className="rounded-xl bg-surface-soft px-3 py-3">
+                <span className="block text-xs font-medium text-muted">{number}</span>
+                <span className="mt-1 block text-sm font-medium text-ink">{label}</span>
+              </div>
+            ))}
+          </div>
+        </DashboardEmptyState>
+      ) : (
+        <>
       <div className="flex flex-wrap items-start justify-between gap-4 pt-1">
         <div className="flex flex-col gap-2">
           <p className="m-0 text-[13px] font-medium text-muted">{today}</p>
@@ -293,6 +328,8 @@ export default function TeacherDashboard() {
               </div>
             )}
           </section>
+        </>
+      )}
         </>
       )}
     </div>
