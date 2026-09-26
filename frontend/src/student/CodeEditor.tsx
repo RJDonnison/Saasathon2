@@ -231,7 +231,6 @@ export default function CodeEditor({
             code,
             stdout: res.stdout,
             stderr: res.stderr,
-            passed: !failed,
           })
           .catch((err) => console.warn("Could not save this run:", err));
       }
@@ -290,37 +289,37 @@ export default function CodeEditor({
           {!readOnly && (
             <div className="flex flex-wrap items-center justify-end gap-2">
               {isOpen ? (
-              <>
-                <Button
-                  size="sm"
-                  onClick={() =>
-                    requestHelp(
-                      editor,
-                      failed ? (output ?? undefined) : undefined,
-                    )
-                  }
-                >
-                  <SparklesIcon className="size-3.5" /> Find the error
-                </Button>
-                <Button
-                  variant={editor.exerciseId ? "default" : "primary"}
-                  onClick={runCode}
-                  disabled={running}
-                >
-                  <PlayIcon className="size-3.5" />{" "}
-                  {running && !tested ? "Running…" : "Run"}
-                </Button>
-                {editor.exerciseId && (
+                <>
                   <Button
-                    variant="primary"
-                    onClick={runTests}
+                    size="sm"
+                    onClick={() =>
+                      requestHelp(
+                        editor,
+                        failed ? (output ?? undefined) : undefined,
+                      )
+                    }
+                  >
+                    <SparklesIcon className="size-3.5" /> Find the error
+                  </Button>
+                  <Button
+                    variant={editor.exerciseId ? "default" : "primary"}
+                    onClick={runCode}
                     disabled={running}
                   >
                     <PlayIcon className="size-3.5" />{" "}
-                    {running && tested ? "Checking…" : "Check"}
+                    {running && !tested ? "Running…" : "Run"}
                   </Button>
-                )}
-              </>
+                  {editor.exerciseId && (
+                    <Button
+                      variant="primary"
+                      onClick={runTests}
+                      disabled={running}
+                    >
+                      <PlayIcon className="size-3.5" />{" "}
+                      {running && tested ? "Checking…" : "Check"}
+                    </Button>
+                  )}
+                </>
               ) : (
                 <Button variant="primary" onClick={() => setActive(editor)}>
                   Open editor

@@ -303,6 +303,8 @@ create table if not exists code_submissions (
   id text primary key, student_id text not null references users(id), code_exercise_id text not null references code_exercises(id) on delete cascade,
   code text not null, stdout text not null default '', stderr text not null default '', passed boolean, created_at timestamptz not null default now()
 );
+-- Only a server-side /code/grade result is authoritative for lesson completion.
+alter table code_submissions add column if not exists graded_at timestamptz;
 -- Persistent drafts and live location/activity let teachers see progress across reloads and reconnects.
 create table if not exists student_work (
   id text primary key, student_id text not null references users(id) on delete cascade,

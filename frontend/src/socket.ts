@@ -13,6 +13,7 @@ import type {
   LowerHandResult,
   ModuleProgressUpdatePayload,
   RaiseHandResult,
+  LiveModuleAggregateUpdatePayload,
 } from "../../shared/events";
 import { supabase } from "./supabase.ts";
 
@@ -66,7 +67,11 @@ export function emitRaiseHand(
   acknowledge: (result: RaiseHandResult) => void,
 ): boolean {
   if (!socket.connected) return false;
-  socket.emit("raise_hand", { type: "raise_hand", studentId, classroomId }, acknowledge);
+  socket.emit(
+    "raise_hand",
+    { type: "raise_hand", studentId, classroomId },
+    acknowledge,
+  );
   return true;
 }
 
@@ -76,7 +81,11 @@ export function emitLowerHand(
   acknowledge: (result: LowerHandResult) => void,
 ): boolean {
   if (!socket.connected) return false;
-  socket.emit("lower_hand", { type: "lower_hand", studentId, classroomId }, acknowledge);
+  socket.emit(
+    "lower_hand",
+    { type: "lower_hand", studentId, classroomId },
+    acknowledge,
+  );
   return true;
 }
 
@@ -131,6 +140,12 @@ export function onModuleProgressUpdate(
 ): () => void {
   socket.on("module_progress_update", cb);
   return () => void socket.off("module_progress_update", cb);
+}
+export function onLiveModuleAggregateUpdate(
+  cb: (p: LiveModuleAggregateUpdatePayload) => void,
+): () => void {
+  socket.on("live_module_aggregate_update", cb);
+  return () => void socket.off("live_module_aggregate_update", cb);
 }
 
 export function onPresenceUpdate(

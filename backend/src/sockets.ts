@@ -2,10 +2,13 @@ import type { Server as HttpServer } from "node:http";
 import { Server, type Socket } from "socket.io";
 import { findProfile, verifyToken, type AuthUser } from "./auth.js";
 import { CLIENT_ORIGIN } from "./config.js";
+import { supabase } from "./supabase.js";
+import { unwrap } from "./rows.js";
 import type {
   ClientToServerEvents,
   ModuleChangedPayload,
   ModuleProgressUpdatePayload,
+  LiveModuleAggregateUpdatePayload,
   QuestionCommentCreatedPayload,
   ModuleDeletedPayload,
   PresenceUpdatePayload,
@@ -53,6 +56,29 @@ export function emitModuleProgressUpdate(
   payload: ModuleProgressUpdatePayload,
 ): void {
   activeIo?.to(payload.classroomId).emit("module_progress_update", payload);
+}
+/**
+ * Completion outcomes are teacher-only and only exist while that module is live.
+ * Student sockets never receive roster data.
+ */
+export async function emitLiveModuleAggregateUpdate(
+  payload: LiveModuleAggregateUpdatePayload,
+): Promise<void> {
+  if (!activeIo) return;
+  const liveSession = unwrap(
+    await supabase
+      .from("lesson_sessions")
+      .select("id")
+      .eq("classroom_id", payload.classroomId)
+      .eq("module_id", payload.moduleId)
+      .is("ended_at", null)
+      .maybeSingle(),
+  );
+  if (!liveSession) return;
+  const sockets = await activeIo.in(payload.classroomId).fetchSockets();
+  for (const socket of sockets)
+    if (socket.data.user.role === "teacher")
+      socket.emit("live_module_aggregate_update", payload);
 }
 
 /** Tell everyone in the classroom a module was edited. */
