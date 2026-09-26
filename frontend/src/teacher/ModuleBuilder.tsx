@@ -115,6 +115,30 @@ function documentFrom(module: TeacherModule): ModuleBuilderDocument {
   };
 }
 
+/** AI may use placeholder ids for new material. Generate fresh ids for the full replacement before save. */
+function withFreshIds(document: ModuleBuilderDocument): ModuleBuilderDocument {
+  return {
+    ...document,
+    sections: document.sections.map((section) => ({
+      ...section,
+      id: id(),
+      items: section.items.map((item) =>
+        item.type === "block"
+          ? { ...item, id: id() }
+          : {
+              ...item,
+              id: id(),
+              referenceAnswers: item.referenceAnswers?.map((reference) => ({
+                ...reference,
+                id: id(),
+              })),
+              checks: item.checks?.map((check) => ({ ...check, id: id() })),
+            },
+      ),
+    })),
+  };
+}
+
 export default function ModuleBuilder() {
   const { id: moduleId } = useParams();
   const navigate = useNavigate();
@@ -125,6 +149,7 @@ export default function ModuleBuilder() {
   const [notice, setNotice] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | undefined>();
   const [idea, setIdea] = useState("");
+  const [askingAi, setAskingAi] = useState(false);
   const [suggestions, setSuggestions] = useState<AiModuleSuggestion[]>([]);
   const [undo, setUndo] = useState<ModuleBuilderDocument | null>(null);
 
@@ -232,29 +257,34 @@ export default function ModuleBuilder() {
   }
 
   async function askAi() {
-    if (!moduleId || !idea.trim()) return;
+    if (!idea.trim() || askingAi) return;
+    setAskingAi(true);
     setNotice(null);
     try {
-      setSuggestions(
-        (
-          await api.aiModuleSuggestions({
-            moduleId,
-            request: idea,
-            itemId: selected,
-          })
-        ).suggestions,
-      );
+      const result = await api.aiModuleSuggestions({
+        request: idea,
+        document,
+        selectedItemId: selected,
+      });
+      setSuggestions(result.suggestions);
+      if (result.suggestions.length === 0)
+        setNotice("The assistant could not make a usable suggestion. Please try again.");
     } catch (error) {
       setNotice(
         error instanceof Error ? error.message : "Could not get suggestions",
       );
+    } finally {
+      setAskingAi(false);
     }
   }
 
-  function accept(patch: AiModuleSuggestion["patch"]) {
+  function accept(suggestion: AiModuleSuggestion) {
+    if (!suggestion.document) return;
     setUndo(document);
-    setDocument((old) => ({ ...old, ...patch }));
+    setDocument(withFreshIds(suggestion.document));
+    setSelected(undefined);
     setSuggestions([]);
+    setNotice("AI draft applied. Review it, then save when you are ready.");
   }
 
   if (loading) return <p className="m-0 text-muted">Loading module…</p>;
@@ -403,47 +433,47 @@ export default function ModuleBuilder() {
             >
               {selected
                 ? "Your suggestion will use the selected lesson item as context."
-                : "Select an item for more focused help, or ask about the whole lesson."}
+                : "Ask for a full lesson, reading, questions, exercises, or teaching advice."}
             </div>
             <label className="flex flex-col gap-2 text-sm text-muted">
-              What would you like to improve?
+              What would you like help with?
               <textarea
                 className={`${INPUT} min-h-28 py-2.5`}
                 value={idea}
                 onChange={(event) => setIdea(event.target.value)}
                 placeholder={
                   selected
-                    ? "Make this clearer for beginners…"
-                    : "Suggest a clearer introduction…"
+                    ? "Rewrite this for beginners and add a quick check-for-understanding question…"
+                    : "Create a 20-minute beginner lesson on loops with two questions…"
                 }
               />
             </label>
-            {!moduleId && (
-              <p className="m-0 text-xs leading-relaxed text-muted">
-                Save this draft once to unlock suggestions based on your lesson.
-              </p>
-            )}
             <Button
               variant="primary"
-              disabled={!moduleId || !idea.trim()}
+              disabled={askingAi || !idea.trim()}
               onClick={() => void askAi()}
             >
-              Suggest improvements
+              {askingAi ? "Thinking…" : "Ask assistant"}
             </Button>
-            {suggestions.length > 0 && <Eyebrow>Suggestions</Eyebrow>}
+            {suggestions.length > 0 && <Eyebrow>Assistant response</Eyebrow>}
             {suggestions.map((suggestion) => (
               <div
                 key={suggestion.id}
                 className="flex flex-col gap-3 rounded-xl border border-border bg-surface-soft p-3 text-sm"
               >
-                <span className="leading-relaxed">{suggestion.label}</span>
-                <Button
-                  size="sm"
-                  className="self-start"
-                  onClick={() => accept(suggestion.patch)}
-                >
-                  Apply suggestion
-                </Button>
+                <span className="font-medium text-ink">{suggestion.label}</span>
+                <p className="m-0 whitespace-pre-wrap text-muted">
+                  {suggestion.reply}
+                </p>
+                {suggestion.document && (
+                  <Button
+                    size="sm"
+                    className="self-start"
+                    onClick={() => accept(suggestion)}
+                  >
+                    Apply to module
+                  </Button>
+                )}
               </div>
             ))}
             {undo && (

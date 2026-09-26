@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { api } from '../api.ts'
 import { useAuth } from '../auth/useAuth.ts'
 import { useLiveSession } from '../useLiveSession.ts'
-import { onPresenceUpdate, onRaiseHand } from '../socket.ts'
+import { emitAcknowledgeHand, onPresenceUpdate, onRaisedHandsUpdate } from '../socket.ts'
 import AnswerKeyPanel from './AnswerKeyPanel.tsx'
 import ClassroomGrid from './ClassroomGrid.tsx'
 import CodeTestPanel from './CodeTestPanel.tsx'
@@ -12,13 +12,14 @@ import AnnouncementsCard from './AnnouncementsCard.tsx'
 import LessonPlanner from './LessonPlanner.tsx'
 import LiveLessonControl from './LiveLessonControl.tsx'
 import NewLessonForm from './NewLessonForm.tsx'
-import RaiseHandAlert, { type RaisedHand } from './RaiseHandAlert.tsx'
+import RaiseHandAlert from './RaiseHandAlert.tsx'
 import Button from '../ui/Button.tsx'
 import Card from '../ui/Card.tsx'
 import Heading from '../ui/Heading.tsx'
 import { BookIcon, UsersIcon } from '../ui/icons.tsx'
 import { INPUT, TINT } from '../ui/styles.ts'
 import type { Classroom, ClassroomInvitation, Module, User } from '../../../shared/types'
+import type { RaisedHand } from '../../../shared/events'
 
 const INVITATION_LABEL: Record<ClassroomInvitation['status'], string> = {
   pending: 'Invited, waiting for a reply',
@@ -96,14 +97,12 @@ export default function TeacherHome() {
     [user],
   )
 
-  // A student raising their hand again just moves them to the top instead of adding a duplicate.
   useEffect(
     () =>
-      onRaiseHand((p) => {
-        console.log('[teacher] raise_hand', p)
-        setHands((h) => [{ studentId: p.studentId, at: Date.now() }, ...h.filter((x) => x.studentId !== p.studentId)])
+      onRaisedHandsUpdate((update) => {
+        if (user && update.classroomId === user.classroomId) setHands(update.hands)
       }),
-    [],
+    [user],
   )
 
   async function createClassroom() {
@@ -258,7 +257,7 @@ export default function TeacherHome() {
             <RaiseHandAlert
               hands={hands}
               nameOf={(id) => byId.get(id)?.name ?? 'A student'}
-              onDismiss={(id) => setHands((h) => h.filter((x) => x.studentId !== id))}
+              onHelp={(id) => user && emitAcknowledgeHand(id, user.classroomId)}
               onSelect={setSelectedId}
             />
           </div>
