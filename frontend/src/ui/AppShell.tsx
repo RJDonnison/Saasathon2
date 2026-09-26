@@ -33,7 +33,7 @@ export default function AppShell({ role }: { role: Role }) {
         <div className="mx-auto flex h-16 w-full max-w-6xl items-stretch gap-6 px-4 sm:gap-8 sm:px-6">
           {/* Same wordmark as the landing page, built from utilities with the app.css tokens. */}
           <Link to={`/${role}`} className="inline-flex items-center gap-2.5 font-display! text-[23px]! font-bold! tracking-[-1.3px]" aria-label="loop home">
-            <span className="grid size-[33px] place-items-center rounded-[10px] bg-accent font-mono text-sm font-semibold tracking-[-2px] text-ink">{`{ }`}</span>
+            <img className="size-[33px] object-contain" src="/favicon.svg" alt="" />
             <span>
               loop<span className="text-accent">.</span>
             </span>
