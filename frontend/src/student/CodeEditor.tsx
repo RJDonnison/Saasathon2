@@ -6,7 +6,7 @@ import Button from "../ui/Button.tsx";
 import Card from "../ui/Card.tsx";
 import InlineText from "../ui/InlineText.tsx";
 import { CodeIcon, PlayIcon, SparklesIcon, XIcon } from "../ui/icons.tsx";
-import { GRADED_CARD_SHADOW } from "../ui/styles.ts";
+import { GRADED_CARD_SHADOW, GRADED_FEEDBACK } from "../ui/styles.ts";
 import { useWorkspace, type EditorInfo } from "./useWorkspace.ts";
 import { useStudentActivity } from "./useStudentActivity.ts";
 
@@ -17,6 +17,16 @@ const EXTENSION: Record<string, string> = {
 };
 // Monaco is substantial; lesson pages load it only when a code segment is actually rendered.
 const MonacoEditor = lazy(() => import("@monaco-editor/react"));
+
+function lineFromError(output: string, code: string): number | null {
+  const match = output.match(/File ["'][^"']+["'], line (\d+)/i)
+    ?? output.match(/(?:<anonymous>|main\.(?:js|ts|py)|stdin)[^:\n]*:(\d+)(?::\d+)?/i)
+    ?? output.match(/\bline\s+(\d+)\b/i);
+  const line = match ? Number(match[1]) : NaN;
+  return Number.isInteger(line) && line > 0 && line <= code.split(/\r?\n/).length
+    ? line
+    : null;
+}
 
 // Monaco owns the editing experience (syntax highlighting, keyboard navigation and its gutter). Editor text still
 // lives in the workspace so the tutor can inspect it, and Monaco decorations mark the line the tutor points to.
@@ -60,6 +70,7 @@ export default function CodeEditor({
   const { record, saveWork } = useStudentActivity();
   const [output, setOutput] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
+  const [errorLine, setErrorLine] = useState<number | null>(null);
   const [tested, setTested] = useState(false);
   const [testResults, setTestResults] = useState<GradeCodeTestResult[] | null>(
     null,
@@ -120,24 +131,26 @@ export default function CodeEditor({
   // same line twice still scrolls.
   const spotLine = mine?.line;
   const spotNonce = mine?.nonce;
+  const guidedLine = mine?.line ?? errorLine;
+  const guidedEndLine = mine?.endLine ?? errorLine;
   useEffect(() => {
     if (!mounted || !monacoEditor.current || !decorations.current) return;
-    if (!mine) {
+    if (guidedLine === null || guidedEndLine === null) {
       decorations.current.set([]);
       return;
     }
     decorations.current.set([
       {
         range: {
-          startLineNumber: mine.line,
+          startLineNumber: guidedLine,
           startColumn: 1,
-          endLineNumber: mine.endLine,
+          endLineNumber: guidedEndLine,
           endColumn: 1,
         },
         options: {
           isWholeLine: true,
-          className: "bg-peach/40",
-          linesDecorationsClassName: "bg-peach",
+          className: "bg-peach/35",
+          linesDecorationsClassName: "bg-peach-ink/35",
         },
       },
     ]);
@@ -145,13 +158,13 @@ export default function CodeEditor({
     const instance = monacoEditor.current;
     const timer = window.setTimeout(() => {
       instance.layout();
-      instance.revealLineInCenter(mine.line);
+      instance.revealLineInCenter(guidedLine);
       instance
         .getDomNode()
         ?.scrollIntoView({ block: "center", behavior: "smooth" });
     }, 60);
     return () => window.clearTimeout(timer);
-  }, [mine, mounted, spotLine, spotNonce]);
+  }, [errorLine, guidedEndLine, guidedLine, mine, mounted, spotLine, spotNonce]);
 
   const onMount: OnMount = (instance) => {
     monacoEditor.current = instance;
@@ -168,6 +181,7 @@ export default function CodeEditor({
     report("checking_code");
     setRunning(true);
     setTested(true);
+    setErrorLine(null);
     try {
       const grade = await api.gradeCode({
         exerciseId: editor.exerciseId!,
@@ -187,6 +201,7 @@ export default function CodeEditor({
       setFailed(!grade.passed || !!grade.error);
       setTestResults(grade.results ?? null);
       setOutput(message);
+      setErrorLine(!grade.passed || !!grade.error ? lineFromError(message, code) : null);
       // The tutor gets only authored names and outcomes, never inputs or expected values.
       setRunError(editor.key, testSummary ?? message);
     } catch (err) {
@@ -194,6 +209,7 @@ export default function CodeEditor({
         err instanceof Error ? err.message : "Tests could not run";
       setFailed(true);
       setOutput(message);
+      setErrorLine(lineFromError(message, code));
       setRunError(editor.key, message);
     } finally {
       setRunning(false);
@@ -207,6 +223,7 @@ export default function CodeEditor({
     setRunning(true);
     setTested(false);
     setTestResults(null);
+    setErrorLine(null);
     try {
       const res = await api.runCode({
         code,
@@ -221,6 +238,7 @@ export default function CodeEditor({
           : "Program finished with no output.");
       setFailed(failed);
       setOutput(output);
+      setErrorLine(failed ? lineFromError(output, code) : null);
       setRunError(editor.key, failed ? output : undefined);
       // Keep a record of runs on real exercises (not the playground) so the student's class page and their
       // teacher can see how the work is going. Best effort: a failed save must not disturb the run.
@@ -239,6 +257,7 @@ export default function CodeEditor({
       const output = err instanceof Error ? err.message : "Run failed";
       setFailed(true);
       setOutput(output);
+      setErrorLine(lineFromError(output, code));
       setRunError(editor.key, output);
     } finally {
       setRunning(false);
@@ -330,24 +349,27 @@ export default function CodeEditor({
           )}
         </div>
 
-        {mine && (
+        {(mine || errorLine !== null) && (
           <div
             role="status"
             className="flex items-start gap-3 border-b border-border bg-peach px-4 py-2.5 text-peach-ink"
           >
             <span className="flex min-w-0 flex-1 flex-col gap-1 text-[13px] leading-snug">
               <strong className="font-semibold">
-                {mine.endLine > mine.line
+                {mine && mine.endLine > mine.line
                   ? `Lines ${mine.line}–${mine.endLine}`
-                  : `Line ${mine.line}`}
+                  : `Line ${mine?.line ?? errorLine}`}
               </strong>
-              {mine.note && <span>{mine.note}</span>}
+              {mine?.note ? <span>{mine.note}</span> : <span>The error output points to this line.</span>}
             </span>
             <Button
               size="icon-sm"
               variant="peach"
               aria-label="Dismiss highlight"
-              onClick={clearHighlight}
+              onClick={() => {
+                clearHighlight();
+                setErrorLine(null);
+              }}
             >
               <XIcon className="size-3.5" />
             </Button>
@@ -380,6 +402,7 @@ export default function CodeEditor({
                   startWriting();
                   setTested(false);
                   setTestResults(null);
+                  setErrorLine(null);
                   // A run error only applies to the exact code that produced it.
                   setRunError(editor.key);
                   // Line numbers shift as they edit, so an old highlight would point at the wrong place.
@@ -428,7 +451,7 @@ export default function CodeEditor({
                     {result.name}
                   </span>
                   <span
-                    className={`flex-none rounded-full px-2 py-1 text-xs font-semibold ${result.passed ? "bg-mint text-mint-ink" : "border border-peach-ink/35 bg-peach text-ink"}`}
+                    className={`flex-none rounded-full px-2 py-1 text-xs font-semibold ${result.passed ? GRADED_FEEDBACK.correct : GRADED_FEEDBACK.incorrect}`}
                   >
                     {result.passed ? "Passed" : "Try again"}
                   </span>
@@ -440,7 +463,7 @@ export default function CodeEditor({
 
         {output !== null && (
           <div
-            className="flex flex-col gap-2 border-t border-border bg-surface-soft px-5 py-4"
+            className={`flex flex-col gap-2 border-t px-5 py-4 ${failed ? "border-peach-ink/15 bg-peach/20" : "border-border bg-surface-soft"}`}
             role="status"
           >
             <span className="text-[13px] font-medium text-muted">
@@ -457,6 +480,11 @@ export default function CodeEditor({
             >
               {output}
             </pre>
+            {failed && tested && errorLine === null && (
+              <p className="m-0 text-xs leading-relaxed text-muted">
+                The checks show what needs another look. Choose “Find the error” for a guided hint and line to inspect.
+              </p>
+            )}
           </div>
         )}
       </section>

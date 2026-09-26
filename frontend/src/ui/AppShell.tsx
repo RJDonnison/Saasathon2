@@ -29,7 +29,7 @@ export default function AppShell({ role }: { role: Role }) {
   }
   return (
     <div className="min-h-screen bg-canvas text-ink ">
-      <header className="sticky top-0 z-20 border-b border-border bg-surface">
+      <header className="sticky top-0 z-20 border-b border-border bg-surface print:hidden">
         <div className="mx-auto flex h-16 w-full max-w-6xl items-stretch gap-6 px-4 sm:gap-8 sm:px-6">
           {/* Same wordmark as the landing page, built from utilities with the app.css tokens. */}
           <Link to={`/${role}`} className="inline-flex items-center gap-2.5 font-display! text-[23px]! font-bold! tracking-[-1.3px]" aria-label="loop home">
@@ -68,7 +68,7 @@ export default function AppShell({ role }: { role: Role }) {
           </div>
         </div>
       </header>
-      <main className="mx-auto w-full max-w-6xl px-4 py-7 sm:px-6 lg:py-9">
+      <main className="mx-auto w-full max-w-6xl px-4 py-7 sm:px-6 lg:py-9 print:max-w-none print:px-0 print:py-0">
         <Outlet />
       </main>
     </div>

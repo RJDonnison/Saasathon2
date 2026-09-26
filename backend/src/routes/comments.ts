@@ -90,10 +90,10 @@ commentsRouter.post("/attempts", async (req, res) => {
   const question = unwrap(
     await supabase
       .from("questions")
-      .select("id,section_id,answer_key")
+      .select("id,section_id,answer_key,kind")
       .eq("id", b.questionId)
       .maybeSingle(),
-  ) as { id: string; section_id: string; answer_key: string | null } | null;
+  ) as { id: string; section_id: string; answer_key: string | null; kind: string } | null;
   const section =
     question &&
     (unwrap(
@@ -114,7 +114,7 @@ commentsRouter.post("/attempts", async (req, res) => {
   )
     return res.status(404).json({ error: "Question not found" });
   const isCorrect =
-    question.answer_key === null
+    question.kind === "long" || question.answer_key === null
       ? null
       : question.answer_key.trim().toLowerCase() ===
         b.answer.trim().toLowerCase();

@@ -21,6 +21,9 @@ const StudentWorkView = lazy(() => import("./teacher/StudentWorkView.tsx"));
 const TeacherLessonFeedback = lazy(
   () => import("./teacher/TeacherLessonFeedback.tsx"),
 );
+const TeacherLessonPlanner = lazy(
+  () => import("./teacher/TeacherLessonPlanner.tsx"),
+);
 
 function RouteLoading() {
   return (
@@ -121,6 +124,7 @@ export default function App() {
           <Route index element={<Navigate to="live" replace />} />
           <Route path="live" element={null} />
           <Route path="manage" element={null} />
+          <Route path="plan" element={<TeacherLessonPlanner />} />
         </Route>
         <Route path="modules/new" element={<ModuleBuilder />} />
         <Route path="modules/:id" element={<ModuleBuilder />} />
