@@ -4,11 +4,13 @@ import Button from "../ui/Button.tsx";
 import Card from "../ui/Card.tsx";
 import Eyebrow from "../ui/Eyebrow.tsx";
 import Heading from "../ui/Heading.tsx";
+import InlineText from "../ui/InlineText.tsx";
 import MathText from "../ui/MathText.tsx";
 import Markdown from "../ui/Markdown.tsx";
-import { BookIcon, CodeIcon, PencilIcon } from "../ui/icons.tsx";
+import { BookIcon, PencilIcon } from "../ui/icons.tsx";
 import { CARD, INPUT, TINT } from "../ui/styles.ts";
 import CodeEditor from "./CodeEditor.tsx";
+import { onModuleChanged } from "../socket.ts";
 import { useWorkspace } from "./useWorkspace.ts";
 import type {
   Module,
@@ -24,9 +26,7 @@ const blockText = (b: SectionBlock) =>
   typeof b.content === "string" ? b.content : null;
 
 /**
- * One lesson: the intro, then its sections in order. A section is reading (its content blocks) followed by work
- * (its questions and code exercises), so a lesson alternates between the two by how the teacher orders sections,
- * e.g. read -> practice -> read -> practice.
+ * One lesson: the intro, then section items in their teacher-authored mixed order.
  */
 export default function ModuleView({
   module,
@@ -58,6 +58,7 @@ function Lesson({
 }) {
   const [full, setFull] = useState<StudentModule | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [version, setVersion] = useState(0);
   const { setActiveQuestion } = useWorkspace();
 
   useEffect(() => {
@@ -77,7 +78,14 @@ function Lesson({
     return () => {
       cancelled = true;
     };
-  }, [module.id]);
+  }, [module.id, version]);
+  useEffect(
+    () =>
+      onModuleChanged((change) => {
+        if (change.moduleId === module.id) setVersion((value) => value + 1);
+      }),
+    [module.id],
+  );
 
   useEffect(() => {
     const firstMathQuestion = full?.sections
@@ -174,6 +182,27 @@ function SectionView({
 }) {
   const reading = section.blocks.filter((b) => blockText(b)?.trim());
   const work = section.questions;
+  const ordered = section.items
+    .map((item) =>
+      item.itemType === "block"
+        ? {
+            type: "block" as const,
+            value: section.blocks.find((block) => block.id === item.itemId),
+          }
+        : {
+            type: "question" as const,
+            value: section.questions.find(
+              (question) => question.id === item.itemId,
+            ),
+          },
+    )
+    .filter(
+      (
+        item,
+      ): item is
+        | { type: "block"; value: SectionBlock }
+        | { type: "question"; value: StudentQuestion } => Boolean(item.value),
+    );
   const kind =
     reading.length && work.length
       ? "Read & practise"
@@ -202,17 +231,20 @@ function SectionView({
         </div>
       </header>
 
-      {reading.length > 0 && (
-        <article className={`flex flex-col gap-6 p-6 sm:p-7 ${CARD}`}>
-          {reading.map((b) => (
-            <Markdown key={b.id} text={blockText(b)!} />
-          ))}
-        </article>
+      {ordered.map((item) =>
+        item.type === "block" ? (
+          blockText(item.value)?.trim() && (
+            <article
+              key={item.value.id}
+              className={`flex flex-col gap-6 p-6 sm:p-7 ${CARD}`}
+            >
+              <Markdown text={blockText(item.value)!} />
+            </article>
+          )
+        ) : (
+          <QuestionView key={item.value.id} question={item.value} />
+        ),
       )}
-
-      {work.map((question) => (
-        <QuestionView key={question.id} question={question} />
-      ))}
     </section>
   );
 }
@@ -248,9 +280,31 @@ function CodeQuestion({ question }: { question: StudentQuestion }) {
   );
 }
 
-// PLACEHOLDER: choices and answers stay in this browser tab; there is no attempts endpoint wired up yet.
 function AnswerQuestion({ question }: { question: StudentQuestion }) {
   const [answer, setAnswer] = useState("");
+  const [checking, setChecking] = useState(false);
+  const [result, setResult] = useState<boolean | null | undefined>(undefined);
+  const [error, setError] = useState<string | null>(null);
+
+  async function check() {
+    if (!answer.trim()) return;
+    setChecking(true);
+    setError(null);
+    try {
+      const attempt = await api.createAttempt({
+        questionId: question.id,
+        answer,
+      });
+      setResult(attempt.isCorrect);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Could not check your answer",
+      );
+    } finally {
+      setChecking(false);
+    }
+  }
+
   return (
     <Card
       title="Question"
@@ -260,7 +314,7 @@ function AnswerQuestion({ question }: { question: StudentQuestion }) {
       bodyClassName="flex flex-col gap-4 p-5"
     >
       <p className="m-0! text-[15px] leading-relaxed text-ink">
-        <MathText text={question.prompt} />
+        <InlineText text={question.prompt} />
       </p>
       {question.kind === "mcq" && question.options.length > 0 ? (
         <fieldset className="m-0 flex flex-col gap-2 border-0 p-0">
@@ -273,12 +327,15 @@ function AnswerQuestion({ question }: { question: StudentQuestion }) {
               <input
                 type="radio"
                 name={question.id}
-                value={o.id}
-                checked={answer === o.id}
-                onChange={() => setAnswer(o.id)}
+                value={o.text}
+                checked={answer === o.text}
+                onChange={() => {
+                  setAnswer(o.text);
+                  setResult(undefined);
+                }}
                 className="accent-ink"
               />
-              <MathText text={o.text} />
+              <InlineText text={o.text} />
             </label>
           ))}
         </fieldset>
@@ -291,15 +348,40 @@ function AnswerQuestion({ question }: { question: StudentQuestion }) {
             id={`answer-${question.id}`}
             className={`${INPUT} h-10 w-full`}
             value={answer}
-            onChange={(e) => setAnswer(e.target.value)}
+            onChange={(e) => {
+              setAnswer(e.target.value);
+              setResult(undefined);
+            }}
             placeholder="Type your answer"
           />
         </>
       )}
-      <p className="m-0 flex items-center gap-2 text-xs text-subtle">
-        <CodeIcon className="size-3.5" />
-        Answers aren’t submitted or checked yet.
-      </p>
+      <div className="flex flex-wrap items-center gap-3">
+        <Button
+          variant="primary"
+          size="sm"
+          onClick={() => void check()}
+          disabled={checking || !answer.trim()}
+        >
+          {checking ? "Checking…" : "Check"}
+        </Button>
+        {result !== undefined && (
+          <p
+            className={`m-0 text-sm font-medium ${result === true ? "text-mint-ink" : result === false ? "text-peach-ink" : "text-muted"}`}
+          >
+            {result === true
+              ? "Correct."
+              : result === false
+                ? "Not quite. Try again."
+                : "This question does not have a defined answer yet."}
+          </p>
+        )}
+      </div>
+      {error && (
+        <p className={`m-0 rounded-xl px-3 py-2 text-sm ${TINT.peach}`}>
+          {error}
+        </p>
+      )}
     </Card>
   );
 }
