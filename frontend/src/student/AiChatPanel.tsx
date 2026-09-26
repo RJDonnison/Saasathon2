@@ -8,11 +8,10 @@ import {
 import { api } from "../api.ts";
 import { useAuth } from "../auth/useAuth.ts";
 import Button from "../ui/Button.tsx";
-import Eyebrow from "../ui/Eyebrow.tsx";
 import Heading from "../ui/Heading.tsx";
 import InlineText from "../ui/InlineText.tsx";
-import { CodeIcon, SendIcon, SparklesIcon } from "../ui/icons.tsx";
-import { CARD, INPUT, TINT } from "../ui/styles.ts";
+import { CodeIcon, LightbulbIcon, SendIcon } from "../ui/icons.tsx";
+import { INPUT, TINT } from "../ui/styles.ts";
 import { useWorkspace } from "./useWorkspace.ts";
 import type { AiChatMessage, AiCodeHighlight } from "../../../shared/types";
 
@@ -210,26 +209,35 @@ export default function AiChatPanel({ moduleId }: { moduleId: string }) {
   }
 
   return (
-    <section className={`flex h-full min-h-0 flex-col overflow-hidden ${CARD}`}>
-      <header className="flex flex-none items-center gap-3 border-b border-border px-5 py-4">
-        <span
-          className={`grid size-9 flex-none place-items-center rounded-xl ${TINT.lavender}`}
-        >
-          <SparklesIcon className="size-[18px]" />
-        </span>
-        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-          <Eyebrow>Hints, not answers</Eyebrow>
-          <Heading>I’m stuck</Heading>
+    <section className="flex h-full min-h-0 flex-col bg-surface">
+      <header className="flex flex-none flex-col gap-2.5 border-b border-border px-5 py-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <span
+              className={`grid size-10 flex-none place-items-center rounded-full ${TINT.lavender}`}
+            >
+              <LightbulbIcon className="size-[18px]" />
+            </span>
+            <Heading variant="name">Helper</Heading>
+          </div>
+          <div className="flex items-center gap-2">
+            {messages.length > 0 && (
+              <Button
+                size="sm"
+                disabled={thinking}
+                onClick={() => setChats((c) => ({ ...c, [moduleId]: EMPTY }))}
+              >
+                Clear chat
+              </Button>
+            )}
+            <span
+              className={`rounded-full px-3 py-1 text-xs font-semibold ${TINT.lavender}`}
+            >
+              Hints only
+            </span>
+          </div>
         </div>
-        {messages.length > 0 && (
-          <Button
-            size="sm"
-            disabled={thinking}
-            onClick={() => setChats((c) => ({ ...c, [moduleId]: EMPTY }))}
-          >
-            Clear chat
-          </Button>
-        )}
+        <p className="m-0 text-[13px] leading-relaxed text-muted">Hints, not answers. Ask about the lesson you’re on and it will nudge you in the right direction.</p>
       </header>
 
       <p className="m-0 flex flex-none items-center gap-2 border-b border-border bg-surface-soft px-5 py-2 text-xs text-muted">
@@ -248,7 +256,7 @@ export default function AiChatPanel({ moduleId }: { moduleId: string }) {
         role="log"
         aria-live="polite"
         aria-label="Conversation with your tutor"
-        className="flex max-h-[26rem] min-h-56 flex-1 flex-col gap-3 overflow-y-auto px-5 py-4 lg:max-h-none"
+        className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain bg-canvas px-5 py-4"
       >
         {messages.length === 0 && !thinking ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
@@ -280,9 +288,9 @@ export default function AiChatPanel({ moduleId }: { moduleId: string }) {
               <div
                 className={`max-w-[88%] px-3.5 py-2.5 text-sm leading-relaxed whitespace-pre-wrap ${
                   m.from === "me"
-                    ? "rounded-2xl rounded-br-md bg-ink text-white"
+                    ? "rounded-2xl rounded-br-md border border-border bg-surface text-ink"
                     : m.from === "ai"
-                      ? "rounded-2xl rounded-bl-md border border-border bg-surface-soft text-ink"
+                      ? `rounded-2xl rounded-bl-md ${TINT.lavender} text-ink!`
                       : `rounded-2xl rounded-bl-md ${TINT.peach}`
                 }`}
               >
@@ -333,29 +341,25 @@ export default function AiChatPanel({ moduleId }: { moduleId: string }) {
         )}
       </div>
 
-      <form
-        onSubmit={ask}
-        className="flex flex-none items-center gap-2 border-t border-border bg-surface-soft p-3"
-      >
-        <input
-          ref={inputRef}
-          className={`${INPUT} h-10 min-w-0 flex-1`}
-          value={question}
-          onChange={(e) => setQuestion(e.target.value)}
-          placeholder="What are you stuck on?"
-          aria-label="Your question"
-          maxLength={2000}
-        />
-        <Button
-          type="submit"
-          variant="primary"
-          size="icon"
-          disabled={thinking || !question.trim()}
-          className="flex-none"
-          aria-label="Send"
-        >
-          <SendIcon className="size-4" />
-        </Button>
+      <form onSubmit={ask} className="flex flex-none flex-col gap-2 border-t border-border bg-surface p-4">
+        <label htmlFor="helper-question" className="text-[13px] font-semibold text-muted">
+          Ask the helper
+        </label>
+        <div className="flex items-center gap-2">
+          <input
+            id="helper-question"
+            ref={inputRef}
+            className={`${INPUT} h-11 min-w-0 flex-1`}
+            value={question}
+            onChange={(e) => setQuestion(e.target.value)}
+            placeholder="Ask for a hint"
+            maxLength={2000}
+          />
+          <Button type="submit" variant="primary" size="lg" disabled={thinking || !question.trim()} className="size-11 flex-none p-0" aria-label="Send">
+            <SendIcon className="size-4" />
+          </Button>
+        </div>
+        <p className="m-0 text-xs text-muted">The helper gives hints, never full answers.</p>
       </form>
     </section>
   );

@@ -3,9 +3,11 @@ import cors from "cors";
 import express, { type ErrorRequestHandler } from "express";
 import { CLIENT_ORIGIN, PORT } from "./config.js";
 import { assertDatabaseReady } from "./supabase.js";
-import { requireMember } from "./auth.js";
+import { requireIdentity, requireMember } from "./auth.js";
 import { authRouter } from "./routes/auth.js";
-import { classroomsRouter } from "./routes/classrooms.js";
+import { invitationsRouter } from "./routes/invitations.js";
+import { classroomsRouter, createClassroom } from "./routes/classrooms.js";
+import { sessionRouter } from "./routes/session.js";
 import { modulesRouter } from "./routes/modules.js";
 import { commentsRouter } from "./routes/comments.js";
 import { progressRouter } from "./routes/progress.js";
@@ -23,11 +25,17 @@ app.use(express.json());
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok" });
 });
-// Signed in with Google (Supabase session), no classroom needed yet: POST /join, GET /me
+// Signed in with Google (Supabase session), no classroom needed yet: GET /me
 app.use("/api/auth", authRouter);
+
+// Invitations are answered by a signed-in student who has not joined any classroom yet.
+app.use("/api/invitations", requireIdentity, invitationsRouter);
+// A new teacher has no classroom yet, so creating one only needs an identity.
+app.post("/api/classrooms", requireIdentity, createClassroom);
 
 // Everything below requires a signed-in user who has joined a classroom (attaches req.user)
 app.use("/api", requireMember);
+app.use("/api/classrooms/:id/session", sessionRouter);
 app.use("/api/classrooms", classroomsRouter);
 app.use("/api/modules", modulesRouter);
 app.use("/api/comments", commentsRouter);

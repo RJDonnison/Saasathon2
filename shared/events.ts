@@ -1,7 +1,12 @@
 // Single source of truth for socket.io event payloads.
 // Plain file (not an npm package) — imported by relative path from backend and frontend.
 
-import type { QuestionComment, StudentActivity, StudentWork } from "./types.js";
+import type {
+  LessonSession,
+  QuestionComment,
+  StudentActivity,
+  StudentWork,
+} from "./types.js";
 
 export type StudentStatus = "idle" | "working" | "stuck";
 
@@ -48,6 +53,13 @@ export interface StudentActivityUpdatePayload {
   work?: StudentWork;
 }
 
+export interface SessionUpdatePayload {
+  type: "session_update";
+  classroomId: string;
+  /** The classroom's live lesson after the change; null once it has ended. */
+  session: LessonSession | null;
+}
+
 export interface PresenceUpdatePayload {
   type: "presence_update";
   classroomId: string;
@@ -65,6 +77,12 @@ export interface QuestionCommentCreatedPayload {
   comment: QuestionComment;
 }
 
+export interface ModuleDeletedPayload {
+  type: "module_deleted";
+  classroomId: string;
+  moduleId: string;
+}
+
 /** Discriminated union (on `type`) of every socket payload. */
 export type SocketPayload =
   | RaiseHandPayload
@@ -73,7 +91,9 @@ export type SocketPayload =
   | StudentStatusUpdatePayload
   | StudentActivityUpdatePayload
   | PresenceUpdatePayload
+  | SessionUpdatePayload
   | ModuleChangedPayload
+  | ModuleDeletedPayload
   | QuestionCommentCreatedPayload;
 
 /** Events the client emits -> server. */
@@ -89,6 +109,8 @@ export interface ServerToClientEvents {
   student_status_update: (payload: StudentStatusUpdatePayload) => void;
   student_activity_update: (payload: StudentActivityUpdatePayload) => void;
   presence_update: (payload: PresenceUpdatePayload) => void;
+  session_update: (payload: SessionUpdatePayload) => void;
   module_changed: (payload: ModuleChangedPayload) => void;
   question_comment_created: (payload: QuestionCommentCreatedPayload) => void;
+  module_deleted: (payload: ModuleDeletedPayload) => void;
 }

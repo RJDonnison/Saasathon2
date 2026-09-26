@@ -12,6 +12,7 @@ import type { Role, User } from "../../shared/types.js";
 export interface AuthIdentity {
   authId: string;
   name: string;
+  email: string;
 }
 
 /** A signed-in user who has joined a classroom. Role and classroom are read from the DB, not the token. */
@@ -52,6 +53,7 @@ export async function verifyToken(token: string): Promise<AuthIdentity | null> {
   const identity: AuthIdentity = {
     authId: data.user.id,
     name: (meta?.full_name ?? meta?.name ?? fallback).trim(),
+    email: (data.user.email ?? "").trim().toLowerCase(),
   };
 
   if (cache.size >= CACHE_MAX) cache.clear();

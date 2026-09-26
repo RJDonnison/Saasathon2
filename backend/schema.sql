@@ -4,10 +4,10 @@
 -- and replaces legacy module comments (they cannot be truthfully retargeted to a
 -- submission). Back up comments first if that historical data matters.
 
-create table if not exists classrooms (id text primary key, name text not null, room_code text not null unique);
-create table if not exists users (
-  id text primary key, name text not null, created_at timestamptz not null default now(), email text
-);
+create table if not exists classrooms (id text primary key, name text not null);
+-- Join codes are gone: teachers create classrooms and invite students, who accept.
+alter table classrooms drop column if exists room_code;
+create table if not exists users (id text primary key, name text not null, created_at timestamptz not null default now());
 alter table users add column if not exists email text;
 create index if not exists users_email_idx on users (email);
 
@@ -30,6 +30,58 @@ do $$ begin
 end $$;
 create unique index if not exists memberships_classroom_name_role_key
   on memberships (classroom_id, role, user_id);
+
+-- Teacher invitations, addressed to a Google email. Inviting enrols nobody: the student sees the invitation after
+-- signing in and accepts (creates the student membership) or declines. One row per (classroom, email).
+create table if not exists classroom_invitations (
+  id text primary key,
+  classroom_id text not null references classrooms(id) on delete cascade,
+  email text not null,
+  student_name text,
+  invited_by text not null references users(id) on delete cascade,
+  status text not null default 'pending' check (status in ('pending','accepted','declined')),
+  user_id text references users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  responded_at timestamptz,
+  unique (classroom_id, email)
+);
+create index if not exists classroom_invitations_email_idx on classroom_invitations (email, status);
+
+-- One-time upgrade from the former auto-enrolling email roster (classroom_assignments): already-enrolled students
+-- become accepted invitations and unclaimed emails become pending ones. The old table is then unused; drop it
+-- yourself once you are happy with the result.
+do $$ begin
+  if to_regclass('public.classroom_assignments') is not null then
+    insert into classroom_invitations (id, classroom_id, email, student_name, invited_by, status, user_id, created_at, responded_at)
+    select id, classroom_id, email, student_name, assigned_by,
+           case when student_id is null then 'pending' else 'accepted' end,
+           student_id, created_at, case when student_id is null then null else created_at end
+    from classroom_assignments
+    on conflict (classroom_id, email) do nothing;
+  end if;
+end $$;
+
+-- Teacher notes to the class, shown to students on their dashboard and class page.
+create table if not exists classroom_announcements (
+  id text primary key,
+  classroom_id text not null references classrooms(id) on delete cascade,
+  author_id text not null references users(id) on delete cascade,
+  text text not null check (length(text) between 1 and 1000),
+  created_at timestamptz not null default now()
+);
+create index if not exists classroom_announcements_classroom_idx on classroom_announcements (classroom_id, created_at desc);
+
+-- The live lesson: a teacher starts a lesson for the class, moves it on, and ends it. One live session per classroom.
+create table if not exists lesson_sessions (
+  id text primary key,
+  classroom_id text not null references classrooms(id) on delete cascade,
+  module_id text not null references modules(id) on delete cascade,
+  phase text not null default 'teach' check (phase in ('teach','work')),
+  started_by text not null references users(id) on delete cascade,
+  started_at timestamptz not null default now(),
+  ended_at timestamptz
+);
+create unique index if not exists lesson_sessions_one_live on lesson_sessions (classroom_id) where ended_at is null;
 
 create table if not exists modules (
   id text primary key, classroom_id text not null references classrooms(id) on delete cascade,
@@ -304,7 +356,7 @@ alter table student_work enable row level security; alter table student_activiti
 alter table student_activity_state enable row level security;
 
 -- Demo: a complete small lesson with authored answers/checks and student activity.
-insert into classrooms values ('classroom-demo','Demo Classroom','DEMO123') on conflict do nothing;
+insert into classrooms (id, name) values ('classroom-demo','Demo Classroom') on conflict do nothing;
 insert into users (id,name) values ('teacher-1','Ms. Rivera'),('student-1','Alex'),('student-2','Sam') on conflict do nothing;
 insert into memberships (id,user_id,classroom_id,role) values
  ('membership-teacher-1','teacher-1','classroom-demo','teacher'),('membership-student-1','student-1','classroom-demo','student'),('membership-student-2','student-2','classroom-demo','student') on conflict do nothing;

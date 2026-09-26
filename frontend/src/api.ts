@@ -1,8 +1,23 @@
 import type {
+  ActivateClassroomResponse,
+  GetSessionResponse,
+  LessonPhase,
+  CreateAttemptRequest,
+  CreateAttemptResponse,
+  Announcement,
+  CreateModuleRequest,
+  CreateSubmissionRequest,
+  CodeSubmission,
+  GetTeacherStudentAggregateResponse,
+  ListAnnouncementsResponse,
+  ListLessonSummariesResponse,
+  ListMyClassroomsResponse,
+  Module,
   AiDraftRequest,
   AiDraftResponse,
   AiHintRequest,
   AiHintResponse,
+  AcceptInvitationResponse,
   AiCodeTestCandidatesRequest,
   AiCodeTestCandidatesResponse,
   AiModuleSuggestionsRequest,
@@ -11,15 +26,16 @@ import type {
   SaveModuleBuilderResponse,
   ApiError,
   Comment,
-  Attempt,
+  ClassroomInvitation,
+  CreateClassroomResponse,
+  CreateClassroomInvitationsRequest,
+  CreateClassroomInvitationsResponse,
   CreateCommentRequest,
-  CreateAttemptRequest,
   GetClassroomResponse,
   GetClassroomStudentsResponse,
   GetModuleResponse,
-  JoinRequest,
-  JoinResponse,
   ListModulesResponse,
+  ListMyInvitationsResponse,
   MeResponse,
   RunCodeRequest,
   RunCodeResponse,
@@ -37,7 +53,6 @@ import type {
   UpsertProgressResponse,
   GetClassroomStudentActivityResponse,
   GetStudentWorkResponse,
-  GetTeacherStudentAggregateResponse,
   RecordStudentActivityRequest,
   SaveStudentWorkRequest,
   StudentActivity,
@@ -84,12 +99,8 @@ const post = <T>(path: string, json: unknown) =>
   request<T>(path, { method: "POST", json });
 
 export const api = {
-  join: (body: JoinRequest) => post<JoinResponse>("/api/auth/join", body),
-  createClassroom: (name: string, roomCode: string) =>
-    post<{ id: string; name: string; roomCode: string }>("/api/classrooms", {
-      name,
-      roomCode,
-    }),
+  createClassroom: (name: string) =>
+    post<CreateClassroomResponse>("/api/classrooms", { name }),
   me: () => request<MeResponse>("/api/auth/me"),
   getModule: (id: string) => request<GetModuleResponse>(`/api/modules/${id}`),
   getClassroom: (id: string) =>
@@ -124,8 +135,32 @@ export const api = {
     ),
   createQuestionComment: (questionId: string, body: CreateQuestionCommentRequest) =>
     post<CreateQuestionCommentResponse>(`/api/comments/questions/${questionId}/comments`, body),
-  createAttempt: (body: CreateAttemptRequest) =>
-    post<Attempt>("/api/comments/attempts", body),
+  getInvitations: (classroomId: string) =>
+    request<ClassroomInvitation[]>(`/api/classrooms/${classroomId}/invitations`),
+  inviteStudents: (classroomId: string, body: CreateClassroomInvitationsRequest) =>
+    post<CreateClassroomInvitationsResponse>(`/api/classrooms/${classroomId}/invitations`, body),
+  removeInvitation: (classroomId: string, invitationId: string) =>
+    request<void>(`/api/classrooms/${classroomId}/invitations/${invitationId}`, { method: "DELETE" }),
+  myInvitations: () => request<ListMyInvitationsResponse>("/api/invitations"),
+  acceptInvitation: (id: string) => post<AcceptInvitationResponse>(`/api/invitations/${id}/accept`, {}),
+  declineInvitation: (id: string) => post<void>(`/api/invitations/${id}/decline`, {}),
+  myClassrooms: () => request<ListMyClassroomsResponse>("/api/classrooms"),
+  activateClassroom: (id: string) => post<ActivateClassroomResponse>(`/api/classrooms/${id}/activate`, {}),
+  getLessons: (classroomId: string) => request<ListLessonSummariesResponse>(`/api/classrooms/${classroomId}/lessons`),
+  getAnnouncements: (classroomId: string) => request<ListAnnouncementsResponse>(`/api/classrooms/${classroomId}/announcements`),
+  postAnnouncement: (classroomId: string, text: string) => post<Announcement>(`/api/classrooms/${classroomId}/announcements`, { text }),
+  deleteAnnouncement: (classroomId: string, id: string) =>
+    request<void>(`/api/classrooms/${classroomId}/announcements/${id}`, { method: "DELETE" }),
+  createModule: (body: CreateModuleRequest) => post<Module>("/api/modules", body),
+  getSession: (classroomId: string) => request<GetSessionResponse>(`/api/classrooms/${classroomId}/session`),
+  startSession: (classroomId: string, moduleId: string, phase: LessonPhase = "teach") =>
+    post<GetSessionResponse>(`/api/classrooms/${classroomId}/session`, { moduleId, phase }),
+  updateSession: (classroomId: string, body: { moduleId?: string; phase?: LessonPhase }) =>
+    request<GetSessionResponse>(`/api/classrooms/${classroomId}/session`, { method: "PATCH", json: body }),
+  endSession: (classroomId: string) =>
+    request<GetSessionResponse>(`/api/classrooms/${classroomId}/session`, { method: "DELETE" }),
+  createAttempt: (body: CreateAttemptRequest) => post<CreateAttemptResponse>("/api/comments/attempts", body),
+  createSubmission: (body: CreateSubmissionRequest) => post<CodeSubmission>("/api/comments/submissions", body),
   upsertProgress: (body: UpsertProgressRequest) =>
     request<UpsertProgressResponse>("/api/progress", {
       method: "PUT",
@@ -151,6 +186,8 @@ export const api = {
     }),
   deleteCodeTest: (id: string) =>
     request<void>(`/api/modules/tests/${id}`, { method: "DELETE" }),
+  deleteModule: (id: string) =>
+    request<void>(`/api/modules/${id}`, { method: "DELETE" }),
   validateMath: (body: ValidateMathRequest) =>
     post<ValidateMathResponse>("/api/math/validate", body),
   aiHint: (body: AiHintRequest) => post<AiHintResponse>("/api/ai/hint", body),

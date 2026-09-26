@@ -2,6 +2,7 @@ import { Router } from "express";
 import { ArithmeticError, parseArithmetic } from "../../../math/arithmetic.js";
 import { supabase } from "../supabase.js";
 import { unwrap } from "../rows.js";
+import { moduleForUser } from "../access.js";
 import type {
   ValidateMathRequest,
   ValidateMathResponse,
@@ -30,17 +31,25 @@ mathRouter.post("/validate", async (req, res) => {
     await supabase
       .from("questions")
       .select(
-        "kind, math_expected_result, math_tolerance, sections!inner(modules!inner(classroom_id))",
+        "kind, math_expected_result, math_tolerance, sections!inner(module_id)",
       )
       .eq("id", body.questionId)
-      .eq("sections.modules.classroom_id", req.user!.classroomId)
       .maybeSingle(),
   ) as {
     kind: string;
     math_expected_result: number | null;
     math_tolerance: number | null;
+    sections: { module_id: string };
   } | null;
-  if (!question) return res.status(404).json({ error: "Question not found" });
+  if (
+    !question ||
+    !(await moduleForUser(
+      question.sections.module_id,
+      req.user!.classroomId,
+      req.user!.role,
+    ))
+  )
+    return res.status(404).json({ error: "Question not found" });
   if (
     question.kind !== "math" ||
     typeof question.math_expected_result !== "number" ||

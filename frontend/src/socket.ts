@@ -4,10 +4,12 @@ import type {
   PresenceUpdatePayload,
   RaisedHandsUpdatePayload,
   ServerToClientEvents,
+  SessionUpdatePayload,
   StudentStatusUpdatePayload,
   StudentActivityUpdatePayload,
   ModuleChangedPayload,
   QuestionCommentCreatedPayload,
+  ModuleDeletedPayload,
 } from "../../shared/events";
 import { supabase } from "./supabase.ts";
 
@@ -100,6 +102,11 @@ export function onStudentActivityUpdate(
   return () => void socket.off("student_activity_update", cb);
 }
 
+export function onSessionUpdate(cb: (p: SessionUpdatePayload) => void): () => void {
+  socket.on("session_update", cb);
+  return () => void socket.off("session_update", cb);
+}
+
 export function onPresenceUpdate(
   cb: (p: PresenceUpdatePayload) => void,
 ): () => void {
@@ -107,6 +114,7 @@ export function onPresenceUpdate(
   if (currentPresence) cb(currentPresence);
   return () => void socket.off("presence_update", cb);
 }
+
 export function onModuleChanged(
   cb: (p: ModuleChangedPayload) => void,
 ): () => void {
@@ -118,4 +126,11 @@ export function onQuestionCommentCreated(
 ): () => void {
   socket.on("question_comment_created", cb);
   return () => void socket.off("question_comment_created", cb);
+}
+
+export function onModuleDeleted(
+  cb: (p: ModuleDeletedPayload) => void,
+): () => void {
+  socket.on("module_deleted", cb);
+  return () => void socket.off("module_deleted", cb);
 }
