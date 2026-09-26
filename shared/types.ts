@@ -78,6 +78,54 @@ export interface LessonSession {
   phase: LessonPhase;
   startedAt: string;
 }
+
+export type LessonFeedbackSafetyFlag = "harassment" | "violence" | "self_harm" | "sexual";
+export interface LessonFeedbackStudentSummary {
+  studentId: string;
+  studentName: string;
+  progress: ProgressStatus;
+  finishedAt: string | null;
+  activeMinutes: number;
+  aiHintCount: number;
+  trackedActionCount: number;
+  aiUsePercent: number;
+  usedHelper: boolean;
+  followedPercent: number;
+  detachCount: number;
+  taskCount: number;
+  quizCount: number;
+  safetyFlags: LessonFeedbackSafetyFlag[];
+  aiSummary: string;
+  greenFlag: string | null;
+  redFlag: string | null;
+}
+export interface LessonFeedbackReport {
+  session: LessonSession & { endedAt: string; durationMinutes: number };
+  classroomName: string;
+  studentCount: number;
+  helperUsePercent: number;
+  independentCount: number;
+  followedPercent: number;
+  averageFinishMinutes: number | null;
+  averageQuizMinutes: number | null;
+  completedCount: number;
+  aiSummary: string;
+  strengths: string[];
+  attentionSuggestions: Array<{ studentId: string; studentName: string; reason: string }>;
+  students: LessonFeedbackStudentSummary[];
+}
+export interface LessonFeedbackStudentDetail extends LessonFeedbackStudentSummary {
+  aiLogs: Array<{
+    askedAt: string;
+    question: string;
+    reply: string;
+    safetyFlags: LessonFeedbackSafetyFlag[];
+    misuse: string | null;
+    reviewAvailable: boolean;
+  }>;
+  activityTimeline: Array<{ at: string; type: StudentActivityType; moduleTitle: string }>;
+  aiSuggestion: string;
+}
 /**
  * GET /api/classrooms/:id/session (any member) — the live lesson, or null.
  * POST (teacher) `{ moduleId, phase? }` starts one (409 if already live; phase defaults to teach).

@@ -45,6 +45,22 @@ async function withTitle(row: SessionRow): Promise<LessonSession> {
   return toSession(row, module?.title ?? "Lesson");
 }
 
+async function recordSessionModule(row: SessionRow, title: string): Promise<void> {
+  try {
+    unwrap(await supabase.from("lesson_feedback_events").insert({
+      id: randomUUID(),
+      session_id: row.id,
+      classroom_id: row.classroom_id,
+      student_id: null,
+      module_id: row.module_id,
+      event_type: "lesson_module",
+      payload: { title },
+    }));
+  } catch (error) {
+    console.warn("[feedback] Could not record lesson change:", error instanceof Error ? error.message : error);
+  }
+}
+
 /** Send the new state to the room, and back to the caller. */
 function publish(res: Response, classroomId: string, session: LessonSession | null, status = 200): void {
   emitSessionUpdate(classroomId, session);
@@ -79,6 +95,7 @@ sessionRouter.post("/", requireRole("teacher"), async (req, res) => {
       .select("*")
       .single(),
   ) as SessionRow;
+  await recordSessionModule(row, (await withTitle(row)).moduleTitle);
   publish(res, classroomId, await withTitle(row), 201);
 });
 
@@ -109,6 +126,7 @@ sessionRouter.patch("/", requireRole("teacher"), async (req, res) => {
       .select("*")
       .single(),
   ) as SessionRow;
+  if (row.module_id !== current.module_id) await recordSessionModule(row, (await withTitle(row)).moduleTitle);
   publish(res, classroomId, await withTitle(row));
 });
 

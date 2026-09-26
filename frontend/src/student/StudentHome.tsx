@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth.ts'
+import { api } from '../api.ts'
 import { onPresenceUpdate } from '../socket.ts'
 import { useLiveSession } from '../useLiveSession.ts'
 import ModuleView from './ModuleView.tsx'
@@ -82,6 +83,16 @@ export default function StudentHome() {
   useEffect(() => {
     if (currentId && currentStatus === 'not_started') setStatus(currentId, 'in_progress')
   }, [currentId, currentStatus, setStatus])
+
+  // Small, authenticated heartbeats let the end-of-lesson report estimate how much of the live session
+  // each learner spent following the teacher's screen. The backend clamps gaps to avoid counting time away.
+  useEffect(() => {
+    if (!session || !user) return
+    const send = () => void api.recordLessonFollow(session.id, followingNow).catch(() => {})
+    send()
+    const interval = window.setInterval(send, 15_000)
+    return () => window.clearInterval(interval)
+  }, [session?.id, followingNow, user?.id])
 
   // Live headcount from the classroom's presence broadcasts; unknown until the first one arrives.
   useEffect(
