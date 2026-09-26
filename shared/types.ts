@@ -119,6 +119,8 @@ export interface MyClassroom {
   completedCount: number;
   /** The classroom the app is currently showing (the most recently joined). */
   active: boolean;
+  /** The lesson the teacher is running right now, or null when nothing is live. */
+  liveSession: LessonSession | null;
 }
 /** GET /api/classrooms — every classroom the caller belongs to. */
 export type ListMyClassroomsResponse = MyClassroom[];

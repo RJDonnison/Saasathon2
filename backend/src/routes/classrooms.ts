@@ -12,6 +12,7 @@ import {
   toModule,
   toModuleProgress,
   toSectionProgress,
+  toSession,
   toSubmission,
   toStudentWork,
   toUser,
@@ -25,6 +26,7 @@ import {
   type ModuleProgressRow,
   type ModuleRow,
   type SectionProgressRow,
+  type SessionRow,
   type StudentWorkRow,
   type UserRow,
 } from "../rows.js";
@@ -271,13 +273,20 @@ classroomsRouter.get("/", async (req, res) => {
   ) as MembershipRow[];
   const ids = memberships.map((m) => m.classroom_id);
   if (!ids.length) return res.json([]);
-  const [classrooms, modules, progress, teachers] = await Promise.all([
+  const [classrooms, modules, progress, teachers, sessions] = await Promise.all([
     supabase.from("classrooms").select("*").in("id", ids),
     supabase.from("modules").select("id,classroom_id").in("classroom_id", ids).eq("status", "published"),
     supabase.from("module_progress").select("module_id,status").eq("student_id", req.user!.userId),
     teacherNames(ids),
+    supabase.from("lesson_sessions").select("*").in("classroom_id", ids).is("ended_at", null),
   ]);
   const classroomRows = unwrap(classrooms) as ClassroomRow[];
+  const sessionRows = unwrap(sessions) as SessionRow[];
+  const liveTitles = sessionRows.length
+    ? (unwrap(
+        await supabase.from("modules").select("id,title").in("id", sessionRows.map((r) => r.module_id)),
+      ) as Array<{ id: string; title: string }>)
+    : [];
   const moduleRows = unwrap(modules) as Array<{ id: string; classroom_id: string }>;
   const done = new Set(
     (unwrap(progress) as Array<{ module_id: string; status: string }>)
@@ -297,6 +306,10 @@ classroomsRouter.get("/", async (req, res) => {
         lessonCount: lessons.length,
         completedCount: lessons.filter((l) => done.has(l.id)).length,
         active: room.id === req.user!.classroomId,
+        liveSession: (() => {
+          const row = sessionRows.find((r) => r.classroom_id === room.id);
+          return row ? toSession(row, liveTitles.find((t) => t.id === row.module_id)?.title ?? "Lesson") : null;
+        })(),
         joinedAt: m.created_at,
       };
     })
