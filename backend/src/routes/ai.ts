@@ -9,12 +9,13 @@ import {
   type ChatTurn,
 } from "../openai.js";
 import {
+  builderSystemPrompt,
   draftSystemPrompt,
   hintSystemPrompt,
   studentModuleContext,
   teacherModuleContext,
 } from "../ai/prompts.js";
-import { aggregate } from "./modules.js";
+import { aggregate, validBuilderDocument } from "./modules.js";
 import type {
   AiCodeHighlight,
   AiDraftRequest,
@@ -198,19 +199,38 @@ async function reply(
 const notConfigured = (res: Response) =>
   res.status(503).json({ error: new AiNotConfiguredError().message });
 
-function suggestionPatch(value: unknown): AiModuleSuggestion["patch"] | null {
-  if (!value || typeof value !== "object") return null;
-  const { title, content } = value as Record<string, unknown>;
-  if (title === undefined && content === undefined) return null;
-  if (
-    (title !== undefined && typeof title !== "string") ||
-    (content !== undefined && typeof content !== "string")
-  )
+function builderSuggestion(
+  raw: string,
+  sourceStatus: "draft" | "published",
+): AiModuleSuggestion | null {
+  try {
+    const value: unknown = JSON.parse(raw);
+    if (!value || typeof value !== "object") return null;
+    const { label, reply, document } = value as Record<string, unknown>;
+    if (
+      typeof label !== "string" ||
+      !label.trim() ||
+      typeof reply !== "string" ||
+      !reply.trim()
+    )
+      return null;
+    if (document === null || document === undefined)
+      return {
+        id: "ai-builder",
+        label: label.trim().slice(0, 160),
+        reply: reply.trim().slice(0, 4000),
+      };
+    if (!validBuilderDocument(document) || !document.title.trim()) return null;
+    // A suggestion must never silently publish or unpublish the teacher's module.
+    return {
+      id: "ai-builder",
+      label: label.trim().slice(0, 160),
+      reply: reply.trim().slice(0, 4000),
+      document: { ...document, status: sourceStatus },
+    };
+  } catch {
     return null;
-  return {
-    ...(title !== undefined ? { title } : {}),
-    ...(content !== undefined ? { content } : {}),
-  };
+  }
 }
 
 aiRouter.post("/hint", requireRole("student"), rateLimit, async (req, res) => {
@@ -327,63 +347,37 @@ aiRouter.post("/draft", requireRole("teacher"), rateLimit, async (req, res) => {
   }));
 });
 
-/** Builder suggestions intentionally use only teacher-owned context. They are never available to students. */
+/** Builder suggestions use the teacher's in-progress document, so they also work before first save. */
 aiRouter.post(
   "/module-suggestions",
   requireRole("teacher"),
   rateLimit,
   async (req, res) => {
-    const { moduleId, request, itemId } = (req.body ??
+    const { request, document, selectedItemId } = (req.body ??
       {}) as Partial<AiModuleSuggestionsRequest>;
     if (
-      typeof moduleId !== "string" ||
       typeof request !== "string" ||
       !request.trim() ||
       request.length > MAX_DRAFT_REQUEST ||
-      (itemId !== undefined && typeof itemId !== "string")
+      !validBuilderDocument(document) ||
+      !document.title.trim() ||
+      JSON.stringify(document).length > MAX_DRAFT ||
+      (selectedItemId !== undefined && typeof selectedItemId !== "string")
     )
       return res
         .status(400)
-        .json({ error: "moduleId and a request are required" });
+        .json({ error: "A valid module document and a request are required" });
     if (!isAiConfigured()) return notConfigured(res);
-    const row = await moduleInClassroom(moduleId, req.user!.classroomId);
-    if (!row) return res.status(404).json({ error: "Module not found" });
-    const module = (await aggregate(row, true)) as TeacherModule;
     await reply(res, async () => {
       const raw = await complete({
-        system: `${draftSystemPrompt(teacherModuleContext(module), null)}\nReturn JSON only: {"suggestions":[{"id":"short-id","label":"short label","patch":{"title":"optional title","content":"optional intro"}}]}. Give up to three safe, small editorial suggestions. ${itemId ? `The selected item id is ${itemId}; put its replacement in patch only when it can be represented as a module title/content change.` : ""}`,
+        system: builderSystemPrompt(document, selectedItemId ?? null),
         history: [],
         message: request.trim(),
-        maxTokens: 900,
+        maxTokens: 4000,
         json: true,
       });
-      try {
-        const parsed: unknown = JSON.parse(raw);
-        if (
-          parsed &&
-          typeof parsed === "object" &&
-          Array.isArray((parsed as AiModuleSuggestionsResponse).suggestions)
-        )
-          return {
-            suggestions: (parsed as AiModuleSuggestionsResponse).suggestions
-              .flatMap((suggestion) => {
-                if (
-                  !suggestion ||
-                  typeof suggestion.id !== "string" ||
-                  typeof suggestion.label !== "string"
-                )
-                  return [];
-                const patch = suggestionPatch(suggestion.patch);
-                return patch
-                  ? [{ id: suggestion.id, label: suggestion.label, patch }]
-                  : [];
-              })
-              .slice(0, 3),
-          };
-      } catch {
-        /* generic fallback below */
-      }
-      return { suggestions: [] };
+      const suggestion = builderSuggestion(raw, document.status);
+      return { suggestions: suggestion ? [suggestion] : [] };
     });
   },
 );

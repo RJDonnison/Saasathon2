@@ -70,7 +70,10 @@ const validMathQuestion = (
     : (expected === undefined || expected === null) &&
       (tolerance === undefined || tolerance === null);
 
-function validDocument(value: unknown): value is ModuleBuilderDocument {
+/** Shared by the teacher-only AI route before an AI-proposed document is returned to the browser. */
+export function validBuilderDocument(
+  value: unknown,
+): value is ModuleBuilderDocument {
   if (!value || typeof value !== "object") return false;
   const d = value as ModuleBuilderDocument;
   return (
@@ -490,7 +493,7 @@ async function ownedQuestion(
 
 modulesRouter.post("/builder", requireRole("teacher"), async (req, res) => {
   const document = (req.body ?? {}).document as unknown;
-  if (!validDocument(document) || !document.title.trim())
+  if (!validBuilderDocument(document) || !document.title.trim())
     return res.status(400).json({ error: "Invalid module document" });
   const position = await nextPosition(
     "modules",
@@ -534,7 +537,7 @@ modulesRouter.put("/:id/builder", requireRole("teacher"), async (req, res) => {
   if (
     !Number.isInteger(body.revision) ||
     body.revision! < 0 ||
-    !validDocument(body.document) ||
+    !validBuilderDocument(body.document) ||
     !body.document.title.trim()
   )
     return res
