@@ -326,6 +326,7 @@ export default function StudentHome() {
                 module={current}
                 index={Math.max(currentIndex, 0)}
                 total={modules.length}
+                locked={current?.status === "completed"}
               />
             )}
 

@@ -292,6 +292,10 @@ export interface StudentWork {
   questionId: string;
   answer: string | null;
   code: string | null;
+  /** Result of the most recent answer check; null when the answer has not been checked or cannot be graded. */
+  isCorrect: boolean | null;
+  /** Present only after the student has checked this answer. */
+  checkedAt: string | null;
   updatedAt: string;
 }
 export type StudentActivityType =
@@ -626,6 +630,7 @@ export interface ValidateMathRequest {
 export interface ValidateMathResponse {
   value: number;
   isCorrect: boolean;
+  checkedAt: string;
 }
 /** One turn of an AI conversation. The AI endpoints are stateless: the client re-sends the transcript each call. */
 export interface AiChatMessage {

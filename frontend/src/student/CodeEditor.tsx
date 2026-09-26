@@ -29,6 +29,7 @@ export default function CodeEditor({
   instructions,
   moduleId,
   sectionId,
+  readOnly = false,
 }: {
   editor: EditorInfo;
   /** Shown in the window title bar, without extension. */
@@ -41,6 +42,7 @@ export default function CodeEditor({
   /** Present for a lesson exercise; omitted by the free playground. */
   moduleId?: string;
   sectionId?: string;
+  readOnly?: boolean;
 }) {
   const {
     codes,
@@ -266,8 +268,9 @@ export default function CodeEditor({
           <span className="min-w-0 truncate text-[13px] font-medium text-ink font-mono">
             {filename}.{EXTENSION[language] ?? "txt"}
           </span>
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            {isOpen ? (
+          {!readOnly && (
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {isOpen ? (
               <>
                 <Button
                   size="sm"
@@ -299,12 +302,13 @@ export default function CodeEditor({
                   </Button>
                 )}
               </>
-            ) : (
-              <Button variant="primary" onClick={() => setActive(editor)}>
-                Open editor
-              </Button>
-            )}
-          </div>
+              ) : (
+                <Button variant="primary" onClick={() => setActive(editor)}>
+                  Open editor
+                </Button>
+              )}
+            </div>
+          )}
         </div>
 
         {mine && (
@@ -331,7 +335,11 @@ export default function CodeEditor({
           </div>
         )}
 
-        {isOpen ? (
+        {readOnly ? (
+          <pre className="m-0 max-h-96 overflow-auto bg-surface px-5 py-4 text-[13px] leading-6 text-ink font-mono">
+            <code>{code}</code>
+          </pre>
+        ) : isOpen ? (
           <div className="h-[22rem] min-h-28 overflow-hidden bg-surface">
             <Suspense
               fallback={
@@ -368,6 +376,7 @@ export default function CodeEditor({
                   fontSize: 14,
                   lineHeight: 24,
                   minimap: { enabled: false },
+                  readOnly,
                   padding: { top: 12, bottom: 12 },
                   scrollBeyondLastLine: false,
                   // Only consume the wheel while the editor can still scroll in that direction; at its top/bottom (or when

@@ -8,7 +8,7 @@ import InlineText from "../ui/InlineText.tsx";
 import MathText from "../ui/MathText.tsx";
 import QuestionConversation from "../ui/QuestionConversation.tsx";
 import Markdown from "../ui/Markdown.tsx";
-import { PencilIcon } from "../ui/icons.tsx";
+import { CheckIcon, PencilIcon } from "../ui/icons.tsx";
 import { CARD, INPUT, TINT } from "../ui/styles.ts";
 import CodeEditor from "./CodeEditor.tsx";
 import { onModuleChanged } from "../socket.ts";
@@ -35,10 +35,12 @@ export default function ModuleView({
   module,
   index,
   total,
+  locked,
 }: {
   module: Omit<Module, "status"> | null;
   index: number;
   total: number;
+  locked: boolean;
 }) {
   if (!module) {
     return (
@@ -47,17 +49,27 @@ export default function ModuleView({
       </section>
     );
   }
-  return <Lesson key={module.id} module={module} index={index} total={total} />;
+  return (
+    <Lesson
+      key={module.id}
+      module={module}
+      index={index}
+      total={total}
+      locked={locked}
+    />
+  );
 }
 
 function Lesson({
   module,
   index,
   total,
+  locked,
 }: {
   module: Omit<Module, "status">;
   index: number;
   total: number;
+  locked: boolean;
 }) {
   const [full, setFull] = useState<StudentModule | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -135,6 +147,15 @@ function Lesson({
         <Heading as="h1" variant="title">
           {module.title}
         </Heading>
+        {locked && (
+          <div
+            className={`flex items-center gap-2 rounded-xl px-3.5 py-3 text-sm font-semibold ${TINT.mint}`}
+            role="status"
+          >
+            <CheckIcon className="size-4" />
+            Lesson complete. Reopen it below to make changes.
+          </div>
+        )}
         {intro && (
           <div className="max-w-2xl text-[15px] leading-relaxed text-ink">
             <Markdown text={intro} />
@@ -176,6 +197,7 @@ function Lesson({
           moduleId={module.id}
           index={i}
           work={work}
+          locked={locked}
         />
       ))}
 
@@ -232,11 +254,13 @@ function SectionView({
   moduleId,
   index,
   work,
+  locked,
 }: {
   section: StudentSection;
   moduleId: string;
   index: number;
   work: Record<string, StudentWork>;
+  locked: boolean;
 }) {
   const reading = section.blocks.filter((b) => blockText(b)?.trim());
   const questions = section.questions;
@@ -306,6 +330,7 @@ function SectionView({
             moduleId={moduleId}
             sectionId={section.id}
             savedWork={work[item.value.id]}
+            locked={locked}
           />
         ),
       )}
@@ -318,11 +343,13 @@ function QuestionView({
   moduleId,
   sectionId,
   savedWork,
+  locked,
 }: {
   question: StudentQuestion;
   moduleId: string;
   sectionId: string;
   savedWork?: StudentWork;
+  locked: boolean;
 }) {
   if (question.kind === "code" && question.codeExercise)
     return (
@@ -332,6 +359,7 @@ function QuestionView({
           moduleId={moduleId}
           sectionId={sectionId}
           savedWork={savedWork}
+          locked={locked}
         />
         <QuestionConversation questionId={question.id} />
       </>
@@ -344,6 +372,7 @@ function QuestionView({
           moduleId={moduleId}
           sectionId={sectionId}
           savedWork={savedWork}
+          locked={locked}
         />
         <QuestionConversation questionId={question.id} />
       </>
@@ -355,6 +384,7 @@ function QuestionView({
         moduleId={moduleId}
         sectionId={sectionId}
         savedWork={savedWork}
+        locked={locked}
       />
       <QuestionConversation questionId={question.id} />
     </>
@@ -372,11 +402,13 @@ function CodeQuestion({
   moduleId,
   sectionId,
   savedWork,
+  locked,
 }: {
   question: StudentQuestion;
   moduleId: string;
   sectionId: string;
   savedWork?: StudentWork;
+  locked: boolean;
 }) {
   const ex = question.codeExercise!;
   return (
@@ -394,6 +426,7 @@ function CodeQuestion({
       instructions={ex.instructions}
       moduleId={moduleId}
       sectionId={sectionId}
+      readOnly={locked}
     />
   );
 }
@@ -403,17 +436,21 @@ function AnswerQuestion({
   moduleId,
   sectionId,
   savedWork,
+  locked,
 }: {
   question: StudentQuestion;
   moduleId: string;
   sectionId: string;
   savedWork?: StudentWork;
+  locked: boolean;
 }) {
   const [answer, setAnswer] = useState(savedWork?.answer ?? "");
   const [edited, setEdited] = useState(false);
   const [reported, setReported] = useState(false);
   const [checking, setChecking] = useState(false);
-  const [result, setResult] = useState<boolean | null | undefined>(undefined);
+  const [result, setResult] = useState<boolean | null | undefined>(() =>
+    savedWork?.checkedAt ? savedWork.isCorrect : undefined,
+  );
   const [error, setError] = useState<string | null>(null);
   const { record, saveWork } = useStudentActivity();
 
@@ -446,6 +483,7 @@ function AnswerQuestion({
 
   async function check() {
     if (!answer.trim()) return;
+    setEdited(false);
     record({
       moduleId,
       sectionId,
@@ -491,6 +529,7 @@ function AnswerQuestion({
             >
               <input
                 type="radio"
+                disabled={locked}
                 name={question.id}
                 value={o.text}
                 checked={answer === o.text}
@@ -513,6 +552,7 @@ function AnswerQuestion({
           </label>
           <input
             id={`answer-${question.id}`}
+            disabled={locked}
             className={`${INPUT} h-10 w-full`}
             value={answer}
             onChange={(e) => {
@@ -531,7 +571,7 @@ function AnswerQuestion({
           variant="primary"
           size="sm"
           onClick={() => void check()}
-          disabled={checking || !answer.trim()}
+          disabled={locked || checking || !answer.trim()}
         >
           {checking ? "Checking…" : "Check"}
         </Button>
@@ -542,9 +582,14 @@ function AnswerQuestion({
             {result === true
               ? "Correct."
               : result === false
-                ? "Not quite. Try again."
+                ? locked
+                  ? "Not correct."
+                  : "Not quite. Try again."
                 : "This question does not have a defined answer yet."}
           </p>
+        )}
+        {locked && result === undefined && (
+          <p className="m-0 text-sm font-medium text-muted">Not checked.</p>
         )}
       </div>
       {error && (
@@ -561,18 +606,22 @@ function MathQuestion({
   moduleId,
   sectionId,
   savedWork,
+  locked,
 }: {
   question: StudentQuestion;
   moduleId: string;
   sectionId: string;
   savedWork?: StudentWork;
+  locked: boolean;
 }) {
   const { setActiveQuestion } = useWorkspace();
   const [answer, setAnswer] = useState(savedWork?.answer ?? "");
   const [edited, setEdited] = useState(false);
   const [reported, setReported] = useState(false);
   const [syntaxError, setSyntaxError] = useState<string | null>(null);
-  const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
+  const [isCorrect, setIsCorrect] = useState<boolean | null>(() =>
+    savedWork?.checkedAt ? savedWork.isCorrect : null,
+  );
   const [checking, setChecking] = useState(false);
   const { record, saveWork } = useStudentActivity();
 
@@ -624,6 +673,7 @@ function MathQuestion({
       setSyntaxError("Enter an answer before checking it.");
       return;
     }
+    setEdited(false);
     try {
       parseArithmetic(answer);
       setSyntaxError(null);
@@ -662,6 +712,7 @@ function MathQuestion({
       <input
         id={`answer-${question.id}`}
         className={`${INPUT} h-10 w-full font-mono`}
+        disabled={locked}
         value={answer}
         onFocus={() => {
           setActiveQuestion(question.id);
@@ -673,7 +724,7 @@ function MathQuestion({
       <div className="flex flex-wrap items-center gap-3">
         <Button
           variant="primary"
-          disabled={checking}
+          disabled={locked || checking}
           onClick={() => void checkAnswer()}
         >
           {checking ? "Checking..." : "Check answer"}
@@ -692,6 +743,11 @@ function MathQuestion({
           {isCorrect
             ? "Correct! Nice work."
             : "Not quite. Check your calculation and try again."}
+          </p>
+        )}
+      {locked && isCorrect === null && (
+        <p className="m-0! text-sm font-semibold! text-muted">
+          Not checked.
         </p>
       )}
     </Card>

@@ -139,6 +139,16 @@ activityRouter.put("/work", requireRole("student"), async (req, res) => {
   ) as { kind: string };
   if ((body.kind === "code") !== (question.kind === "code"))
     return res.status(400).json({ error: "Work type does not match this question" });
+  const existing = unwrap(
+    await supabase
+      .from("student_work")
+      .select("*")
+      .eq("student_id", req.user!.userId)
+      .eq("question_id", location.questionId)
+      .maybeSingle(),
+  ) as StudentWorkRow | null;
+  const unchanged =
+    (body.kind === "answer" ? existing?.answer : existing?.code) === body.value;
   const row = unwrap(
     await supabase
       .from("student_work")
@@ -149,6 +159,8 @@ activityRouter.put("/work", requireRole("student"), async (req, res) => {
           question_id: location.questionId,
           answer: body.kind === "answer" ? body.value : null,
           code: body.kind === "code" ? body.value : null,
+          is_correct: unchanged ? existing?.is_correct ?? null : null,
+          checked_at: unchanged ? existing?.checked_at ?? null : null,
           updated_at: new Date().toISOString(),
         },
         { onConflict: "student_id,question_id" },

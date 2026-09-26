@@ -116,6 +116,7 @@ commentsRouter.post("/attempts", async (req, res) => {
       ? null
       : question.answer_key.trim().toLowerCase() ===
         b.answer.trim().toLowerCase();
+  const checkedAt = new Date().toISOString();
   const row = unwrap(
     await supabase
       .from("attempts")
@@ -128,6 +129,23 @@ commentsRouter.post("/attempts", async (req, res) => {
       })
       .select("*")
       .single(),
+  );
+  unwrap(
+    await supabase
+      .from("student_work")
+      .upsert(
+        {
+          id: `${req.user!.userId}:${question.id}`,
+          student_id: req.user!.userId,
+          question_id: question.id,
+          answer: b.answer,
+          code: null,
+          is_correct: isCorrect,
+          checked_at: checkedAt,
+          updated_at: checkedAt,
+        },
+        { onConflict: "student_id,question_id" },
+      ),
   );
   res.status(201).json(toAttempt(row as AttemptRow));
 });
