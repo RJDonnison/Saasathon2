@@ -59,7 +59,6 @@ export default function ClassroomGrid({
   return (
     <Card
       title="Students"
-      eyebrow="Roll call"
       icon={<UsersIcon className="size-[18px]" />}
       tint="lavender"
       action={

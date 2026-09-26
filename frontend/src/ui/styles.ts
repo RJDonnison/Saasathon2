@@ -22,6 +22,14 @@ export const TINT: Record<Tint, string> = {
 export const CARD =
   'rounded-2xl border border-border bg-surface shadow-[0_1px_2px_color-mix(in_srgb,var(--color-ink)_6%,transparent),0_16px_34px_-20px_color-mix(in_srgb,var(--color-ink)_30%,transparent)]'
 
+/** More distinct success/failure elevation for a question after it has been graded. */
+export const GRADED_CARD_SHADOW = {
+  correct:
+    '!shadow-[0_2px_5px_color-mix(in_srgb,var(--color-mint-ink)_16%,transparent),0_18px_38px_-14px_color-mix(in_srgb,var(--color-mint-ink)_38%,transparent),0_0_30px_-4px_color-mix(in_srgb,var(--color-mint)_92%,transparent)]',
+  incorrect:
+    '!shadow-[0_2px_5px_color-mix(in_srgb,var(--color-peach-ink)_16%,transparent),0_18px_38px_-14px_color-mix(in_srgb,var(--color-peach-ink)_38%,transparent),0_0_30px_-4px_color-mix(in_srgb,var(--color-peach)_92%,transparent)]',
+} as const
+
 const FOCUS = 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent'
 export const FOCUS_RING = FOCUS
 

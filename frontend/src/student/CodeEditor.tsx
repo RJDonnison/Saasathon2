@@ -3,10 +3,10 @@ import type { OnMount } from "@monaco-editor/react";
 import type { GradeCodeTestResult } from "../../../shared/types";
 import { api } from "../api.ts";
 import Button from "../ui/Button.tsx";
-import Eyebrow from "../ui/Eyebrow.tsx";
+import Card from "../ui/Card.tsx";
 import InlineText from "../ui/InlineText.tsx";
-import { PlayIcon, SparklesIcon, XIcon } from "../ui/icons.tsx";
-import { CARD } from "../ui/styles.ts";
+import { CodeIcon, PlayIcon, SparklesIcon, XIcon } from "../ui/icons.tsx";
+import { GRADED_CARD_SHADOW } from "../ui/styles.ts";
 import { useWorkspace, type EditorInfo } from "./useWorkspace.ts";
 import { useStudentActivity } from "./useStudentActivity.ts";
 
@@ -27,6 +27,7 @@ export default function CodeEditor({
   initialCode,
   prompt,
   instructions,
+  questionNumber,
   moduleId,
   sectionId,
   readOnly = false,
@@ -39,6 +40,8 @@ export default function CodeEditor({
   /** The task, and any extra detail, shown above the editor. */
   prompt?: string;
   instructions?: string;
+  /** The lesson-wide number shown in a code-question header. */
+  questionNumber?: number;
   /** Present for a lesson exercise; omitted by the free playground. */
   moduleId?: string;
   sectionId?: string;
@@ -244,9 +247,25 @@ export default function CodeEditor({
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <Card
+      title={
+        editor.exerciseId && questionNumber
+          ? `Question ${questionNumber}`
+          : "Playground"
+      }
+      icon={<CodeIcon className="size-[18px]" />}
+      tint="peach"
+      className={
+        tested
+          ? failed
+            ? GRADED_CARD_SHADOW.incorrect
+            : GRADED_CARD_SHADOW.correct
+          : ""
+      }
+      bodyClassName="flex flex-col gap-4 p-5 sm:p-6"
+    >
       {(prompt || instructions) && (
-        <section className={`flex flex-col gap-2.5 p-5 sm:p-6 ${CARD}`}>
+        <div className="flex flex-col gap-2.5">
           <span className="w-fit rounded-lg border border-border bg-surface-soft px-2.5 py-1 text-xs font-semibold text-ink capitalize">
             {language}
           </span>
@@ -260,10 +279,10 @@ export default function CodeEditor({
               <InlineText text={instructions} />
             </p>
           )}
-        </section>
+        </div>
       )}
 
-      <section className={`overflow-hidden ${CARD}`}>
+      <section className="overflow-hidden rounded-xl border border-border bg-surface">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-surface-soft px-4 py-3">
           <span className="min-w-0 truncate text-[13px] font-medium text-ink font-mono">
             {filename}.{EXTENSION[language] ?? "txt"}
@@ -399,7 +418,6 @@ export default function CodeEditor({
             className="flex flex-col gap-2 border-t border-border bg-surface px-5 py-4"
             role="status"
           >
-            <Eyebrow>Check results</Eyebrow>
             <div className="flex flex-col gap-2">
               {testResults.map((result) => (
                 <div
@@ -442,6 +460,6 @@ export default function CodeEditor({
           </div>
         )}
       </section>
-    </div>
+    </Card>
   );
 }

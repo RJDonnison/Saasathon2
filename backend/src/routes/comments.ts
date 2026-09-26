@@ -306,6 +306,20 @@ commentsRouter.post("/questions/:id/comments", async (req, res) => {
     return res.status(403).json({ error: "Not allowed to comment for this student" });
   if (!(await questionInClassroom(questionId, req.user!.classroomId, req.user!.role)))
     return res.status(404).json({ error: "Question not found" });
+  if (req.user!.role === "student") {
+    const teacherComment = unwrap(
+      await supabase
+        .from("question_comments")
+        .select("id")
+        .eq("question_id", questionId)
+        .eq("student_id", studentId)
+        .neq("author_id", studentId)
+        .limit(1)
+        .maybeSingle(),
+    );
+    if (!teacherComment)
+      return res.status(403).json({ error: "A teacher must start this conversation" });
+  }
   const row = unwrap(
     await supabase
       .from("question_comments")

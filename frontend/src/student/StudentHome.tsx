@@ -10,7 +10,6 @@ import { WorkspaceProvider } from "./WorkspaceContext.tsx";
 import Button from "../ui/Button.tsx";
 import ClassTopBar from "../ui/ClassTopBar.tsx";
 import Dot from "../ui/Dot.tsx";
-import Eyebrow from "../ui/Eyebrow.tsx";
 import Heading from "../ui/Heading.tsx";
 import { BookIcon, CheckIcon } from "../ui/icons.tsx";
 import { CARD, FOCUS_RING, TINT } from "../ui/styles.ts";
@@ -379,7 +378,6 @@ export default function StudentHome() {
                 <AiChatPanel moduleId={current.id} />
               ) : (
                 <div className="flex flex-col gap-2 p-5">
-                  <Eyebrow>Teach phase</Eyebrow>
                   <Heading>Helper paused</Heading>
                   <p className="m-0 text-sm text-muted">
                     Follow along with {teacher}. The coding helper is available
