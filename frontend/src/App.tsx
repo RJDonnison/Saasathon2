@@ -117,7 +117,11 @@ export default function App() {
         }
       >
         <Route index element={<TeacherDashboard />} />
-        <Route path="class/:classroomId" element={<TeacherClass />} />
+        <Route path="class/:classroomId" element={<TeacherClass />}>
+          <Route index element={<Navigate to="live" replace />} />
+          <Route path="live" element={null} />
+          <Route path="manage" element={null} />
+        </Route>
         <Route path="modules/new" element={<ModuleBuilder />} />
         <Route path="modules/:id" element={<ModuleBuilder />} />
         <Route
