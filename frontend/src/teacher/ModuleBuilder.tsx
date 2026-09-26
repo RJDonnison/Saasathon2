@@ -1,12 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, ApiClientError } from "../api.ts";
 import Button from "../ui/Button.tsx";
 import Card from "../ui/Card.tsx";
 import Eyebrow from "../ui/Eyebrow.tsx";
 import Heading from "../ui/Heading.tsx";
-import Markdown from "../ui/Markdown.tsx";
 import { INPUT, TINT } from "../ui/styles.ts";
+import { useDialog } from "../ui/DialogContext.tsx";
 import { onModuleDeleted } from "../socket.ts";
 import CodeTestEditor from "./CodeTestEditor.tsx";
 import TeacherCodeEditor from "./TeacherCodeEditor.tsx";
@@ -17,6 +17,8 @@ import type {
   QuestionKind,
   TeacherModule,
 } from "../../../shared/types";
+
+const RichTextEditor = lazy(() => import("./RichTextEditor.tsx"));
 
 const id = () => crypto.randomUUID();
 type BuilderItem = ModuleBuilderDocument["sections"][number]["items"][number];
@@ -70,7 +72,6 @@ function newQuestion(kind: QuestionKind): BuilderQuestion {
           instructions: "",
           hiddenCode: "",
           functionName: "solution",
-          referenceAnswers: [],
           checks: [],
           tests: [],
         }
@@ -120,13 +121,6 @@ function documentFrom(module: TeacherModule): ModuleBuilderDocument {
               instructions: question.codeExercise?.instructions,
               functionName: question.codeExercise?.functionName,
               hiddenCode: question.codeExercise?.hiddenCode,
-              referenceAnswers: question.codeExercise?.referenceAnswers.map(
-                (reference) => ({
-                  id: reference.id,
-                  title: reference.title,
-                  answer: reference.answer,
-                }),
-              ),
               checks: question.codeExercise?.checks.map((check) => ({
                 id: check.id,
                 name: check.name,
@@ -160,10 +154,6 @@ function withFreshIds(document: ModuleBuilderDocument): ModuleBuilderDocument {
               ...item,
               id: id(),
               codeExerciseId: undefined,
-              referenceAnswers: item.referenceAnswers?.map((reference) => ({
-                ...reference,
-                id: id(),
-              })),
               checks: item.checks?.map((check) => ({ ...check, id: id() })),
               tests: item.tests?.map((test) => ({ ...test, id: id() })),
             },
@@ -185,9 +175,7 @@ export default function ModuleBuilder() {
   const [askingAi, setAskingAi] = useState(false);
   const [suggestions, setSuggestions] = useState<AiModuleSuggestion[]>([]);
   const [undo, setUndo] = useState<ModuleBuilderDocument | null>(null);
-  const [introductionTab, setIntroductionTab] = useState<"write" | "preview">(
-    "write",
-  );
+  const { confirm, toast } = useDialog();
 
   useEffect(() => {
     if (!moduleId) return;
@@ -298,6 +286,11 @@ export default function ModuleBuilder() {
           ? "Published changes are live for students."
           : "Draft saved. Students cannot see it.",
       );
+      toast(
+        result.module.status === "published"
+          ? "Module published."
+          : "Draft saved.",
+      );
     } catch (error) {
       setNotice(
         error instanceof ApiClientError && error.status === 409
@@ -314,15 +307,19 @@ export default function ModuleBuilder() {
   async function removeModule() {
     if (
       !moduleId ||
-      !window.confirm(
-        "Permanently delete this module and all of its lesson content?",
-      )
+      !(await confirm({
+        title: "Delete module?",
+        message:
+          "Permanently delete this module and all of its lesson content?",
+        confirmLabel: "Delete module",
+      }))
     )
       return;
     setSaving(true);
     setNotice(null);
     try {
       await api.deleteModule(moduleId);
+      toast("Module deleted.");
       navigate("/teacher", { replace: true });
     } catch (error) {
       setNotice(
@@ -453,14 +450,18 @@ export default function ModuleBuilder() {
                 }
               />
             </label>
-            <MarkdownTabs
-              label="Introduction"
-              value={document.content}
-              tab={introductionTab}
-              onTabChange={setIntroductionTab}
-              onChange={(content) => change((old) => ({ ...old, content }))}
-              placeholder="What will students learn in this module?"
-            />
+            <Suspense
+              fallback={
+                <p className="m-0 text-sm text-muted">Loading editor…</p>
+              }
+            >
+              <RichTextEditor
+                label="Introduction"
+                value={document.content}
+                onChange={(content) => change((old) => ({ ...old, content }))}
+                placeholder="What will students learn in this module?"
+              />
+            </Suspense>
           </Card>
 
           {document.sections.map((section, sectionIndex) => (
@@ -865,120 +866,6 @@ function QuestionEditor({
   );
 }
 
-function MarkdownTabs({
-  label,
-  value,
-  tab,
-  onTabChange,
-  onChange,
-  placeholder,
-}: {
-  label: string;
-  value: string;
-  tab: "write" | "preview";
-  onTabChange: (tab: "write" | "preview") => void;
-  onChange: (value: string) => void;
-  placeholder: string;
-}) {
-  const editorId = `${label.replace(/\s/g, "-").toLowerCase()}-write`;
-  const previewId = `${label.replace(/\s/g, "-").toLowerCase()}-preview`;
-  const insert = (text: string) =>
-    onChange(`${value}${value ? "\n\n" : ""}${text}`);
-  const onTabsKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
-      event.preventDefault();
-      onTabChange(tab === "write" ? "preview" : "write");
-      document.getElementById(tab === "write" ? previewId : editorId)?.focus();
-    }
-  };
-  return (
-    <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="text-sm text-muted">
-          {label} <span className="text-xs">(Markdown supported)</span>
-        </span>
-        <div
-          role="tablist"
-          aria-label={`${label} editor`}
-          className="flex rounded-[10px] border border-border bg-surface-soft p-1"
-          onKeyDown={onTabsKeyDown}
-        >
-          <button
-            id={editorId}
-            type="button"
-            role="tab"
-            aria-selected={tab === "write"}
-            aria-controls={`${editorId}-panel`}
-            tabIndex={tab === "write" ? 0 : -1}
-            className={`rounded-[7px] px-3 py-1.5 text-sm! font-semibold! ${tab === "write" ? "bg-surface text-ink" : "text-muted"}`}
-            onClick={() => onTabChange("write")}
-          >
-            Writing
-          </button>
-          <button
-            id={previewId}
-            type="button"
-            role="tab"
-            aria-selected={tab === "preview"}
-            aria-controls={`${previewId}-panel`}
-            tabIndex={tab === "preview" ? 0 : -1}
-            className={`rounded-[7px] px-3 py-1.5 text-sm! font-semibold! ${tab === "preview" ? "bg-surface text-ink" : "text-muted"}`}
-            onClick={() => onTabChange("preview")}
-          >
-            Preview
-          </button>
-        </div>
-      </div>
-      {tab === "write" ? (
-        <div
-          id={`${editorId}-panel`}
-          role="tabpanel"
-          aria-labelledby={editorId}
-          className="flex flex-col gap-2"
-        >
-          <div className="flex flex-wrap gap-2">
-            <Button size="sm" onClick={() => insert("## Heading")}>
-              + Heading
-            </Button>
-            <Button size="sm" onClick={() => insert("- List item")}>
-              + List
-            </Button>
-            <Button size="sm" onClick={() => insert("**Important idea**")}>
-              + Bold
-            </Button>
-            <Button size="sm" onClick={() => insert("```\nexample code\n```")}>
-              + Code
-            </Button>
-          </div>
-          <label className="sr-only" htmlFor={`${editorId}-input`}>
-            {label}
-          </label>
-          <textarea
-            id={`${editorId}-input`}
-            className={`${INPUT} min-h-28 py-2.5 font-mono! text-[13px]!`}
-            value={value}
-            onChange={(event) => onChange(event.target.value)}
-            placeholder={placeholder}
-          />
-        </div>
-      ) : (
-        <div
-          id={`${previewId}-panel`}
-          role="tabpanel"
-          aria-labelledby={previewId}
-          className="rounded-xl border border-border bg-surface-soft p-4"
-        >
-          {value ? (
-            <Markdown text={value} />
-          ) : (
-            <p className="m-0 text-sm text-muted">Nothing to preview yet.</p>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
 function ReadingEditor({
   item,
   onUpdate,
@@ -986,24 +873,25 @@ function ReadingEditor({
   item: Extract<BuilderItem, { type: "block" }>;
   onUpdate: (patch: (item: BuilderItem) => BuilderItem) => void;
 }) {
-  const [tab, setTab] = useState<"write" | "preview">("write");
   const content =
     typeof item.content === "string"
       ? item.content
       : JSON.stringify(item.content, null, 2);
   return (
-    <MarkdownTabs
-      label="Reading content"
-      value={content}
-      tab={tab}
-      onTabChange={setTab}
-      placeholder="Explain the idea, then add an example…"
-      onChange={(content) =>
-        onUpdate((current) =>
-          current.type === "block" ? { ...current, content } : current,
-        )
-      }
-    />
+    <Suspense
+      fallback={<p className="m-0 text-sm text-muted">Loading editor…</p>}
+    >
+      <RichTextEditor
+        label="Reading content"
+        value={content}
+        placeholder="Explain the idea, then add an example…"
+        onChange={(content) =>
+          onUpdate((current) =>
+            current.type === "block" ? { ...current, content } : current,
+          )
+        }
+      />
+    </Suspense>
   );
 }
 
@@ -1161,7 +1049,7 @@ function CodeExerciseEditor({
   item: BuilderQuestion;
   update: (patch: (question: BuilderQuestion) => BuilderQuestion) => void;
 }) {
-  const references = item.referenceAnswers ?? [];
+  const { confirm } = useDialog();
   const checks = item.checks ?? [];
   const [testRequest, setTestRequest] = useState("");
   const [candidates, setCandidates] = useState<AiCodeTestCandidate[]>([]);
@@ -1171,13 +1059,16 @@ function CodeExerciseEditor({
   const supportedLanguage = isSupportedLanguage(language)
     ? language
     : undefined;
-  const applyTemplate = () => {
+  const applyTemplate = async () => {
     if (!supportedLanguage) return;
     if (
       (item.starterCode ?? "").trim() &&
-      !window.confirm(
-        "Replace the current starter code with this language template?",
-      )
+      !(await confirm({
+        title: "Replace starter code?",
+        message:
+          "Replace the current starter code with this language template?",
+        confirmLabel: "Replace",
+      }))
     )
       return;
     update((question) => ({
@@ -1269,7 +1160,7 @@ function CodeExerciseEditor({
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="text-sm text-muted">Starter code / skeleton</span>
           {supportedLanguage && (
-            <Button size="sm" onClick={applyTemplate}>
+            <Button size="sm" onClick={() => void applyTemplate()}>
               Use {supportedLanguage} template
             </Button>
           )}
@@ -1321,74 +1212,6 @@ function CodeExerciseEditor({
             "// Call the student function and throw when a check fails"
           }
         />
-      </div>
-
-      <div className="flex flex-col gap-3">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <div className="flex flex-col gap-1">
-            <span className="text-sm font-medium text-ink">
-              Reference answers
-            </span>
-            <span className="text-xs text-muted">
-              Teacher-only examples; students never see these.
-            </span>
-          </div>
-          <Button
-            size="sm"
-            onClick={() =>
-              update((question) => ({
-                ...question,
-                referenceAnswers: [
-                  ...(question.referenceAnswers ?? []),
-                  { id: id(), title: "Example solution", answer: "" },
-                ],
-              }))
-            }
-          >
-            + Add reference
-          </Button>
-        </div>
-        {references.map((reference, referenceIndex) => (
-          <div
-            key={reference.id}
-            className="flex flex-col gap-2 rounded-xl bg-surface-soft p-3"
-          >
-            <div className="flex gap-2">
-              <input
-                className={`${INPUT} h-10 min-w-0 flex-1`}
-                value={reference.title}
-                onChange={(event) =>
-                  updateReference(update, referenceIndex, {
-                    title: event.target.value,
-                  })
-                }
-                placeholder="Solution title"
-              />
-              <Button
-                size="sm"
-                onClick={() =>
-                  update((question) => ({
-                    ...question,
-                    referenceAnswers: (question.referenceAnswers ?? []).filter(
-                      (_, currentIndex) => currentIndex !== referenceIndex,
-                    ),
-                  }))
-                }
-              >
-                Remove
-              </Button>
-            </div>
-            <TeacherCodeEditor
-              label={`Reference answer ${referenceIndex + 1}`}
-              language={language}
-              value={reference.answer}
-              onChange={(answer) =>
-                updateReference(update, referenceIndex, { answer })
-              }
-              placeholder="A teacher-only solution…"
-            />
-          </div>
-        ))}
       </div>
 
       <div className="flex flex-col gap-3">
@@ -1643,20 +1466,6 @@ function BuilderTestEditor({
   onRemove: () => void;
 }) {
   return <CodeTestEditor test={test} onChange={onChange} onRemove={onRemove} />;
-}
-
-function updateReference(
-  update: (patch: (question: BuilderQuestion) => BuilderQuestion) => void,
-  index: number,
-  patch: Partial<NonNullable<BuilderQuestion["referenceAnswers"]>[number]>,
-) {
-  update((question) => ({
-    ...question,
-    referenceAnswers: (question.referenceAnswers ?? []).map(
-      (reference, currentIndex) =>
-        currentIndex === index ? { ...reference, ...patch } : reference,
-    ),
-  }));
 }
 
 function updateCheck(

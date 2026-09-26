@@ -14,7 +14,6 @@ import type {
   ModuleProgress,
   Question,
   QuestionOption,
-  ReferenceAnswer,
   Section,
   SectionItem,
   SectionBlock,
@@ -113,13 +112,6 @@ export type TestRow = {
   expected: unknown;
   position: number;
 };
-export type ReferenceRow = {
-  id: string;
-  code_exercise_id: string;
-  title: string;
-  answer: string;
-  position: number;
-};
 export type CheckRow = {
   id: string;
   code_exercise_id: string;
@@ -170,7 +162,10 @@ export type CodeSubmissionRow = {
 };
 
 const iso = (value: string) => new Date(value).toISOString();
-export const toClassroom = (r: ClassroomRow, teacherName: string | null = null): Classroom => ({
+export const toClassroom = (
+  r: ClassroomRow,
+  teacherName: string | null = null,
+): Classroom => ({
   id: r.id,
   name: r.name,
   teacherName,
@@ -198,7 +193,10 @@ export const toInvitation = (r: InvitationRow): ClassroomInvitation => ({
   createdAt: r.created_at,
   respondedAt: r.responded_at,
 });
-export const toSession = (r: SessionRow, moduleTitle: string): LessonSession => ({
+export const toSession = (
+  r: SessionRow,
+  moduleTitle: string,
+): LessonSession => ({
   id: r.id,
   classroomId: r.classroom_id,
   moduleId: r.module_id,
@@ -263,13 +261,6 @@ export const toTest = (r: TestRow): CodeTest => ({
   name: r.name,
   args: r.args as unknown[],
   expected: r.expected,
-  position: r.position,
-});
-export const toReference = (r: ReferenceRow): ReferenceAnswer => ({
-  id: r.id,
-  codeExerciseId: r.code_exercise_id,
-  title: r.title,
-  answer: r.answer,
   position: r.position,
 });
 export const toCheck = (r: CheckRow): CodeCheck => ({

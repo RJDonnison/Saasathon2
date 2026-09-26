@@ -36,7 +36,6 @@ import {
   unwrap,
   type ExerciseRow,
   type ModuleRow,
-  type ReferenceRow,
   type TestRow,
 } from "../rows.js";
 
@@ -93,7 +92,6 @@ function codeTestContext(
   exercise: ExerciseRow,
   prompt: string,
   tests: TestRow[],
-  references: ReferenceRow[],
 ): string {
   const out = [
     `Language: ${exercise.language}`,
@@ -107,8 +105,6 @@ function codeTestContext(
     out.push(
       `Existing test: ${JSON.stringify({ name: test.name, args: test.args, expected: test.expected })}`,
     );
-  for (const reference of references)
-    out.push(`Reference answer (${reference.title}):\n${reference.answer}`);
   return out.join("\n");
 }
 
@@ -134,7 +130,7 @@ const rateLimit: RequestHandler = (req, res, next) => {
 };
 
 // Loading a module is several sequential DB queries (~1s), so the student-safe view is cached briefly.
-// Only that view (no answer keys, reference answers or checks) is cached; the caller's classroom check
+// Only that view (no answer keys or checks) is cached; the caller's classroom check
 // still runs on every request. Teacher drafting is deliberately uncached so edits show up immediately.
 const CONTEXT_TTL_MS = 60_000;
 const contextCache = new Map<
@@ -146,7 +142,7 @@ async function studentViewFor(
 ): Promise<{ text: string; module: StudentModule }> {
   const hit = contextCache.get(row.id);
   if (hit && hit.expires > Date.now()) return hit;
-  // teacher=false: the aggregate is loaded WITHOUT answer keys, reference answers or checks.
+  // teacher=false: the aggregate is loaded WITHOUT answer keys or checks.
   const module = (await aggregate(row, false)) as StudentModule;
   const entry = {
     text: studentModuleContext(module),
@@ -466,26 +462,14 @@ aiRouter.post(
       res.status(404).json({ error: "Exercise not found" });
       return;
     }
-    const [testsResult, referencesResult] = await Promise.all([
-      supabase
+    const tests = unwrap(
+      await supabase
         .from("code_tests")
         .select("*")
         .eq("code_exercise_id", exercise.id)
         .order("position"),
-      supabase
-        .from("reference_answers")
-        .select("*")
-        .eq("code_exercise_id", exercise.id)
-        .order("position"),
-    ]);
-    const tests = unwrap(testsResult) as TestRow[];
-    const references = unwrap(referencesResult) as ReferenceRow[];
-    const context = codeTestContext(
-      exercise,
-      exercise.questions.prompt,
-      tests,
-      references,
-    );
+    ) as TestRow[];
+    const context = codeTestContext(exercise, exercise.questions.prompt, tests);
     await reply(res, async () => {
       const raw = await complete({
         system: codeTestSystemPrompt(context),

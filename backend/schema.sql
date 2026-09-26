@@ -204,10 +204,6 @@ alter table code_tests add column if not exists name text not null default 'Unti
 create index if not exists code_tests_exercise_position_idx on code_tests (code_exercise_id, position, id);
 -- Existing projects have this table already, so the additive upgrade must follow the create statement.
 alter table code_exercises add column if not exists hidden_code text not null default '';
-create table if not exists reference_answers (
-  id text primary key, code_exercise_id text not null references code_exercises(id) on delete cascade,
-  title text not null, answer text not null, position integer not null default 0
-);
 create table if not exists code_checks (
   id text primary key, code_exercise_id text not null references code_exercises(id) on delete cascade,
   name text not null, description text not null, position integer not null default 0
@@ -258,13 +254,13 @@ alter table classroom_invitations enable row level security; alter table classro
 alter table sections enable row level security; alter table section_blocks enable row level security;
 alter table section_items enable row level security;
 alter table questions enable row level security; alter table question_options enable row level security;
-alter table code_exercises enable row level security; alter table reference_answers enable row level security;
+alter table code_exercises enable row level security;
 alter table code_checks enable row level security; alter table module_progress enable row level security;
 alter table code_tests enable row level security;
 alter table section_progress enable row level security; alter table attempts enable row level security;
 alter table code_submissions enable row level security; alter table comments enable row level security;
 
--- Demo: a complete small lesson with authored answers/checks and student activity.
+-- Demo: a complete small lesson with authored checks and student activity.
 insert into classrooms (id, name) values ('classroom-demo','Demo Classroom') on conflict do nothing;
 insert into users (id,name) values ('teacher-1','Ms. Rivera'),('student-1','Alex'),('student-2','Sam') on conflict do nothing;
 insert into memberships (id,user_id,classroom_id,role) values
@@ -275,7 +271,6 @@ insert into section_blocks values ('block-1','section-1','markdown','"Use const 
 insert into questions values ('question-1','section-1','Which keyword declares a block-scoped variable?','mcq','let',1),('question-2','section-1','What is the type of true?','short','boolean',2),('question-3','section-2','Write a function that adds two numbers.','code',null,1) on conflict do nothing;
 insert into question_options values ('option-1','question-1','var',1),('option-2','question-1','let',2),('option-3','question-1','goto',3) on conflict do nothing;
 insert into code_exercises values ('exercise-1','question-3','javascript','function add(a, b) {\n  // your code\n}','Return the sum of a and b.','') on conflict do nothing;
-insert into reference_answers values ('reference-1','exercise-1','Concise solution','function add(a, b) { return a + b; }',1),('reference-2','exercise-1','Arrow function','const add = (a, b) => a + b;',2) on conflict do nothing;
 insert into code_checks values ('check-1','exercise-1','Adds positives','add(2, 3) returns 5',1),('check-2','exercise-1','Adds negatives','add(-2, 3) returns 1',2) on conflict do nothing;
 insert into module_progress values ('module-progress-1','student-1','module-1','in_progress',now()) on conflict do nothing;
 insert into section_progress values ('section-progress-1','student-1','section-1','completed',now()) on conflict do nothing;
@@ -483,134 +478,6 @@ insert into code_exercises (id, question_id, language, starter_code, instruction
   return total;
 }', 'totalLegs([{ name: "Rex", legs: 4 }, { name: "Tweety", legs: 2 }]) should return 6.')
 on conflict do nothing;
-insert into reference_answers (id, code_exercise_id, title, answer, position) values
-  ('fn-x4-r1', 'fn-x4', 'Concise solution', 'function double(n) {
-  return n * 2;
-}', 1),
-  ('fn-x4-r2', 'fn-x4', 'Arrow function', 'const double = (n) => n * 2;', 2),
-  ('fn-x5-r1', 'fn-x5', 'Comparison', 'function isEven(n) {
-  return n % 2 === 0;
-}', 1),
-  ('fn-x5-r2', 'fn-x5', 'Arrow function', 'const isEven = (n) => n % 2 === 0;', 2),
-  ('fn-x6-r1', 'fn-x6', 'String concatenation', 'function greet(name) {
-  return "Hello, " + name + "!";
-}', 1),
-  ('fn-x6-r2', 'fn-x6', 'Template literal', 'function greet(name) {
-  return `Hello, ${name}!`;
-}', 2),
-  ('cond-x4-r1', 'cond-x4', 'if / else if', 'function sign(n) {
-  if (n < 0) {
-    return "negative";
-  } else if (n === 0) {
-    return "zero";
-  } else {
-    return "positive";
-  }
-}', 1),
-  ('cond-x5-r1', 'cond-x5', 'if / else if chain', 'function grade(score) {
-  if (score >= 90) {
-    return "A";
-  } else if (score >= 80) {
-    return "B";
-  } else if (score >= 70) {
-    return "C";
-  }
-  return "F";
-}', 1),
-  ('cond-x6-r1', 'cond-x6', 'Using ||', 'function canRide(height, hasAdult) {
-  return height >= 120 || hasAdult;
-}', 1),
-  ('loop-x4-r1', 'loop-x4', 'for loop', 'function sumTo(n) {
-  let total = 0;
-  for (let i = 1; i <= n; i++) {
-    total = total + i;
-  }
-  return total;
-}', 1),
-  ('loop-x4-r2', 'loop-x4', 'Formula (no loop)', 'function sumTo(n) {
-  return (n * (n + 1)) / 2;
-}', 2),
-  ('loop-x5-r1', 'loop-x5', 'for loop', 'function factorial(n) {
-  let result = 1;
-  for (let i = 2; i <= n; i++) {
-    result = result * i;
-  }
-  return result;
-}', 1),
-  ('loop-x5-r2', 'loop-x5', 'while loop', 'function factorial(n) {
-  let result = 1;
-  while (n > 1) {
-    result = result * n;
-    n--;
-  }
-  return result;
-}', 2),
-  ('loop-x6-r1', 'loop-x6', 'Loop and if', 'function countEvens(limit) {
-  let count = 0;
-  for (let i = 1; i <= limit; i++) {
-    if (i % 2 === 0) {
-      count++;
-    }
-  }
-  return count;
-}', 1),
-  ('loop-x6-r2', 'loop-x6', 'Arithmetic (no loop)', 'function countEvens(limit) {
-  return Math.floor(limit / 2);
-}', 2),
-  ('arr-x4-r1', 'arr-x4', 'for...of', 'function sumArray(numbers) {
-  let total = 0;
-  for (const n of numbers) {
-    total = total + n;
-  }
-  return total;
-}', 1),
-  ('arr-x5-r1', 'arr-x5', 'Start from the first item', 'function largest(numbers) {
-  let max = numbers[0];
-  for (const n of numbers) {
-    if (n > max) {
-      max = n;
-    }
-  }
-  return max;
-}', 1),
-  ('arr-x5-r2', 'arr-x5', 'Spread with Math.max', 'function largest(numbers) {
-  return Math.max(...numbers);
-}', 2),
-  ('arr-x6-r1', 'arr-x6', 'Loop and push', 'function evens(numbers) {
-  const result = [];
-  for (const n of numbers) {
-    if (n % 2 === 0) {
-      result.push(n);
-    }
-  }
-  return result;
-}', 1),
-  ('arr-x6-r2', 'arr-x6', 'filter', 'function evens(numbers) {
-  return numbers.filter((n) => n % 2 === 0);
-}', 2),
-  ('obj-x4-r1', 'obj-x4', 'Explicit', 'function makeStudent(name, age) {
-  return { name: name, age: age };
-}', 1),
-  ('obj-x4-r2', 'obj-x4', 'Shorthand', 'function makeStudent(name, age) {
-  return { name, age };
-}', 2),
-  ('obj-x5-r1', 'obj-x5', 'Track the oldest so far', 'function oldest(people) {
-  let best = people[0];
-  for (const person of people) {
-    if (person.age > best.age) {
-      best = person;
-    }
-  }
-  return best.name;
-}', 1),
-  ('obj-x6-r1', 'obj-x6', 'for...of', 'function totalLegs(pets) {
-  let total = 0;
-  for (const pet of pets) {
-    total = total + pet.legs;
-  }
-  return total;
-}', 1)
-on conflict do nothing;
 insert into code_checks (id, code_exercise_id, name, description, position) values
   ('fn-x4-c1', 'fn-x4', 'Doubles a positive number', 'double(4) returns 8', 1),
   ('fn-x4-c2', 'fn-x4', 'Handles zero', 'double(0) returns 0', 2),
@@ -705,11 +572,6 @@ insert into code_exercises (id, question_id, language, starter_code, instruction
   ('py-x6', 'py-q6', 'python', 'def sum_to(limit):\n    total = 0\n    # Write your code here\n    return total', 'Use `range` and an accumulator. For example, `sum_to(4)` should return 10.')
 on conflict do nothing;
 
-insert into reference_answers (id, code_exercise_id, title, answer, position) values
-  ('py-x4-r1', 'py-x4', 'Direct return', 'def double(number):\n    return number * 2', 1),
-  ('py-x5-r1', 'py-x5', 'Remainder comparison', 'def is_even(number):\n    return number % 2 == 0', 1),
-  ('py-x6-r1', 'py-x6', 'for loop and accumulator', 'def sum_to(limit):\n    total = 0\n    for number in range(1, limit + 1):\n        total = total + number\n    return total', 1)
-on conflict do nothing;
 
 insert into code_checks (id, code_exercise_id, name, description, position) values
   ('py-x4-c1', 'py-x4', 'Doubles a positive number', 'double(4) returns 8', 1),
@@ -738,3 +600,221 @@ set name = case id
   else name
 end
 where id in ('fn-x4-t1', 'fn-x4-t2', 'fn-x4-t3') and name = 'Untitled check';
+
+drop table if exists reference_answers;
+
+-- ============================================================================
+-- WYSIWYG rollout foundation. Run this script only after the backend containing
+-- the matching RPC call has been deployed. The reset is deliberately opt-in:
+-- call `select full_dev_wysiwyg_reset()` once in a development project.
+-- ============================================================================
+create table if not exists schema_migration_ledger (
+  name text primary key,
+  applied_at timestamptz not null default now()
+);
+
+create or replace function full_dev_wysiwyg_reset()
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  -- The lock and ledger make concurrent/repeated dashboard calls harmless.
+  perform pg_advisory_xact_lock(hashtext('full-dev-wysiwyg-reset-v1'));
+  if exists (select 1 from schema_migration_ledger where name = 'full-dev-wysiwyg-reset-v1') then
+    return false;
+  end if;
+
+  -- section_items has no FK to its polymorphic item_id, so it must be cleared first.
+  delete from section_items where item_type = 'block';
+  delete from section_blocks;
+  update modules set content = '';
+
+  -- Replacement sample material is intentionally restricted to fixed demo rows.
+  update modules
+  set content = 'This lesson uses the rich-text lesson format.'
+  where id = 'module-1' and classroom_id = 'classroom-demo';
+  insert into section_blocks (id, section_id, type, content, position)
+  select 'wysiwyg-demo-block-1', 'section-1', 'markdown',
+         to_jsonb('## Variables\n\nUse `const` for values that do not change.'::text), 0
+  where exists (select 1 from sections where id = 'section-1' and module_id = 'module-1')
+  on conflict (id) do nothing;
+  insert into section_items (id, section_id, item_type, item_id, position)
+  select 'wysiwyg-demo-item-1', 'section-1', 'block', 'wysiwyg-demo-block-1', 0
+  where exists (select 1 from section_blocks where id = 'wysiwyg-demo-block-1')
+  on conflict (section_id, item_type, item_id) do update set position = excluded.position;
+
+  insert into schema_migration_ledger (name) values ('full-dev-wysiwyg-reset-v1');
+  return true;
+end;
+$$;
+
+-- Reconciles one complete builder document atomically. Existing IDs are updated
+-- in place; omitted IDs are explicit removals. It never cascades student work.
+create or replace function save_module_builder(
+  p_module_id text,
+  p_classroom_id text,
+  p_revision integer,
+  p_document jsonb
+)
+returns setof modules
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_section jsonb;
+  v_item jsonb;
+  v_section_id text;
+  v_item_id text;
+  v_section_position integer;
+  v_item_position integer;
+  v_exercise_id text;
+  v_check jsonb;
+  v_test jsonb;
+  v_check_position integer;
+  v_test_position integer;
+  v_check_ids text[];
+  v_test_ids text[];
+  v_sections text[] := '{}';
+  v_blocks text[] := '{}';
+  v_questions text[] := '{}';
+  v_module modules%rowtype;
+begin
+  select * into v_module from modules
+  where id = p_module_id and classroom_id = p_classroom_id and revision = p_revision
+  for update;
+  if not found then return; end if;
+
+  -- Gather IDs first so every supplied existing record can be class-scoped.
+  for v_section in select value from jsonb_array_elements(coalesce(p_document->'sections', '[]'::jsonb)) loop
+    v_section_id := v_section->>'id';
+    if v_section_id is null or v_section_id = '' then raise exception 'A section id is required'; end if;
+    v_sections := array_append(v_sections, v_section_id);
+    for v_item in select value from jsonb_array_elements(coalesce(v_section->'items', '[]'::jsonb)) loop
+      v_item_id := v_item->>'id';
+      if v_item_id is null or v_item_id = '' then raise exception 'An item id is required'; end if;
+      if v_item->>'type' = 'block' then v_blocks := array_append(v_blocks, v_item_id);
+      elsif v_item->>'type' = 'question' then v_questions := array_append(v_questions, v_item_id);
+      else raise exception 'Unknown section item type'; end if;
+    end loop;
+  end loop;
+  if cardinality(v_sections) <> cardinality(array(select distinct unnest(v_sections)))
+     or cardinality(v_blocks) <> cardinality(array(select distinct unnest(v_blocks)))
+     or cardinality(v_questions) <> cardinality(array(select distinct unnest(v_questions))) then
+    raise exception 'Builder document contains duplicate ids';
+  end if;
+  if exists (select 1 from sections where id = any(v_sections) and module_id <> p_module_id)
+     or exists (select 1 from section_blocks b join sections s on s.id=b.section_id where b.id = any(v_blocks) and s.module_id <> p_module_id)
+     or exists (select 1 from questions q join sections s on s.id=q.section_id where q.id = any(v_questions) and s.module_id <> p_module_id) then
+    raise exception 'Builder document contains an item from another module';
+  end if;
+
+  -- Refuse removals that would cause FK cascades into immutable student history.
+  if exists (
+    select 1 from questions q join sections s on s.id=q.section_id
+    where s.module_id=p_module_id and not (q.id = any(v_questions))
+      and (exists (select 1 from attempts a where a.question_id=q.id)
+        or exists (select 1 from code_exercises e join code_submissions cs on cs.code_exercise_id=e.id where e.question_id=q.id))
+  ) then raise exception 'Cannot remove questions with student attempts or submissions'; end if;
+
+  -- Remove only IDs omitted from the document, in polymorphic/FK-safe order.
+  delete from section_items i using sections s
+  where i.section_id=s.id and s.module_id=p_module_id
+    and ((i.item_type='block' and not (i.item_id = any(v_blocks)))
+      or (i.item_type='question' and not (i.item_id = any(v_questions))));
+  delete from section_blocks b using sections s
+  where b.section_id=s.id and s.module_id=p_module_id and not (b.id = any(v_blocks));
+  delete from questions q using sections s
+  where q.section_id=s.id and s.module_id=p_module_id and not (q.id = any(v_questions));
+  delete from sections where module_id=p_module_id and not (id = any(v_sections));
+
+  -- Move positions out of the unique range before reconciling the mixed sequence.
+  update section_items i set position = -position - 1 from sections s
+  where i.section_id=s.id and s.module_id=p_module_id;
+  v_section_position := 0;
+  for v_section in select value from jsonb_array_elements(coalesce(p_document->'sections', '[]'::jsonb)) loop
+    v_section_id := v_section->>'id';
+    insert into sections (id, module_id, title, position)
+    values (v_section_id, p_module_id, coalesce(nullif(trim(v_section->>'title'), ''), 'Untitled section'), v_section_position)
+    on conflict (id) do update set title=excluded.title, position=excluded.position;
+    v_item_position := 0;
+    for v_item in select value from jsonb_array_elements(coalesce(v_section->'items', '[]'::jsonb)) loop
+      v_item_id := v_item->>'id';
+      if v_item->>'type' = 'block' then
+        update section_items set section_id=v_section_id, position=v_item_position
+        where item_type='block' and item_id=v_item_id;
+        insert into section_blocks (id, section_id, type, content, position)
+        values (v_item_id, v_section_id, v_item->>'blockType', v_item->'content', v_item_position)
+        on conflict (id) do update set section_id=excluded.section_id, type=excluded.type, content=excluded.content, position=excluded.position;
+        insert into section_items (id, section_id, item_type, item_id, position)
+        values ('builder-item-' || v_item_id, v_section_id, 'block', v_item_id, v_item_position)
+        on conflict (section_id, item_type, item_id) do update set position=excluded.position;
+      else
+        update section_items set section_id=v_section_id, position=v_item_position
+        where item_type='question' and item_id=v_item_id;
+        insert into questions (id, section_id, prompt, kind, answer_key, math_expected_result, math_tolerance, position)
+        values (v_item_id, v_section_id, v_item->>'prompt', v_item->>'kind', v_item->>'answerKey',
+                case when v_item ? 'mathExpectedResult' then (v_item->>'mathExpectedResult')::double precision end,
+                case when v_item ? 'mathTolerance' then (v_item->>'mathTolerance')::double precision end, v_item_position)
+        on conflict (id) do update set section_id=excluded.section_id, prompt=excluded.prompt, kind=excluded.kind,
+          answer_key=excluded.answer_key, math_expected_result=excluded.math_expected_result,
+          math_tolerance=excluded.math_tolerance, position=excluded.position;
+        insert into section_items (id, section_id, item_type, item_id, position)
+        values ('builder-item-' || v_item_id, v_section_id, 'question', v_item_id, v_item_position)
+        on conflict (section_id, item_type, item_id) do update set position=excluded.position;
+        if v_item->>'kind' = 'code' then
+          insert into code_exercises (id, question_id, language, starter_code, instructions, function_name, hidden_code)
+          values ('exercise-' || v_item_id, v_item_id, coalesce(v_item->>'language', 'javascript'),
+                  coalesce(v_item->>'starterCode', ''), coalesce(v_item->>'instructions', ''),
+                  coalesce(v_item->>'functionName', 'solution'), coalesce(v_item->>'hiddenCode', ''))
+          on conflict (question_id) do update set language=excluded.language, starter_code=excluded.starter_code,
+            instructions=excluded.instructions, function_name=excluded.function_name, hidden_code=excluded.hidden_code;
+          select id into v_exercise_id from code_exercises where question_id=v_item_id;
+
+          -- Checks and tests expose stable IDs in the builder contract, so their
+          -- omission is an explicit removal rather than a delete/recreate save.
+          v_check_ids := '{}';
+          v_check_position := 0;
+          for v_check in select value from jsonb_array_elements(coalesce(v_item->'checks', '[]'::jsonb)) loop
+            if coalesce(v_check->>'id', '') = '' then raise exception 'A code check id is required'; end if;
+            if exists (select 1 from code_checks c join code_exercises e on e.id=c.code_exercise_id join questions q on q.id=e.question_id join sections s on s.id=q.section_id where c.id=v_check->>'id' and s.module_id<>p_module_id) then
+              raise exception 'Builder document contains a check from another module';
+            end if;
+            v_check_ids := array_append(v_check_ids, v_check->>'id');
+            insert into code_checks (id, code_exercise_id, name, description, position)
+            values (v_check->>'id', v_exercise_id, v_check->>'name', v_check->>'description', v_check_position)
+            on conflict (id) do update set code_exercise_id=excluded.code_exercise_id, name=excluded.name,
+              description=excluded.description, position=excluded.position;
+            v_check_position := v_check_position + 1;
+          end loop;
+          delete from code_checks where code_exercise_id=v_exercise_id and not (id = any(v_check_ids));
+
+          v_test_ids := '{}';
+          v_test_position := 0;
+          for v_test in select value from jsonb_array_elements(coalesce(v_item->'tests', '[]'::jsonb)) loop
+            if coalesce(v_test->>'id', '') = '' then raise exception 'A code test id is required'; end if;
+            if exists (select 1 from code_tests t join code_exercises e on e.id=t.code_exercise_id join questions q on q.id=e.question_id join sections s on s.id=q.section_id where t.id=v_test->>'id' and s.module_id<>p_module_id) then
+              raise exception 'Builder document contains a test from another module';
+            end if;
+            v_test_ids := array_append(v_test_ids, v_test->>'id');
+            insert into code_tests (id, code_exercise_id, name, args, expected, position)
+            values (v_test->>'id', v_exercise_id, v_test->>'name', v_test->'args', v_test->'expected', v_test_position)
+            on conflict (id) do update set code_exercise_id=excluded.code_exercise_id, name=excluded.name,
+              args=excluded.args, expected=excluded.expected, position=excluded.position;
+            v_test_position := v_test_position + 1;
+          end loop;
+          delete from code_tests where code_exercise_id=v_exercise_id and not (id = any(v_test_ids));
+        end if;
+      end if;
+      v_item_position := v_item_position + 1;
+    end loop;
+    v_section_position := v_section_position + 1;
+  end loop;
+
+  update modules set title=trim(p_document->>'title'), content=p_document->>'content',
+    status=p_document->>'status', revision=revision+1 where id=p_module_id;
+  return query select * from modules where id=p_module_id;
+end;
+$$;

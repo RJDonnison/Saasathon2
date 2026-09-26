@@ -99,8 +99,8 @@ module itself (scoped to the caller's classroom), so clients can't inject or swa
   unsaved `draft` as context. Replies in Markdown. No UI yet: the teacher dashboard calls `api.aiDraft`.
 - **Never give the student prompt answer material.** The student context is built only from the
   student-safe module aggregate (`aggregate(module, false)` → `studentModuleContext`), which excludes
-  answer keys, reference answers and checks. Keep it that way; don't add those fields to it. (The teacher
-  prompt does include them — it's the teacher's own material.)
+   answer keys and checks. Keep it that way; don't add those fields to it. (The teacher prompt does include
+   them — it's the teacher's own material.)
 - The hint behaviour lives in `hintSystemPrompt`; change tutoring style there. Prompt quality is best judged
   against a real model — tune it with real conversations.
 - Config: `OPENAI_API_KEY` (no key -> the AI routes return 503 with a clear message; the rest of the app
