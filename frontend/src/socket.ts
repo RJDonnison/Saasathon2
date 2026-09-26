@@ -2,7 +2,7 @@ import { io, type Socket } from "socket.io-client";
 import type {
   ClientToServerEvents,
   PresenceUpdatePayload,
-  RaiseHandPayload,
+  RaisedHandsUpdatePayload,
   ServerToClientEvents,
   StudentStatusUpdatePayload,
   ModuleChangedPayload,
@@ -27,6 +27,15 @@ socket.on("connect_error", (err) =>
   console.warn("[socket] connect_error:", err.message),
 );
 
+// Cache the most recent snapshot. Socket setup happens above page components, so this avoids
+// losing the initial snapshot when a route mounts just after the connection succeeds.
+let currentRaisedHands: RaisedHandsUpdatePayload | null = null;
+const raisedHandsListeners = new Set<(p: RaisedHandsUpdatePayload) => void>();
+socket.on("raised_hands_update", (payload) => {
+  currentRaisedHands = payload;
+  for (const listener of raisedHandsListeners) listener(payload);
+});
+
 /** Open the connection. Call only once signed in and in a classroom — the server rejects the handshake otherwise. */
 export function connectSocket() {
   if (!socket.connected) socket.connect();
@@ -34,13 +43,24 @@ export function connectSocket() {
 
 export function disconnectSocket() {
   socket.disconnect();
+  currentRaisedHands = null;
 }
 
 // ---- emit helpers (dropped when not connected, rather than buffered) ----
 
-export function emitRaiseHand(studentId: string, classroomId: string) {
-  if (!socket.connected) return;
+export function emitRaiseHand(studentId: string, classroomId: string): boolean {
+  if (!socket.connected) return false;
   socket.emit("raise_hand", { type: "raise_hand", studentId, classroomId });
+  return true;
+}
+
+export function emitAcknowledgeHand(studentId: string, classroomId: string) {
+  if (!socket.connected) return;
+  socket.emit("acknowledge_hand", {
+    type: "acknowledge_hand",
+    studentId,
+    classroomId,
+  });
 }
 
 export function emitStudentStatusUpdate(
@@ -52,9 +72,12 @@ export function emitStudentStatusUpdate(
 
 // ---- listeners; each returns an unsubscribe function ----
 
-export function onRaiseHand(cb: (p: RaiseHandPayload) => void): () => void {
-  socket.on("raise_hand", cb);
-  return () => void socket.off("raise_hand", cb);
+export function onRaisedHandsUpdate(
+  cb: (p: RaisedHandsUpdatePayload) => void,
+): () => void {
+  raisedHandsListeners.add(cb);
+  if (currentRaisedHands) cb(currentRaisedHands);
+  return () => void raisedHandsListeners.delete(cb);
 }
 
 export function onStudentStatusUpdate(

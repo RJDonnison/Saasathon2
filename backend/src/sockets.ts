@@ -6,6 +6,7 @@ import type {
   ClientToServerEvents,
   ModuleChangedPayload,
   PresenceUpdatePayload,
+  RaisedHandsUpdatePayload,
   ServerToClientEvents,
 } from "../../shared/events.js";
 
@@ -25,6 +26,8 @@ type AppSocket = Socket<
 
 // In-memory presence: classroomId -> studentId -> number of open sockets (handles multiple tabs).
 const online = new Map<string, Map<string, number>>();
+// Unacknowledged hands survive page navigation and reconnects while this server is running.
+const raisedHands = new Map<string, Map<string, number>>();
 let appIo: AppServer | null = null;
 export function emitModuleChanged(payload: ModuleChangedPayload) {
   appIo?.to(payload.classroomId).emit("module_changed", payload);
@@ -40,6 +43,17 @@ function presencePayload(classroomId: string): PresenceUpdatePayload {
     classroomId,
     onlineStudentIds: onlineStudentIds(classroomId),
   };
+}
+
+function raisedHandsPayload(classroomId: string): RaisedHandsUpdatePayload {
+  const hands = [...(raisedHands.get(classroomId)?.entries() ?? [])]
+    .map(([studentId, raisedAt]) => ({ studentId, raisedAt }))
+    .sort((a, b) => b.raisedAt - a.raisedAt);
+  return { type: "raised_hands_update", classroomId, hands };
+}
+
+function emitRaisedHands(classroomId: string) {
+  appIo?.to(classroomId).emit("raised_hands_update", raisedHandsPayload(classroomId));
 }
 
 export function attachSockets(httpServer: HttpServer): AppServer {
@@ -80,6 +94,9 @@ export function attachSockets(httpServer: HttpServer): AppServer {
     }
     // Everyone (including the joining socket) gets the current presence list.
     io.to(classroomId).emit("presence_update", presencePayload(classroomId));
+    // Send a snapshot directly so a page that mounts after the socket connects still learns
+    // about hands that have not yet been acknowledged.
+    socket.emit("raised_hands_update", raisedHandsPayload(classroomId));
 
     // The server trusts the token, not the payload: students can only speak as themselves,
     // in their own classroom.
@@ -90,11 +107,24 @@ export function attachSockets(httpServer: HttpServer): AppServer {
 
     socket.on("raise_hand", (payload) => {
       if (!isValidSender(payload?.studentId, payload?.classroomId)) return;
-      io.to(classroomId).emit("raise_hand", {
-        type: "raise_hand",
-        studentId: userId,
-        classroomId,
-      });
+      const hands = raisedHands.get(classroomId) ?? new Map<string, number>();
+      // Re-raising is idempotent: it keeps the original request time until a teacher helps.
+      if (!hands.has(userId)) hands.set(userId, Date.now());
+      raisedHands.set(classroomId, hands);
+      emitRaisedHands(classroomId);
+    });
+
+    socket.on("acknowledge_hand", (payload) => {
+      if (
+        role !== "teacher" ||
+        payload?.classroomId !== classroomId ||
+        typeof payload?.studentId !== "string"
+      )
+        return;
+      const hands = raisedHands.get(classroomId);
+      if (!hands?.delete(payload.studentId)) return;
+      if (hands.size === 0) raisedHands.delete(classroomId);
+      emitRaisedHands(classroomId);
     });
 
     socket.on("student_status_update", (payload) => {
