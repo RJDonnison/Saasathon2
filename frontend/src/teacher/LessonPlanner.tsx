@@ -1,33 +1,40 @@
-import { useState, type FormEvent } from 'react'
-import { api } from '../api.ts'
-import Button from '../ui/Button.tsx'
-import Card from '../ui/Card.tsx'
-import Markdown from '../ui/Markdown.tsx'
-import { SparklesIcon } from '../ui/icons.tsx'
-import { INPUT, TINT } from '../ui/styles.ts'
+import { useState, type FormEvent } from "react";
+import { useNavigate } from "react-router-dom";
+import { api } from "../api.ts";
+import Button from "../ui/Button.tsx";
+import Card from "../ui/Card.tsx";
+import { SparklesIcon } from "../ui/icons.tsx";
+import { INPUT, TINT } from "../ui/styles.ts";
+import { createBlankModuleDocument } from "./moduleBuilderDocument.ts";
 
-/** Asks the AI drafting assistant (POST /api/ai/draft) for a lesson plan. The plan is a starting point to copy from. */
+/** Creates a structured lesson draft, then opens it in the module builder for review. */
 export default function LessonPlanner() {
-  const [topic, setTopic] = useState('')
-  const [level, setLevel] = useState('beginner')
-  const [busy, setBusy] = useState(false)
-  const [plan, setPlan] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const navigate = useNavigate();
+  const [topic, setTopic] = useState("");
+  const [level, setLevel] = useState("beginner");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function draft(event: FormEvent) {
-    event.preventDefault()
-    if (!topic.trim()) return
-    setBusy(true)
-    setError(null)
+    event.preventDefault();
+    if (!topic.trim()) return;
+    setBusy(true);
+    setError(null);
     try {
-      const { reply } = await api.aiDraft({
-        request: `Draft a lesson plan on "${topic.trim()}" for ${level} students in a coding classroom. Include learning goals, a short reading, a few practice exercises, and a quick check for understanding.`,
-      })
-      setPlan(reply)
+      const { suggestions } = await api.aiModuleSuggestions({
+        document: createBlankModuleDocument(),
+        request: `Create a complete lesson on "${topic.trim()}" for ${level} students in a coding classroom. Include learning goals in the introduction, a short reading, a few practice exercises, and a quick check for understanding. Fill in the complete module document so the teacher can review and edit it.`,
+      });
+      const document = suggestions[0]?.document;
+      if (!document) {
+        setError("The assistant could not make a usable lesson draft. Please try again.");
+        return;
+      }
+      navigate("/teacher/modules/new", { state: { plannerDocument: document } });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not draft a plan')
+      setError(err instanceof Error ? err.message : "Could not draft a lesson");
     } finally {
-      setBusy(false)
+      setBusy(false);
     }
   }
 
@@ -46,14 +53,9 @@ export default function LessonPlanner() {
             <option value="advanced">Advanced</option>
           </select>
         </label>
-        <Button type="submit" variant="primary" disabled={busy || !topic.trim()} className="h-10">{busy ? 'Drafting…' : 'Draft lesson plan'}</Button>
+        <Button type="submit" variant="primary" disabled={busy || !topic.trim()} className="h-10">{busy ? "Creating…" : "Create lesson"}</Button>
       </form>
       {error && <p role="alert" className={`m-0 rounded-xl px-4 py-3 text-sm ${TINT.peach}`}>{error}</p>}
-      {plan && (
-        <div className="flex flex-col gap-3 rounded-xl border border-border bg-surface-soft p-5">
-          <Markdown text={plan} />
-        </div>
-      )}
     </Card>
-  )
+  );
 }

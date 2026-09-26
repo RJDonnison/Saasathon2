@@ -822,7 +822,7 @@ begin
   delete from sections where module_id=p_module_id and not (id = any(v_sections));
 
   -- Move positions out of the unique range before reconciling the mixed sequence.
-  update section_items i set position = -position - 1 from sections s
+  update section_items i set position = -i.position - 1 from sections s
   where i.section_id=s.id and s.module_id=p_module_id;
   v_section_position := 0;
   for v_section in select value from jsonb_array_elements(coalesce(p_document->'sections', '[]'::jsonb)) loop
