@@ -102,6 +102,8 @@ export interface ModuleChangedPayload {
 export interface QuestionCommentCreatedPayload {
   type: "question_comment_created";
   classroomId: string;
+  /** The lesson containing the question, so the recipient can open the feedback in context. */
+  moduleId: string;
   comment: QuestionComment;
 }
 

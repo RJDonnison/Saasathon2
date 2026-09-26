@@ -6,6 +6,7 @@ import { useClassroomPresence } from "../hooks/useClassroomPresence.ts";
 import { useLiveSession } from "../useLiveSession.ts";
 import ModuleView from "./ModuleView.tsx";
 import AiChatPanel from "./AiChatPanel.tsx";
+import InvitationBell from "./InvitationBell.tsx";
 import RaiseHandButton from "./RaiseHandButton.tsx";
 import { WorkspaceProvider } from "./WorkspaceContext.tsx";
 import Button from "../ui/Button.tsx";
@@ -83,7 +84,9 @@ export default function StudentHome() {
   const { user } = useAuth();
   const { classroom, lessons: modules, error, setStatus } = useClassData();
   const [params] = useSearchParams();
-  const [pickedId, setPickedId] = useState<string | null>(params.get("lesson"));
+  const targetLessonId = params.get("lesson");
+  const [pickedId, setPickedId] = useState<string | null>(targetLessonId);
+  const targetQuestionId = params.get("question");
   const { session } = useLiveSession();
   // While the teacher's lesson is live, students follow it by default; they can wander off and come back.
   const [following, setFollowing] = useState(true);
@@ -95,6 +98,16 @@ export default function StudentHome() {
   const [pane, setPane] = useState<Pane>("lesson");
   const { online, hasSnapshot } = useClassroomPresence(user?.classroomId);
   const lessonNav = useRef<HTMLElement>(null);
+
+  // A teacher's feedback link can arrive while the student is elsewhere in the
+  // live lesson. Open that lesson and its work pane instead of leaving them in
+  // the helper or following another lesson.
+  useEffect(() => {
+    if (!targetQuestionId || !targetLessonId) return;
+    setPickedId(targetLessonId);
+    setPane("lesson");
+    if (session) setFollowing(targetLessonId === session.moduleId);
+  }, [session?.moduleId, targetLessonId, targetQuestionId]);
 
   // The lesson in view: the one the student picked (or linked to), else where they left off, else the first.
   // Lessons outside the teacher's time window can't be opened, so they are never the lesson in view.
@@ -378,6 +391,7 @@ export default function StudentHome() {
                 index={Math.max(currentIndex, 0)}
                 total={modules.length}
                 locked={current?.status === "completed"}
+                focusQuestionId={targetQuestionId}
               />
             )}
 

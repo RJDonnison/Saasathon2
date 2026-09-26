@@ -6,14 +6,31 @@ import Button from "./Button.tsx";
 import { INPUT, TINT } from "./styles.ts";
 import type { QuestionComment } from "../../../shared/types";
 
+function ConversationSkeleton() {
+  return (
+    <div
+      className="flex flex-col gap-2.5"
+      aria-busy="true"
+      aria-label="Loading conversation"
+    >
+      <div className="h-3 w-20 animate-pulse rounded bg-surface motion-reduce:animate-none" />
+      <div className="h-14 w-4/5 animate-pulse rounded-xl bg-surface motion-reduce:animate-none" />
+      <div className="ml-auto h-10 w-3/5 animate-pulse rounded-xl bg-surface motion-reduce:animate-none" />
+    </div>
+  );
+}
+
 /** A student-specific, live conversation embedded beside one lesson question. */
 export default function QuestionConversation({
   questionId,
   studentId,
+  forceOpen = false,
 }: {
   questionId: string;
   /** Required by teacher views; students automatically use their own id. */
   studentId?: string;
+  /** A feedback notification opens this conversation before its messages have loaded. */
+  forceOpen?: boolean;
 }) {
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
@@ -30,15 +47,23 @@ export default function QuestionConversation({
         </Button>
       </section>
     );
-  return <Conversation questionId={questionId} studentId={studentId} />;
+  return (
+    <Conversation
+      questionId={questionId}
+      studentId={studentId}
+      forceOpen={forceOpen}
+    />
+  );
 }
 
 function Conversation({
   questionId,
   studentId,
+  forceOpen,
 }: {
   questionId: string;
   studentId?: string;
+  forceOpen: boolean;
 }) {
   const { user } = useAuth();
   const targetStudentId = studentId ?? user?.id;
@@ -131,10 +156,15 @@ function Conversation({
 
   // Students have no prompt to create a thread. Once a teacher posts, the
   // socket listener above makes this panel appear without a page refresh.
-  if (user?.role === "student" && !startedByTeacher) return null;
+  if (user?.role === "student" && !startedByTeacher && !forceOpen)
+    return null;
 
   return (
-    <section className="flex flex-col gap-3 rounded-xl border border-border bg-surface-soft p-4">
+    <section
+      id={`question-comment-${questionId}`}
+      tabIndex={-1}
+      className="flex flex-col gap-3 rounded-xl border border-border bg-surface-soft p-4 outline-none"
+    >
       <div className="flex items-center justify-between gap-3">
         <span className="text-xs text-muted">
           {comments.length
@@ -143,11 +173,7 @@ function Conversation({
         </span>
       </div>
       {loading ? (
-        <div
-          className="h-16 animate-pulse rounded-xl bg-surface motion-reduce:animate-none"
-          aria-busy="true"
-          aria-label="Loading conversation"
-        />
+        <ConversationSkeleton />
       ) : error ? (
         <div
           className={`flex flex-wrap items-center justify-between gap-3 rounded-xl px-3 py-2 text-sm ${TINT.peach}`}
@@ -189,34 +215,36 @@ function Conversation({
           })}
         </ul>
       )}
-      <form onSubmit={send} className="flex flex-col gap-2">
-        <label className="sr-only" htmlFor={`question-comment-${questionId}`}>
-          Message
-        </label>
-        <textarea
-          id={`question-comment-${questionId}`}
-          className={`${INPUT} min-h-20 resize-y py-2.5`}
-          value={text}
-          maxLength={4000}
-          onChange={(event) => setText(event.target.value)}
-          placeholder={
-            user?.role === "teacher"
-              ? "Leave feedback or a helpful prompt…"
-              : "Tell your teacher where you are stuck…"
-          }
-        />
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-xs text-muted">Messages update live.</span>
-          <Button
-            type="submit"
-            size="sm"
-            variant="primary"
-            disabled={sending || !text.trim()}
-          >
-            {sending ? "Sending…" : "Send"}
-          </Button>
-        </div>
-      </form>
+      {!loading && (
+        <form onSubmit={send} className="flex flex-col gap-2">
+          <label className="sr-only" htmlFor={`question-comment-${questionId}`}>
+            Message
+          </label>
+          <textarea
+            id={`question-comment-${questionId}`}
+            className={`${INPUT} min-h-20 resize-y py-2.5`}
+            value={text}
+            maxLength={4000}
+            onChange={(event) => setText(event.target.value)}
+            placeholder={
+              user?.role === "teacher"
+                ? "Leave feedback or a helpful prompt…"
+                : "Tell your teacher where you are stuck…"
+            }
+          />
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-xs text-muted">Messages update live.</span>
+            <Button
+              type="submit"
+              size="sm"
+              variant="primary"
+              disabled={sending || !text.trim()}
+            >
+              {sending ? "Sending…" : "Send"}
+            </Button>
+          </div>
+        </form>
+      )}
     </section>
   );
 }
