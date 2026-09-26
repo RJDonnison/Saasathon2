@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api.ts";
 import { useAuth } from "../auth/useAuth.ts";
 import { useModuleRefresh } from "../hooks/useModuleRefresh.ts";
+import { nextWindowChange } from "./lessons.ts";
 import type {
   Announcement,
   Classroom,
@@ -85,6 +86,17 @@ export function useClassData() {
 
   // The teacher edited, published or deleted a lesson: reload the list (statuses come with it).
   useModuleRefresh(classroomId, refreshLessons);
+
+  // A lesson's window opens or closes on the clock, not on a teacher action, so reload right when that happens.
+  useEffect(() => {
+    const at = lessons ? nextWindowChange(lessons) : null;
+    if (at === null) return;
+    const timer = window.setTimeout(
+      refreshLessons,
+      Math.min(Math.max(at - Date.now(), 0) + 500, 2_000_000_000),
+    );
+    return () => window.clearTimeout(timer);
+  }, [lessons, refreshLessons]);
 
   /** Update one lesson's status locally and on the server. */
   const setStatus = useCallback((lessonId: string, status: ProgressStatus) => {

@@ -66,7 +66,8 @@ lessons and their progress (`module_progress`, written when a student opens or m
 (`code_submissions`, saved on every Run of a real exercise), question attempts (`attempts`), teacher announcements
 (`classroom_announcements`), and the student's classes (`GET /api/classrooms`, switch with `POST
 /api/classrooms/:id/activate`). Don't reintroduce placeholder/demo content; if a screen needs data that has no source
-yet, add the table/endpoint or leave the section out. There is deliberately no timetable, due-date or marks feature.
+yet, add the table/endpoint or leave the section out. There is deliberately no timetable, due-date or marks feature; the one time rule is a lesson's **time window**
+(see "Lesson time windows"), which limits when students may open it and has no marks or deadlines.
 
 ## Database: Supabase only
 
@@ -120,6 +121,18 @@ with a slow poll as a safety net. Students see a "Live now" banner with Join les
 **follow** the teacher by default (lesson and phase come from the session; the phase is read-only for them). They can
 step off (pick another lesson, or "I'm lost" during Teach) and return with "Back to {teacher}". With no live session the
 live page is self-paced.
+
+## Lesson time windows
+
+A teacher can give each lesson an optional `opens_at` / `closes_at` (`modules` columns, either side may be null =
+unbounded; both null = "open any time", the default), set from the lesson builder's "When students can open it" card via `PUT /api/modules/:id/availability`.
+It is enforced **on the server**: `moduleForUser` (`backend/src/access.ts`) returns nothing to a student outside the
+window, which covers lesson fetch, progress, comments, code runs/grading, math checks and the tutor; the student activity
+routes use it too. `GET /api/modules/:id` answers 403 with an explanation. A lesson the teacher is running live
+(`lesson_sessions`) is open regardless of its window, and teachers are never limited. `GET /classrooms/:id/lessons`
+returns `available` per lesson and blanks the intro, sections and exercises of a locked one, so the frontend only greys
+out. `useClassData` reloads the list at the next opening/closing moment. Times are stored as UTC instants and edited in
+the teacher's local time zone.
 
 ## Student screens
 

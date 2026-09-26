@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useAuth } from "../auth/useAuth.ts";
 import Button from "../ui/Button.tsx";
@@ -8,6 +8,7 @@ import { CARD, FOCUS_RING, TINT } from "../ui/styles.ts";
 import {
   introSnippet,
   lessonOverview,
+  lessonWindowLabel,
   plural,
   STATUS_LABEL,
   timeAgo,
@@ -129,6 +130,32 @@ function LessonCarouselSkeleton() {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+function LessonCardFrame({
+  available,
+  to,
+  current,
+  children,
+}: {
+  available: boolean;
+  to: string;
+  current: boolean;
+  children: ReactNode;
+}) {
+  const className = `block w-[min(22rem,calc(100vw-2rem))] shrink-0 snap-start ${
+    available ? FOCUS_RING : ""
+  }`;
+
+  return available ? (
+    <Link to={to} data-current={current || undefined} className={className}>
+      {children}
+    </Link>
+  ) : (
+    <div data-current={current || undefined} className={className} aria-disabled="true">
+      {children}
     </div>
   );
 }
@@ -338,13 +365,15 @@ export default function StudentClassPage() {
                   aria-label="Lessons"
                 >
                   {all.map((lesson, i) => (
-                    <Link
+                    <LessonCardFrame
                       key={lesson.id}
+                      available={lesson.available}
                       to={`${classPath}/live?lesson=${lesson.id}`}
-                      data-current={lesson.id === firstInProgressId || undefined}
-                      className={`block w-[min(22rem,calc(100vw-2rem))] shrink-0 snap-start ${FOCUS_RING} `}
+                      current={lesson.id === firstInProgressId}
                     >
-                    <article className={`${CARD} h-full p-5 sm:p-6 hover:bg-mint/50 transition-colors`}>
+                    <article
+                      className={`${CARD} h-full p-5 transition-colors sm:p-6 ${lesson.available ? "cursor-pointer hover:bg-mint/50" : "cursor-not-allowed opacity-75"}`}
+                    >
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="mb-1! text-xs! font-medium! text-muted">
@@ -360,6 +389,14 @@ export default function StudentClassPage() {
                         {STATUS_LABEL[lesson.status]}
                       </span>
                     </div>
+                    {lessonWindowLabel(lesson) && (
+                      <p
+                        className={`mb-0! mt-3! text-[13px]! font-medium! ${lesson.available ? "text-muted" : "text-peach-ink"}`}
+                      >
+                        {lesson.available ? "" : "Locked. "}
+                        {lessonWindowLabel(lesson)}
+                      </p>
+                    )}
                     {lesson.sections.length > 0 && (
                       <>
                         <h4 className="mb-2! mt-4! font-display! text-[13px]! font-semibold!">
@@ -401,7 +438,7 @@ export default function StudentClassPage() {
                       </>
                     )}
                     </article>
-                    </Link>
+                    </LessonCardFrame>
                   ))}
                 </div>
                 <div
@@ -415,7 +452,7 @@ export default function StudentClassPage() {
               </div>
               </>
             )}
-            </section>
+          </section>
         </div>
       </div>
     </>
