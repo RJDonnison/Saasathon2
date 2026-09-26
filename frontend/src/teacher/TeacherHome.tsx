@@ -3,14 +3,15 @@ import { Link } from "react-router-dom";
 import { api } from "../api.ts";
 import { useAuth } from "../auth/useAuth.ts";
 import {
+  emitAcknowledgeHand,
   onModuleChanged,
   onModuleDeleted,
   onPresenceUpdate,
-  onRaiseHand,
+  onRaisedHandsUpdate,
 } from "../socket.ts";
 import ClassroomGrid from "./ClassroomGrid.tsx";
 import StudentDetailPanel from "./StudentDetailPanel.tsx";
-import RaiseHandAlert, { type RaisedHand } from "./RaiseHandAlert.tsx";
+import RaiseHandAlert from "./RaiseHandAlert.tsx";
 import Button from "../ui/Button.tsx";
 import Card from "../ui/Card.tsx";
 import Dot from "../ui/Dot.tsx";
@@ -19,6 +20,7 @@ import Heading from "../ui/Heading.tsx";
 import { HandIcon, PencilIcon, SparklesIcon, UsersIcon } from "../ui/icons.tsx";
 import { CARD, INPUT, TINT, type Tint } from "../ui/styles.ts";
 import type { Classroom, Module, User } from "../../../shared/types";
+import type { RaisedHand } from "../../../shared/events";
 import CodeTestPanel from "./CodeTestPanel.tsx";
 import AnswerKeyPanel from "./AnswerKeyPanel.tsx";
 
@@ -129,17 +131,14 @@ export default function TeacherHome() {
     [],
   );
 
-  // A student raising their hand again just moves them to the top instead of adding a duplicate.
   useEffect(
     () =>
-      onRaiseHand((p) => {
-        console.log("[teacher] raise_hand", p);
-        setHands((h) => [
-          { studentId: p.studentId, at: Date.now() },
-          ...h.filter((x) => x.studentId !== p.studentId),
-        ]);
+      onRaisedHandsUpdate((update) => {
+        if (user && update.classroomId === user.classroomId) {
+          setHands(update.hands);
+        }
       }),
-    [],
+    [user],
   );
 
   async function createClassroom() {
@@ -280,9 +279,7 @@ export default function TeacherHome() {
             <RaiseHandAlert
               hands={hands}
               nameOf={(id) => byId.get(id)?.name ?? "A student"}
-              onDismiss={(id) =>
-                setHands((h) => h.filter((x) => x.studentId !== id))
-              }
+              onHelp={(id) => user && emitAcknowledgeHand(id, user.classroomId)}
               onSelect={setSelectedId}
             />
           </div>
