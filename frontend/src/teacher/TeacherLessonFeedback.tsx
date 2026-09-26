@@ -5,7 +5,7 @@ import Card from '../ui/Card.tsx'
 import Heading from '../ui/Heading.tsx'
 import { BookIcon, CheckIcon, UsersIcon } from '../ui/icons.tsx'
 import { CARD, TINT } from '../ui/styles.ts'
-import type { LessonFeedbackReport, LessonFeedbackStudentDetail } from '../../../shared/types'
+import type { LessonFeedbackFlag, LessonFeedbackReport, LessonFeedbackStudentDetail } from '../../../shared/types'
 
 const stamp = (value: string | null) => value ? new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : 'Not recorded'
 const metric = (value: number | null) => value === null ? 'Not enough data' : `${value} min`
@@ -15,6 +15,21 @@ function Flag({ children, good = false }: { children: string; good?: boolean }) 
   return <span className={`inline-flex max-w-full items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${good ? TINT.mint : TINT.peach}`}>
     {good ? <CheckIcon className="size-3.5" /> : <span aria-hidden="true">!</span>}{children}
   </span>
+}
+
+const FLAG_LABEL: Record<LessonFeedbackFlag, string> = {
+  answer_seeking: 'Answer seeking',
+  harassment: 'Harassment',
+  violence: 'Violence',
+  self_harm: 'Self-harm',
+  sexual: 'Sexual safety',
+  abusive_language: 'Abusive language',
+  cyber_abuse: 'Cyber safety',
+}
+
+function Signal({ flag }: { flag: LessonFeedbackFlag }) {
+  const isAnswerSeeking = flag === 'answer_seeking'
+  return <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${isAnswerSeeking ? 'border-amber/50 bg-amber/20 text-ink' : 'border-red/30 bg-red/10 text-red'}`}>{FLAG_LABEL[flag]}</span>
 }
 
 function Stat({ label, value, note }: { label: string; value: string; note: string }) {
@@ -70,7 +85,7 @@ export default function TeacherLessonFeedback() {
       <div className="flex flex-col gap-4"><p className="m-0 text-sm leading-relaxed text-ink">{detail.aiSummary}</p>{detail.greenFlag && <Flag good>{detail.greenFlag}</Flag>}<div className={`flex flex-col gap-2 rounded-xl p-4 ${TINT.lavender}`}><strong className="text-sm">A useful teacher check-in</strong><p className="m-0 text-sm">{detail.aiSuggestion}</p></div></div>
     </Card>
     <Card title="AI conversation log" eyebrow={`${detail.aiLogs.length} recorded turns`}>
-      {detail.aiLogs.length ? <ol className="m-0 flex list-none flex-col gap-3 p-0">{detail.aiLogs.map((log, index) => <li key={`${log.askedAt}-${index}`} className="flex flex-col gap-2 rounded-xl border border-border p-4"><p className="m-0 text-xs text-muted">{stamp(log.askedAt)}</p><p className="m-0 whitespace-pre-wrap text-sm font-medium text-ink">Student: {log.question}</p><p className="m-0 whitespace-pre-wrap text-sm text-muted">Helper: {log.reply}</p>{(log.safetyFlags.length > 0 || log.misuse || !log.reviewAvailable) && <div className="flex flex-wrap gap-2">{log.safetyFlags.map((flag) => <Flag key={flag}>{`Review signal: ${flag.replace('_', ' ')}`}</Flag>)}{log.misuse && <Flag>{`Use signal: ${log.misuse.replace('_', ' ')}`}</Flag>}{!log.reviewAvailable && <Flag>Safety check unavailable. Review manually.</Flag>}</div>}</li>)}</ol> : <p className="m-0 text-sm text-muted">No AI-helper conversations were recorded during this lesson.</p>}
+      {detail.aiLogs.length ? <ol className="m-0 flex list-none flex-col gap-3 p-0">{detail.aiLogs.map((log, index) => <li key={`${log.askedAt}-${index}`} className="flex flex-col gap-2 rounded-xl border border-border p-4"><p className="m-0 text-xs text-muted">{stamp(log.askedAt)}</p><p className="m-0 whitespace-pre-wrap text-sm font-medium text-ink">Student: {log.question}</p><p className="m-0 whitespace-pre-wrap text-sm text-muted">Helper: {log.reply}</p>{(log.flags.length > 0 || !log.reviewAvailable) && <div className="flex flex-wrap gap-2">{log.flags.map((flag) => <Signal key={flag} flag={flag} />)}{!log.reviewAvailable && <Flag>Safety check unavailable. Review manually.</Flag>}</div>}</li>)}</ol> : <p className="m-0 text-sm text-muted">No AI-helper conversations were recorded during this lesson.</p>}
     </Card>
     <Card title="Lesson activity" eyebrow="Recorded events">
       {detail.activityTimeline.length ? <ol className="m-0 flex list-none flex-col gap-2 p-0">{detail.activityTimeline.map((item, index) => <li key={`${item.at}-${index}`} className="flex flex-wrap items-center justify-between gap-2 border-b border-border py-2 text-sm"><span className="text-ink">{item.type.replaceAll('_', ' ')}</span><span className="text-xs text-muted">{stamp(item.at)}</span></li>)}</ol> : <p className="m-0 text-sm text-muted">No learning activity was recorded.</p>}
@@ -93,7 +108,7 @@ export default function TeacherLessonFeedback() {
       {report.attentionSuggestions.length ? <ul className="m-0 flex list-none flex-col gap-3 p-0">{report.attentionSuggestions.map((suggestion) => <li key={suggestion.studentId} className="flex flex-col gap-1 rounded-xl p-3 sm:flex-row sm:items-center sm:justify-between"><span className="text-sm font-semibold text-ink">{suggestion.studentName}</span><span className="text-sm text-muted">{suggestion.reason}</span></li>)}</ul> : <p className="m-0 text-sm text-muted">No specific follow-up was suggested from the recorded activity.</p>}
     </Card>
     <Card title="Student feedback" eyebrow={`${report.students.length} students`}>
-      {report.students.length ? <ul className="m-0 flex list-none flex-col gap-3 p-0">{report.students.map((student) => <li key={student.studentId}><Link to={`/teacher/feedback/${encodeURIComponent(sessionId)}/students/${encodeURIComponent(student.studentId)}`} className="flex flex-col gap-3 rounded-xl border border-border p-4 text-ink! no-underline! transition hover:bg-surface-soft sm:flex-row sm:items-center"><div className="flex min-w-0 flex-1 flex-col gap-1"><strong className="block truncate text-sm">{student.studentName}</strong><p className="m-0 text-sm text-muted">{student.aiSummary}</p></div><div className="flex flex-wrap items-center gap-2"><span className="text-xs text-muted">{STATUS[student.progress]} · {student.aiUsePercent}% AI · {student.followedPercent}% follow</span>{student.greenFlag && <Flag good>{student.greenFlag}</Flag>}{student.redFlag && <Flag>{student.redFlag}</Flag>}<span aria-hidden="true" className="text-muted">→</span></div></Link></li>)}</ul> : <p className="m-0 text-sm text-muted">There were no students enrolled in this class when the report was opened.</p>}
+      {report.students.length ? <ul className="m-0 flex list-none flex-col gap-3 p-0">{report.students.map((student) => <li key={student.studentId}><Link to={`/teacher/feedback/${encodeURIComponent(sessionId)}/students/${encodeURIComponent(student.studentId)}`} className="flex flex-col gap-3 rounded-xl border border-border p-4 text-ink! no-underline! transition hover:bg-surface-soft sm:flex-row sm:items-center"><div className="flex min-w-0 flex-1 flex-col gap-1"><strong className="block truncate text-sm">{student.studentName}</strong><p className="m-0 text-sm text-muted">{student.aiSummary}</p></div><div className="flex flex-wrap items-center gap-2"><span className="text-xs text-muted">{STATUS[student.progress]} · {student.aiUsePercent}% AI · {student.followedPercent}% follow</span>{student.greenFlag && <Flag good>{student.greenFlag}</Flag>}{student.flags.map((flag) => <Signal key={flag} flag={flag} />)}<span aria-hidden="true" className="text-muted">→</span></div></Link></li>)}</ul> : <p className="m-0 text-sm text-muted">There were no students enrolled in this class when the report was opened.</p>}
     </Card>
     <p className="m-0 text-xs text-muted">AI feedback is based on lesson activity the app recorded. “Worked without helper use” only means no AI helper request was recorded here. Safety flags are review signals and are not proof of intent.</p>
   </main>

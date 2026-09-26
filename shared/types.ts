@@ -79,7 +79,15 @@ export interface LessonSession {
   startedAt: string;
 }
 
-export type LessonFeedbackSafetyFlag = "harassment" | "violence" | "self_harm" | "sexual";
+export type LessonFeedbackFlag =
+  | "answer_seeking"
+  | "harassment"
+  | "violence"
+  | "self_harm"
+  | "sexual"
+  | "abusive_language"
+  | "cyber_abuse";
+export type LessonFeedbackSafetyFlag = Exclude<LessonFeedbackFlag, "answer_seeking">;
 export interface LessonFeedbackStudentSummary {
   studentId: string;
   studentName: string;
@@ -95,6 +103,7 @@ export interface LessonFeedbackStudentSummary {
   taskCount: number;
   quizCount: number;
   safetyFlags: LessonFeedbackSafetyFlag[];
+  flags: LessonFeedbackFlag[];
   aiSummary: string;
   greenFlag: string | null;
   redFlag: string | null;
@@ -120,6 +129,7 @@ export interface LessonFeedbackStudentDetail extends LessonFeedbackStudentSummar
     question: string;
     reply: string;
     safetyFlags: LessonFeedbackSafetyFlag[];
+    flags: LessonFeedbackFlag[];
     misuse: string | null;
     reviewAvailable: boolean;
   }>;

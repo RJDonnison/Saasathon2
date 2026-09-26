@@ -476,7 +476,11 @@ export default function StudentHome() {
               {classroomLoading || sessionLoading ? (
                 <HelperSkeleton />
               ) : phase === "work" ? (
-                <AiChatPanel moduleId={current.id} />
+                <AiChatPanel
+                  key={`${session?.id ?? "self-paced"}:${current.id}`}
+                  moduleId={current.id}
+                  sessionId={session?.id ?? null}
+                />
               ) : (
                 <div className="flex flex-col gap-2 p-5">
                   <Heading>Helper paused</Heading>
