@@ -28,26 +28,24 @@ function inOwnClassroom(req: Request, res: Response): boolean {
   return true;
 }
 
-async function liveRow(classroomId: string): Promise<SessionRow | null> {
+/** A session row with its lesson title joined in, so the title never costs a second query. */
+type SessionWithTitle = SessionRow & { modules: { title: string } | null };
+const SESSION_SELECT = "*, modules(title)";
+
+async function liveRow(classroomId: string): Promise<SessionWithTitle | null> {
   return unwrap(
     await supabase
       .from("lesson_sessions")
-      .select("*")
+      .select(SESSION_SELECT)
       .eq("classroom_id", classroomId)
       .is("ended_at", null)
       .maybeSingle(),
-  ) as SessionRow | null;
+  ) as SessionWithTitle | null;
 }
 
-async function withTitle(row: SessionRow): Promise<LessonSession> {
-  const module = unwrap(
-    await supabase
-      .from("modules")
-      .select("title")
-      .eq("id", row.module_id)
-      .maybeSingle(),
-  ) as { title: string } | null;
-  return toSession(row, module?.title ?? "Lesson");
+function toView(row: SessionWithTitle): LessonSession {
+  const { modules, ...session } = row;
+  return toSession(session, modules?.title ?? "Lesson");
 }
 
 async function recordSessionModule(row: SessionRow, title: string): Promise<void> {
@@ -81,25 +79,23 @@ function publish(
 sessionRouter.get("/", async (req, res) => {
   if (!inOwnClassroom(req, res)) return;
   const row = await liveRow(req.user!.classroomId);
-  const body: GetSessionResponse = {
-    session: row ? await withTitle(row) : null,
-  };
+  const body: GetSessionResponse = { session: row ? toView(row) : null };
   res.json(body);
 });
 
 /** Teacher roll-call snapshot for the module currently being taught. */
 sessionRouter.get("/progress", requireRole("teacher"), async (req, res) => {
   if (!inOwnClassroom(req, res)) return;
-  const session = await liveRow(req.user!.classroomId);
-  if (!session) return res.status(409).json({ error: "No lesson is live" });
-
-  const memberships = unwrap(
-    await supabase
+  const [session, membershipsResult] = await Promise.all([
+    liveRow(req.user!.classroomId),
+    supabase
       .from("memberships")
       .select("user_id")
       .eq("classroom_id", req.user!.classroomId)
       .eq("role", "student"),
-  ) as Array<{ user_id: string }>;
+  ]);
+  if (!session) return res.status(409).json({ error: "No lesson is live" });
+  const memberships = unwrap(membershipsResult) as Array<{ user_id: string }>;
   const studentIds = memberships.map((membership) => membership.user_id);
   const rows = studentIds.length
     ? (unwrap(
@@ -135,10 +131,14 @@ sessionRouter.post("/", requireRole("teacher"), async (req, res) => {
       .status(400)
       .json({ error: "moduleId and a valid phase are required" });
   }
-  if (!(await moduleInClassroom(moduleId, classroomId))) {
+  const [lesson, running] = await Promise.all([
+    moduleInClassroom(moduleId, classroomId),
+    liveRow(classroomId),
+  ]);
+  if (!lesson) {
     return res.status(404).json({ error: "Lesson not found" });
   }
-  if (await liveRow(classroomId)) {
+  if (running) {
     return res
       .status(409)
       .json({
@@ -155,11 +155,13 @@ sessionRouter.post("/", requireRole("teacher"), async (req, res) => {
         phase,
         started_by: req.user!.userId,
       })
-      .select("*")
+      .select(SESSION_SELECT)
       .single(),
-  ) as SessionRow;
-  await recordSessionModule(row, (await withTitle(row)).moduleTitle);
-  publish(res, classroomId, await withTitle(row), 201);
+  ) as SessionWithTitle;
+  const view = toView(row);
+  // Best-effort log line (it swallows its own errors); the teacher doesn't wait for it.
+  void recordSessionModule(row, view.moduleTitle);
+  publish(res, classroomId, view, 201);
 });
 
 sessionRouter.patch("/", requireRole("teacher"), async (req, res) => {
@@ -173,12 +175,12 @@ sessionRouter.patch("/", requireRole("teacher"), async (req, res) => {
   ) {
     return res.status(400).json({ error: "Provide a lesson and/or a phase" });
   }
-  const current = await liveRow(classroomId);
+  const [current, lesson] = await Promise.all([
+    liveRow(classroomId),
+    moduleId !== undefined ? moduleInClassroom(moduleId, classroomId) : Promise.resolve(true),
+  ]);
   if (!current) return res.status(409).json({ error: "No lesson is live" });
-  if (
-    moduleId !== undefined &&
-    !(await moduleInClassroom(moduleId, classroomId))
-  ) {
+  if (!lesson) {
     return res.status(404).json({ error: "Lesson not found" });
   }
   const row = unwrap(
@@ -189,11 +191,12 @@ sessionRouter.patch("/", requireRole("teacher"), async (req, res) => {
         ...(phase !== undefined ? { phase } : {}),
       })
       .eq("id", current.id)
-      .select("*")
+      .select(SESSION_SELECT)
       .single(),
-  ) as SessionRow;
-  if (row.module_id !== current.module_id) await recordSessionModule(row, (await withTitle(row)).moduleTitle);
-  publish(res, classroomId, await withTitle(row));
+  ) as SessionWithTitle;
+  const view = toView(row);
+  if (row.module_id !== current.module_id) void recordSessionModule(row, view.moduleTitle);
+  publish(res, classroomId, view);
 });
 
 sessionRouter.delete("/", requireRole("teacher"), async (req, res) => {
