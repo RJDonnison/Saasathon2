@@ -9,7 +9,7 @@ import { FOCUS_RING } from './styles.ts'
 
 const NAV: Record<Role, { to: string; label: string }[]> = {
   student: [{ to: '/student', label: 'Home' }],
-  teacher: [{ to: '/teacher', label: 'Classroom' }],
+  teacher: [{ to: '/teacher', label: 'Classes' }],
 }
 
 /**

@@ -99,7 +99,7 @@ export default function StudentWorkView() {
             This is read-only and updates when the student saves more work.
           </p>
         </div>
-        <Link to="/teacher" className="rounded-xl border border-border bg-surface px-3 py-2 text-sm! font-semibold! text-ink hover:bg-surface-soft">
+        <Link to={`/teacher/class/${user?.classroomId ?? ""}`} className="rounded-xl border border-border bg-surface px-3 py-2 text-sm! font-semibold! text-ink hover:bg-surface-soft">
           Back to dashboard
         </Link>
       </div>
@@ -158,7 +158,7 @@ export default function StudentWorkView() {
               {active ? activityLabel[active.type] : "No live update yet"}
             </p>
             {active && <p className="m-0 text-xs text-muted">Updated {new Date(active.createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" })}</p>}
-            <Link to="/teacher" className="inline-flex self-start rounded-xl bg-accent px-3 py-2 text-sm! font-semibold! text-white">
+            <Link to={`/teacher/class/${user?.classroomId ?? ""}`} className="inline-flex self-start rounded-xl bg-accent px-3 py-2 text-sm! font-semibold! text-white">
               Return to dashboard
             </Link>
           </Card>

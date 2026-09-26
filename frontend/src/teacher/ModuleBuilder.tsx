@@ -7,6 +7,7 @@ import {
   useSearchParams,
 } from "react-router-dom";
 import { api, ApiClientError } from "../api.ts";
+import { useAuth } from "../auth/useAuth.ts";
 import Button from "../ui/Button.tsx";
 import Card from "../ui/Card.tsx";
 import Eyebrow from "../ui/Eyebrow.tsx";
@@ -166,6 +167,8 @@ export default function ModuleBuilder() {
   const { id: moduleId } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const classPath = `/teacher/class/${user?.classroomId ?? ""}`;
   const [searchParams] = useSearchParams();
   const plannerDocument = (
     location.state as { plannerDocument?: ModuleBuilderDocument } | null
@@ -216,10 +219,10 @@ export default function ModuleBuilder() {
     return onModuleDeleted((event) => {
       if (event.moduleId === moduleId) {
         setNotice("This module was deleted.");
-        navigate("/teacher", { replace: true });
+        navigate(classPath, { replace: true });
       }
     });
-  }, [moduleId, navigate]);
+  }, [moduleId, navigate, classPath]);
 
   const itemCount = useMemo(
     () =>
@@ -337,7 +340,7 @@ export default function ModuleBuilder() {
     try {
       await api.deleteModule(moduleId);
       toast("Module deleted.");
-      navigate("/teacher", { replace: true });
+      navigate(classPath, { replace: true });
     } catch (error) {
       setNotice(
         error instanceof Error ? error.message : "Could not delete module",
@@ -400,7 +403,7 @@ export default function ModuleBuilder() {
         <div className="flex flex-wrap items-center gap-2">
           <Link
             className="text-sm! font-semibold! text-muted hover:text-ink"
-            to="/teacher"
+            to={classPath}
           >
             Back to classroom
           </Link>

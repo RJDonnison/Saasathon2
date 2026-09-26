@@ -22,7 +22,6 @@ import Card from "../ui/Card.tsx";
 import Heading from "../ui/Heading.tsx";
 import { BookIcon, UsersIcon } from "../ui/icons.tsx";
 import { INPUT, TINT } from "../ui/styles.ts";
-import ClassroomList from "../ui/ClassroomList.tsx";
 import { useDialog } from "../ui/DialogContext.tsx";
 import type {
   Classroom,
@@ -40,16 +39,15 @@ const INVITATION_LABEL: Record<ClassroomInvitation["status"], string> = {
 };
 
 export default function TeacherHome() {
-  const { user, createClassroom: createClassroomFor } = useAuth();
+  const { user } = useAuth();
   const navigate = useNavigate();
-  const { prompt, confirm, toast } = useDialog();
+  const { confirm } = useDialog();
   const { session, setSession } = useLiveSession();
   const [students, setStudents] = useState<User[] | null>(null);
   const [classroom, setClassroom] = useState<Classroom | null>(null);
   const [modules, setModules] = useState<Module[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
   const [invitations, setInvitations] = useState<ClassroomInvitation[]>([]);
   const [inviteText, setInviteText] = useState("");
   const [inviteBusy, setInviteBusy] = useState(false);
@@ -252,29 +250,6 @@ export default function TeacherHome() {
       }),
     [session, user],
   );
-  async function createClassroom() {
-    const name = await prompt({
-      title: "Name your classroom",
-      message: "Choose a name students will recognize.",
-      confirmLabel: "Create classroom",
-    });
-    if (!name?.trim()) return;
-    setCreating(true);
-    try {
-      // The new classroom becomes the active one; the profile change reloads this dashboard for it.
-      setStudents(null);
-      setInvitations([]);
-      await createClassroomFor(name.trim());
-    } catch (e) {
-      toast(
-        e instanceof Error ? e.message : "Could not create classroom",
-        "error",
-      );
-    } finally {
-      setCreating(false);
-    }
-  }
-
   async function inviteStudents(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!user) return;
@@ -397,9 +372,9 @@ export default function TeacherHome() {
               : `${studentCount} student${studentCount === 1 ? "" : "s"} in ${classroom?.name ?? "your classroom"}, ${onlineCount} online and ${hands.length} hand${hands.length === 1 ? "" : "s"} raised.`}
           </p>
         </div>
-        <Button disabled={creating} onClick={() => void createClassroom()}>
-          {creating ? "Creating…" : "＋ New classroom"}
-        </Button>
+        <Link to="/teacher">
+          <Button>All classes</Button>
+        </Link>
       </div>
 
       {error && (
@@ -600,7 +575,6 @@ export default function TeacherHome() {
       </div>
 
       <LessonPlanner />
-      <ClassroomList role="teacher" />
     </div>
   );
 }

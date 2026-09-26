@@ -136,7 +136,8 @@ live page is self-paced.
   mixed *within* a section without a contract change. Each code exercise gets its own `CodeEditor` (Monaco,
   lazy-loaded); there is also a free playground at the end. `WorkspaceContext` shares editor text, the active editor and
   the tutor's highlight between the columns. Opening a lesson marks it in progress; "Mark lesson complete" completes it.
-- **Teacher home** (`TeacherHome`): banner with live counts, roll call, raised hands, student detail (real progress and
+- **Teacher dashboard** (`TeacherDashboard`, `/teacher`): "Live now" (the teacher's classes with a live lesson, from `liveSession` on `GET /api/classrooms`, 15s poll) and "All classes", plus "New classroom". Opening a class activates it and goes to `/teacher/class/:classroomId` (`TeacherClass`, which also activates on a direct visit).
+- **Teacher class** (`TeacherHome`): banner with live counts, roll call, raised hands, student detail (real progress and
   runs), announcements, invitations, lessons (with a quick "Add a lesson") and the AI lesson planner.
 
 ## Code execution (Piston)
