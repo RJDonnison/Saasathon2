@@ -18,6 +18,9 @@ const TeacherDashboard = lazy(() => import("./teacher/TeacherDashboard.tsx"));
 const TeacherClass = lazy(() => import("./teacher/TeacherClass.tsx"));
 const ModuleBuilder = lazy(() => import("./teacher/ModuleBuilder.tsx"));
 const StudentWorkView = lazy(() => import("./teacher/StudentWorkView.tsx"));
+const TeacherLessonFeedback = lazy(
+  () => import("./teacher/TeacherLessonFeedback.tsx"),
+);
 
 function RouteLoading() {
   return (
@@ -120,6 +123,11 @@ export default function App() {
         <Route
           path="student-work/:studentId/:moduleId"
           element={<StudentWorkView />}
+        />
+        <Route path="feedback/:sessionId" element={<TeacherLessonFeedback />} />
+        <Route
+          path="feedback/:sessionId/students/:studentId"
+          element={<TeacherLessonFeedback />}
         />
         <Route path="*" element={<Navigate to="/teacher" replace />} />
       </Route>

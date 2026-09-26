@@ -105,6 +105,11 @@ alter table modules alter column status set default 'published';
 alter table modules alter column revision set default 0;
 alter table modules drop constraint if exists modules_revision_check;
 alter table modules add constraint modules_revision_check check (revision >= 0);
+-- Optional time window in which students may open the lesson (null = unbounded on that side).
+alter table modules add column if not exists opens_at timestamptz;
+alter table modules add column if not exists closes_at timestamptz;
+alter table modules drop constraint if exists modules_window_check;
+alter table modules add constraint modules_window_check check (opens_at is null or closes_at is null or closes_at > opens_at);
 
 -- Classroom collaboration tables already present in the deployed project.
 create table if not exists classroom_invitations (
@@ -323,6 +328,29 @@ create table if not exists student_activity_state (
   type text not null check (type in ('viewing_lesson','answering_question','checking_answer','writing_code','running_code','checking_code')),
   updated_at timestamptz not null default now()
 );
+
+-- Tutor conversations, screen-follow heartbeats and cached AI feedback stay linked to the lesson that produced them.
+-- Only the backend service role reads these records; teacher endpoints enforce classroom membership.
+create table if not exists lesson_feedback_events (
+  id text primary key,
+  session_id text not null references lesson_sessions(id) on delete cascade,
+  classroom_id text not null references classrooms(id) on delete cascade,
+  student_id text references users(id) on delete cascade,
+  module_id text references modules(id) on delete set null,
+  event_type text not null check (event_type in ('ai_hint','follow_heartbeat','ai_summary','student_ai_summary','lesson_module')),
+  payload jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+alter table lesson_feedback_events drop constraint if exists lesson_feedback_events_event_type_check;
+alter table lesson_feedback_events add constraint lesson_feedback_events_event_type_check
+  check (event_type in ('ai_hint','follow_heartbeat','ai_summary','student_ai_summary','lesson_module'));
+create index if not exists lesson_feedback_events_session_type_created_idx
+  on lesson_feedback_events (session_id, event_type, created_at);
+create index if not exists lesson_feedback_events_session_student_created_idx
+  on lesson_feedback_events (session_id, student_id, created_at);
+create index if not exists lesson_feedback_events_classroom_idx on lesson_feedback_events (classroom_id);
+create index if not exists lesson_feedback_events_student_idx on lesson_feedback_events (student_id);
+create index if not exists lesson_feedback_events_module_idx on lesson_feedback_events (module_id);
 create table if not exists comments (
   id text primary key, submission_id text not null references code_submissions(id) on delete cascade,
   author_id text not null references users(id), text text not null,
@@ -341,6 +369,7 @@ alter table classrooms enable row level security; alter table users enable row l
 alter table memberships enable row level security; alter table modules enable row level security;
 alter table classroom_invitations enable row level security; alter table classroom_announcements enable row level security;
 alter table lesson_sessions enable row level security; alter table help_requests enable row level security;
+alter table lesson_feedback_events enable row level security;
 alter table classroom_event_cursors enable row level security; alter table classroom_events enable row level security;
 alter table sections enable row level security; alter table section_blocks enable row level security;
 alter table section_items enable row level security;

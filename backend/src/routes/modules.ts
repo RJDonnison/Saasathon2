@@ -37,6 +37,7 @@ import type {
   QuestionKind,
   UpdateBlockRequest,
   UpdateCodeCheckRequest,
+  UpdateModuleAvailabilityRequest,
   UpdateModuleRequest,
   UpdateOptionRequest,
   UpdateQuestionRequest,
@@ -576,8 +577,53 @@ modulesRouter.get("/:id", async (req, res) => {
     req.user!.classroomId,
     req.user!.role,
   );
-  if (module) res.json(await aggregate(module, req.user!.role === "teacher"));
-  else res.status(404).json({ error: "Module not found" });
+  if (module) return res.json(await aggregate(module, req.user!.role === "teacher"));
+  const closed =
+    req.user!.role === "student"
+      ? await moduleInClassroom(String(req.params.id), req.user!.classroomId)
+      : null;
+  if (closed?.status === "published")
+    return res
+      .status(403)
+      .json({ error: "This lesson isn't open right now. Check the time your teacher set for it." });
+  res.status(404).json({ error: "Module not found" });
+});
+
+/** The time window students may open a lesson in. Teachers always can; a live lesson is open regardless. */
+modulesRouter.put("/:id/availability", requireRole("teacher"), async (req, res) => {
+  const current = await ownedModule(req, res, req.params.id);
+  if (!current) return;
+  const body = (req.body ?? {}) as Partial<UpdateModuleAvailabilityRequest>;
+  const parse = (value: unknown): string | null | undefined => {
+    if (value === null) return null;
+    if (typeof value !== "string" || Number.isNaN(Date.parse(value))) return undefined;
+    return new Date(value).toISOString();
+  };
+  const opensAt = parse(body.opensAt);
+  const closesAt = parse(body.closesAt);
+  if (
+    opensAt === undefined ||
+    closesAt === undefined ||
+    (opensAt && closesAt && Date.parse(closesAt) <= Date.parse(opensAt))
+  )
+    return res
+      .status(400)
+      .json({ error: "Use valid times, with the close after the open" });
+  const row = unwrap(
+    await supabase
+      .from("modules")
+      .update({ opens_at: opensAt, closes_at: closesAt })
+      .eq("id", current.id)
+      .select("*")
+      .single(),
+  ) as ModuleRow;
+  emitModuleChanged({
+    type: "module_changed",
+    classroomId: row.classroom_id,
+    moduleId: row.id,
+    revision: row.revision,
+  });
+  res.json(toModule(row));
 });
 modulesRouter.post("/", requireRole("teacher"), async (req, res) => {
   const body = (req.body ?? {}) as Partial<CreateModuleRequest>;

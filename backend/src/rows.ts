@@ -61,6 +61,8 @@ export type ModuleRow = {
   position: number;
   status: "draft" | "published";
   revision: number;
+  opens_at: string | null;
+  closes_at: string | null;
 };
 export type SectionRow = {
   id: string;
@@ -243,6 +245,8 @@ export const toModule = (r: ModuleRow): Module => ({
   position: r.position,
   status: r.status,
   revision: r.revision,
+  opensAt: r.opens_at,
+  closesAt: r.closes_at,
 });
 export const toSection = (r: SectionRow): Section => ({
   id: r.id,
