@@ -10,6 +10,7 @@ import {
 } from "../openai.js";
 import {
   builderSystemPrompt,
+  builderFallbackSystemPrompt,
   draftSystemPrompt,
   hintSystemPrompt,
   studentModuleContext,
@@ -334,11 +335,26 @@ async function builderSuggestionWithRepair(
   const repaired = await complete({
     system,
     history: [],
-    message: `Your previous response could not be used by the module builder. Return the complete corrected JSON object now. Do not explain the correction or use Markdown.\n\nTeacher request:\n${request}\n\nPrevious response:\n${first.slice(0, 18_000)}`,
+    message: `Your previous response could not be used by the module builder. Return a corrected JSON object now. If you can provide a complete valid builder document, do so. Otherwise set "document" to null and put a useful, clearly structured draft or plan in "reply". Do not explain the correction or wrap the JSON in Markdown.\n\nTeacher request:\n${request}\n\nPrevious response:\n${first.slice(0, 18_000)}`,
     maxTokens: 6000,
     json: true,
   });
-  return builderSuggestion(repaired, document.status);
+  const repairedSuggestion = builderSuggestion(repaired, document.status);
+  if (repairedSuggestion) return repairedSuggestion;
+
+  // Strict document JSON is convenient for one-click application, but it must not make a
+  // perfectly reasonable teacher request look like an AI outage. Fall back to readable material.
+  const fallback = await complete({
+    system: builderFallbackSystemPrompt(document, selectedItemId),
+    history: [],
+    message: request,
+    maxTokens: 1300,
+  });
+  return {
+    id: "ai-builder",
+    label: "Lesson planning draft",
+    reply: fallback.trim().slice(0, 4000),
+  };
 }
 
 aiRouter.post("/hint", requireRole("student"), rateLimit, async (req, res) => {

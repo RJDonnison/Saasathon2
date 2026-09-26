@@ -493,7 +493,7 @@ export interface SaveModuleBuilderResponse {
 /**
  * A teacher-only builder suggestion. `document` is a complete, reviewable replacement for the
  * in-progress builder document, so it can add reading blocks and questions as well as edit text.
- * It is omitted when the assistant is only giving advice.
+ * It is omitted when the assistant is giving advice or can only provide a planning draft.
  */
 export interface AiModuleSuggestion {
   id: string;
