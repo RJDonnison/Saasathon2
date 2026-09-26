@@ -6,6 +6,7 @@ import Card from "../ui/Card.tsx";
 import Eyebrow from "../ui/Eyebrow.tsx";
 import Heading from "../ui/Heading.tsx";
 import { INPUT, TINT } from "../ui/styles.ts";
+import { onModuleDeleted } from "../socket.ts";
 import type {
   AiModuleSuggestion,
   ModuleBuilderDocument,
@@ -39,17 +40,17 @@ function newQuestion(kind: QuestionKind): BuilderQuestion {
     kind,
     answerKey: null,
     options: kind === "mcq" ? ["", ""] : [],
-    ...(kind === "math"
-      ? { mathExpectedResult: 0, mathTolerance: 0 }
-      : {}),
+    ...(kind === "math" ? { mathExpectedResult: 0, mathTolerance: 0 } : {}),
     ...(kind === "code"
       ? {
           language: "javascript",
           starterCode: "",
           instructions: "",
           hiddenCode: "",
+          functionName: "solution",
           referenceAnswers: [],
           checks: [],
+          tests: [],
         }
       : {}),
   };
@@ -94,6 +95,7 @@ function documentFrom(module: TeacherModule): ModuleBuilderDocument {
               language: question.codeExercise?.language,
               starterCode: question.codeExercise?.starterCode,
               instructions: question.codeExercise?.instructions,
+              functionName: question.codeExercise?.functionName,
               hiddenCode: question.codeExercise?.hiddenCode,
               referenceAnswers: question.codeExercise?.referenceAnswers.map(
                 (reference) => ({
@@ -106,6 +108,12 @@ function documentFrom(module: TeacherModule): ModuleBuilderDocument {
                 id: check.id,
                 name: check.name,
                 description: check.description,
+              })),
+              tests: question.codeExercise?.tests.map((test) => ({
+                id: test.id,
+                name: test.name,
+                args: test.args,
+                expected: test.expected,
               })),
             },
           ];
@@ -133,6 +141,7 @@ function withFreshIds(document: ModuleBuilderDocument): ModuleBuilderDocument {
                 id: id(),
               })),
               checks: item.checks?.map((check) => ({ ...check, id: id() })),
+              tests: item.tests?.map((test) => ({ ...test, id: id() })),
             },
       ),
     })),
@@ -163,10 +172,22 @@ export default function ModuleBuilder() {
         setRevision(teacher.revision);
       })
       .catch((error) =>
-        setNotice(error instanceof Error ? error.message : "Could not load module"),
+        setNotice(
+          error instanceof Error ? error.message : "Could not load module",
+        ),
       )
       .finally(() => setLoading(false));
   }, [moduleId]);
+
+  useEffect(() => {
+    if (!moduleId) return;
+    return onModuleDeleted((event) => {
+      if (event.moduleId === moduleId) {
+        setNotice("This module was deleted.");
+        navigate("/teacher", { replace: true });
+      }
+    });
+  }, [moduleId, navigate]);
 
   const itemCount = useMemo(
     () =>
@@ -181,7 +202,10 @@ export default function ModuleBuilder() {
     setDocument(fn);
   }
 
-  function updateItem(itemId: string, patch: (item: BuilderItem) => BuilderItem) {
+  function updateItem(
+    itemId: string,
+    patch: (item: BuilderItem) => BuilderItem,
+  ) {
     change((old) => ({
       ...old,
       sections: old.sections.map((section) => ({
@@ -200,7 +224,11 @@ export default function ModuleBuilder() {
         if (section.id !== sectionId) return section;
         const current = section.items.findIndex((item) => item.id === itemId);
         const destination = current + direction;
-        if (current < 0 || destination < 0 || destination >= section.items.length)
+        if (
+          current < 0 ||
+          destination < 0 ||
+          destination >= section.items.length
+        )
           return section;
         const items = [...section.items];
         [items[current], items[destination]] = [
@@ -223,12 +251,12 @@ export default function ModuleBuilder() {
     }));
   }
 
-  async function save(publish = false) {
+  async function save(status?: "draft" | "published") {
     setSaving(true);
     setNotice(null);
     const next = {
       ...document,
-      status: publish ? ("published" as const) : document.status,
+      status: status ?? document.status,
     };
     try {
       const result = moduleId
@@ -256,6 +284,28 @@ export default function ModuleBuilder() {
     }
   }
 
+  async function removeModule() {
+    if (
+      !moduleId ||
+      !window.confirm(
+        "Permanently delete this module and all of its lesson content?",
+      )
+    )
+      return;
+    setSaving(true);
+    setNotice(null);
+    try {
+      await api.deleteModule(moduleId);
+      navigate("/teacher", { replace: true });
+    } catch (error) {
+      setNotice(
+        error instanceof Error ? error.message : "Could not delete module",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function askAi() {
     if (!idea.trim() || askingAi) return;
     setAskingAi(true);
@@ -268,7 +318,9 @@ export default function ModuleBuilder() {
       });
       setSuggestions(result.suggestions);
       if (result.suggestions.length === 0)
-        setNotice("The assistant could not make a usable suggestion. Please try again.");
+        setNotice(
+          "The assistant could not make a usable suggestion. Please try again.",
+        );
     } catch (error) {
       setNotice(
         error instanceof Error ? error.message : "Could not get suggestions",
@@ -311,12 +363,43 @@ export default function ModuleBuilder() {
           >
             Back to classroom
           </Link>
-          <Button variant="default" disabled={saving} onClick={() => void save()}>
-            {saving ? "Saving…" : "Save draft"}
+          <Button
+            variant="default"
+            disabled={saving}
+            onClick={() => void save()}
+          >
+            {saving
+              ? "Saving…"
+              : document.status === "published"
+                ? "Save published"
+                : "Save draft"}
           </Button>
-          <Button variant="primary" disabled={saving} onClick={() => void save(true)}>
-            Publish
-          </Button>
+          {moduleId && (
+            <Button
+              variant="default"
+              disabled={saving}
+              onClick={() => void removeModule()}
+            >
+              Delete module
+            </Button>
+          )}
+          {document.status === "published" ? (
+            <Button
+              variant="default"
+              disabled={saving}
+              onClick={() => void save("draft")}
+            >
+              Unpublish
+            </Button>
+          ) : (
+            <Button
+              variant="primary"
+              disabled={saving}
+              onClick={() => void save("published")}
+            >
+              Publish
+            </Button>
+          )}
         </div>
       </div>
 
@@ -553,7 +636,8 @@ function SectionEditor({
             Build this section in order
           </span>
           <span className="text-xs leading-relaxed text-muted">
-            Add reading, then a question or code exercise for students to practise.
+            Add reading, then a question or code exercise for students to
+            practise.
           </span>
         </div>
       ) : (
@@ -657,7 +741,11 @@ function ItemEditor({
           >
             Down
           </Button>
-          <Button size="sm" onClick={onRemove} aria-label={`Delete ${itemName}`}>
+          <Button
+            size="sm"
+            onClick={onRemove}
+            aria-label={`Delete ${itemName}`}
+          >
             Delete
           </Button>
         </div>
@@ -697,7 +785,9 @@ function QuestionEditor({
   item: BuilderQuestion;
   onUpdate: (patch: (item: BuilderItem) => BuilderItem) => void;
 }) {
-  function updateQuestion(patch: (question: BuilderQuestion) => BuilderQuestion) {
+  function updateQuestion(
+    patch: (question: BuilderQuestion) => BuilderQuestion,
+  ) {
     onUpdate((current) =>
       current.type === "question" ? patch(current) : current,
     );
@@ -713,7 +803,10 @@ function QuestionEditor({
             value={item.kind}
             onChange={(event) =>
               updateQuestion((question) =>
-                changeQuestionKind(question, event.target.value as QuestionKind),
+                changeQuestionKind(
+                  question,
+                  event.target.value as QuestionKind,
+                ),
               )
             }
           >
@@ -817,7 +910,9 @@ function MathQuestionEditor({
           min="0"
           step="any"
           value={item.mathTolerance ?? 0}
-          onChange={(event) => updateNumber("mathTolerance", event.target.value)}
+          onChange={(event) =>
+            updateNumber("mathTolerance", event.target.value)
+          }
         />
       </label>
     </div>
@@ -840,7 +935,10 @@ function MultipleChoiceEditor({
         </span>
       </div>
       {item.options.map((option, optionIndex) => (
-        <div key={`${item.id}-${optionIndex}`} className="flex items-center gap-2">
+        <div
+          key={`${item.id}-${optionIndex}`}
+          className="flex items-center gap-2"
+        >
           <input
             type="radio"
             name={`correct-${item.id}`}
@@ -927,7 +1025,10 @@ function CodeExerciseEditor({
             className={`${INPUT} h-10`}
             value={item.language ?? "javascript"}
             onChange={(event) =>
-              update((question) => ({ ...question, language: event.target.value }))
+              update((question) => ({
+                ...question,
+                language: event.target.value,
+              }))
             }
           >
             <option value="javascript">JavaScript</option>
@@ -961,14 +1062,30 @@ function CodeExerciseEditor({
               starterCode: event.target.value,
             }))
           }
-          placeholder={'function solve(input) {\n  // Start here\n}'}
+          placeholder={"function solve(input) {\n  // Start here\n}"}
           spellCheck={false}
+        />
+      </label>
+      <label className="flex flex-col gap-2 text-sm text-muted">
+        Function name for automated checks
+        <input
+          className={`${INPUT} h-10 font-mono!`}
+          value={item.functionName ?? "solution"}
+          onChange={(event) =>
+            update((question) => ({
+              ...question,
+              functionName: event.target.value,
+            }))
+          }
+          placeholder="solution"
         />
       </label>
       <label className="flex flex-col gap-2 text-sm text-muted">
         Hidden test code
         <span className="text-xs leading-relaxed text-muted">
-          Appended only on the server when a student runs this exercise. Use it to call their function with test cases and throw an error when one fails; it is never returned in lesson data.
+          Appended only on the server when a student runs this exercise. Use it
+          to call their function with test cases and throw an error when one
+          fails; it is never returned in lesson data.
         </span>
         <textarea
           className={`${INPUT} min-h-36 py-2.5 font-mono! text-[13px]!`}
@@ -979,7 +1096,9 @@ function CodeExerciseEditor({
               hiddenCode: event.target.value,
             }))
           }
-          placeholder={'// Example: call the student\'s function with several inputs\nif (add(2, 3) !== 5) throw new Error("2 + 3 should equal 5")'}
+          placeholder={
+            '// Example: call the student\'s function with several inputs\nif (add(2, 3) !== 5) throw new Error("2 + 3 should equal 5")'
+          }
           spellCheck={false}
         />
       </label>
@@ -987,7 +1106,9 @@ function CodeExerciseEditor({
       <div className="flex flex-col gap-3">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <div className="flex flex-col gap-1">
-            <span className="text-sm font-medium text-ink">Reference answers</span>
+            <span className="text-sm font-medium text-ink">
+              Reference answers
+            </span>
             <span className="text-xs text-muted">
               Teacher-only examples; students never see these.
             </span>
@@ -1116,6 +1237,123 @@ function CodeExerciseEditor({
           </div>
         ))}
       </div>
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <div className="flex flex-col gap-1">
+            <span className="text-sm font-medium text-ink">
+              Automated tests
+            </span>
+            <span className="text-xs text-muted">
+              Teacher-only JSON inputs and expected values used when students
+              grade their code.
+            </span>
+          </div>
+          <Button
+            size="sm"
+            onClick={() =>
+              update((question) => ({
+                ...question,
+                tests: [
+                  ...(question.tests ?? []),
+                  { id: id(), name: "New test", args: [], expected: null },
+                ],
+              }))
+            }
+          >
+            + Add test
+          </Button>
+        </div>
+        {(item.tests ?? []).map((test, testIndex) => (
+          <BuilderTestEditor
+            key={test.id}
+            test={test}
+            onChange={(patch) =>
+              update((question) => ({
+                ...question,
+                tests: (question.tests ?? []).map((current, index) =>
+                  index === testIndex ? { ...current, ...patch } : current,
+                ),
+              }))
+            }
+            onRemove={() =>
+              update((question) => ({
+                ...question,
+                tests: (question.tests ?? []).filter(
+                  (_, index) => index !== testIndex,
+                ),
+              }))
+            }
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function BuilderTestEditor({
+  test,
+  onChange,
+  onRemove,
+}: {
+  test: NonNullable<BuilderQuestion["tests"]>[number];
+  onChange: (
+    patch: Partial<NonNullable<BuilderQuestion["tests"]>[number]>,
+  ) => void;
+  onRemove: () => void;
+}) {
+  const [args, setArgs] = useState(() => JSON.stringify(test.args));
+  const [expected, setExpected] = useState(() => JSON.stringify(test.expected));
+  const [error, setError] = useState<string | null>(null);
+  const parse = (value: string, key: "args" | "expected") => {
+    try {
+      const parsed: unknown = JSON.parse(value);
+      if (key === "args" && !Array.isArray(parsed)) throw new Error();
+      onChange({ [key]: parsed } as Partial<
+        NonNullable<BuilderQuestion["tests"]>[number]
+      >);
+      setError(null);
+    } catch {
+      setError(
+        key === "args"
+          ? "Arguments must be a JSON array."
+          : "Expected value must be valid JSON.",
+      );
+    }
+  };
+  return (
+    <div className="flex flex-col gap-3 rounded-xl bg-surface-soft p-3">
+      <div className="flex gap-2">
+        <input
+          className={`${INPUT} h-10 min-w-0 flex-1`}
+          value={test.name}
+          onChange={(event) => onChange({ name: event.target.value })}
+          placeholder="Test name"
+        />
+        <Button size="sm" onClick={onRemove}>
+          Remove
+        </Button>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="flex flex-col gap-2 text-xs text-muted">
+          JSON arguments
+          <textarea
+            className={`${INPUT} min-h-20 py-2 font-mono! text-[13px]!`}
+            value={args}
+            onChange={(event) => setArgs(event.target.value)}
+            onBlur={() => parse(args, "args")}
+          />
+        </label>
+        <label className="flex flex-col gap-2 text-xs text-muted">
+          Expected JSON value
+          <textarea
+            className={`${INPUT} min-h-20 py-2 font-mono! text-[13px]!`}
+            value={expected}
+            onChange={(event) => setExpected(event.target.value)}
+            onBlur={() => parse(expected, "expected")}
+          />
+        </label>
+      </div>
+      {error && <span className="text-xs text-peach-ink">{error}</span>}
     </div>
   );
 }

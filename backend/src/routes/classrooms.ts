@@ -121,6 +121,10 @@ classroomsRouter.get("/:id/modules", async (req, res) => {
       .from("modules")
       .select("*")
       .eq("classroom_id", req.params.id)
+      .eq(
+        req.user!.role === "student" ? "status" : "classroom_id",
+        req.user!.role === "student" ? "published" : req.params.id,
+      )
       .order("position")
       .order("id"),
   ) as ModuleRow[];

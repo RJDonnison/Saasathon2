@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { Router } from "express";
 import { requireRole } from "../auth.js";
-import { moduleInClassroom } from "../access.js";
+import { moduleForUser, moduleInClassroom } from "../access.js";
 import { supabase } from "../supabase.js";
-import { emitModuleChanged } from "../sockets.js";
+import { emitModuleChanged, emitModuleDeleted } from "../sockets.js";
 import {
   toBlock,
   toCheck,
@@ -60,16 +60,27 @@ const validPosition = (value: unknown) =>
 const FUNCTION_NAME = /^[A-Za-z_$][A-Za-z0-9_$]{0,63}$/;
 const MAX_TESTS_PER_EXERCISE = 20;
 const MAX_JSON_BYTES = 8_000;
-function jsonValue(value: unknown): boolean {
+function jsonValue(
+  value: unknown,
+  seen = new Set<object>(),
+  depth = 0,
+): boolean {
+  if (depth > 20) return false;
   if (value === null || typeof value === "string" || typeof value === "boolean")
     return true;
   if (typeof value === "number") return Number.isFinite(value);
-  if (Array.isArray(value)) return value.every(jsonValue);
-  return (
-    !!value &&
-    typeof value === "object" &&
-    Object.values(value).every(jsonValue)
-  );
+  if (!value || typeof value !== "object" || seen.has(value)) return false;
+  if (
+    Object.getPrototypeOf(value) !== Object.prototype &&
+    !Array.isArray(value)
+  )
+    return false;
+  seen.add(value);
+  const valid = Array.isArray(value)
+    ? value.every((item) => jsonValue(item, seen, depth + 1))
+    : Object.values(value).every((item) => jsonValue(item, seen, depth + 1));
+  seen.delete(value);
+  return valid;
 }
 function validTest(
   name: unknown,
@@ -171,6 +182,15 @@ export function validBuilderDocument(
                         typeof check.id === "string" &&
                         typeof check.name === "string" &&
                         typeof check.description === "string",
+                    ))) &&
+                (i.tests === undefined ||
+                  (Array.isArray(i.tests) &&
+                    i.tests.length <= MAX_TESTS_PER_EXERCISE &&
+                    i.tests.every(
+                      (test) =>
+                        test &&
+                        typeof test.id === "string" &&
+                        validTest(test.name, test.args, test.expected),
                     )))),
         ),
     )
@@ -325,6 +345,23 @@ async function saveBuilder(
                 name: check.name,
                 description: check.description,
                 position: checkPosition,
+              }),
+            );
+          }
+          for (
+            let testPosition = 0;
+            testPosition < (item.tests?.length ?? 0);
+            testPosition++
+          ) {
+            const test = item.tests![testPosition];
+            unwrap(
+              await supabase.from("code_tests").insert({
+                id: test.id,
+                code_exercise_id: exerciseId,
+                name: test.name.trim(),
+                args: test.args,
+                expected: test.expected,
+                position: testPosition,
               }),
             );
           }
@@ -616,10 +653,13 @@ modulesRouter.put("/:id/builder", requireRole("teacher"), async (req, res) => {
 });
 
 modulesRouter.get("/:id", async (req, res) => {
-  const module = await ownedModule(req, res, req.params.id);
-  if (module && (req.user!.role === "teacher" || module.status === "published"))
-    res.json(await aggregate(module, req.user!.role === "teacher"));
-  else if (module) res.status(404).json({ error: "Module not found" });
+  const module = await moduleForUser(
+    String(req.params.id),
+    req.user!.classroomId,
+    req.user!.role,
+  );
+  if (module) res.json(await aggregate(module, req.user!.role === "teacher"));
+  else res.status(404).json({ error: "Module not found" });
 });
 modulesRouter.post("/", requireRole("teacher"), async (req, res) => {
   const body = (req.body ?? {}) as Partial<CreateModuleRequest>;
@@ -682,6 +722,11 @@ modulesRouter.delete("/:id", requireRole("teacher"), async (req, res) => {
   const m = await ownedModule(req, res, req.params.id);
   if (!m) return;
   unwrap(await supabase.from("modules").delete().eq("id", m.id));
+  emitModuleDeleted({
+    type: "module_deleted",
+    classroomId: m.classroom_id,
+    moduleId: m.id,
+  });
   res.status(204).end();
 });
 

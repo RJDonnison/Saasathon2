@@ -28,13 +28,19 @@ export interface ModuleChangedPayload {
   moduleId: string;
   revision: number;
 }
+export interface ModuleDeletedPayload {
+  type: "module_deleted";
+  classroomId: string;
+  moduleId: string;
+}
 
 /** Discriminated union (on `type`) of every socket payload. */
 export type SocketPayload =
   | RaiseHandPayload
   | StudentStatusUpdatePayload
   | PresenceUpdatePayload
-  | ModuleChangedPayload;
+  | ModuleChangedPayload
+  | ModuleDeletedPayload;
 
 /** Events the client emits -> server. */
 export interface ClientToServerEvents {
@@ -48,4 +54,5 @@ export interface ServerToClientEvents {
   student_status_update: (payload: StudentStatusUpdatePayload) => void;
   presence_update: (payload: PresenceUpdatePayload) => void;
   module_changed: (payload: ModuleChangedPayload) => void;
+  module_deleted: (payload: ModuleDeletedPayload) => void;
 }

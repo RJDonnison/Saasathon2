@@ -253,6 +253,12 @@ export interface ModuleBuilderDocument {
             answer: string;
           }>;
           checks?: Array<{ id: string; name: string; description: string }>;
+          tests?: Array<{
+            id: string;
+            name: string;
+            args: unknown[];
+            expected: unknown;
+          }>;
         }
     >;
   }>;
