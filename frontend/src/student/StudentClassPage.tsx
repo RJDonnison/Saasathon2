@@ -7,6 +7,7 @@ import { CARD, TINT } from "../ui/styles.ts";
 import {
   introSnippet,
   lessonOverview,
+  lessonWindowLabel,
   plural,
   STATUS_LABEL,
   timeAgo,
@@ -166,6 +167,14 @@ export default function StudentClassPage() {
                         {STATUS_LABEL[lesson.status]}
                       </span>
                     </div>
+                    {lessonWindowLabel(lesson) && (
+                      <p
+                        className={`mb-0! mt-3! text-[13px]! font-medium! ${lesson.available ? "text-muted" : "text-peach-ink"}`}
+                      >
+                        {lesson.available ? "" : "Locked. "}
+                        {lessonWindowLabel(lesson)}
+                      </p>
+                    )}
                     {lesson.sections.length > 0 && (
                       <>
                         <h4 className="mb-2! mt-4! font-display! text-[13px]! font-semibold!">
@@ -207,15 +216,19 @@ export default function StudentClassPage() {
                       </>
                     )}
                     <div className="mt-4">
-                      <Link to={`${classPath}/live?lesson=${lesson.id}`}>
-                        <Button>
-                          {lesson.status === "completed"
-                            ? "Review lesson"
-                            : lesson.status === "in_progress"
-                              ? "Continue"
-                              : "Open lesson"}
-                        </Button>
-                      </Link>
+                      {lesson.available ? (
+                        <Link to={`${classPath}/live?lesson=${lesson.id}`}>
+                          <Button>
+                            {lesson.status === "completed"
+                              ? "Review lesson"
+                              : lesson.status === "in_progress"
+                                ? "Continue"
+                                : "Open lesson"}
+                          </Button>
+                        </Link>
+                      ) : (
+                        <Button disabled>Not open</Button>
+                      )}
                     </div>
                   </article>
                 ))}

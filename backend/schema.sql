@@ -105,6 +105,11 @@ alter table modules alter column status set default 'published';
 alter table modules alter column revision set default 0;
 alter table modules drop constraint if exists modules_revision_check;
 alter table modules add constraint modules_revision_check check (revision >= 0);
+-- Optional time window in which students may open the lesson (null = unbounded on that side).
+alter table modules add column if not exists opens_at timestamptz;
+alter table modules add column if not exists closes_at timestamptz;
+alter table modules drop constraint if exists modules_window_check;
+alter table modules add constraint modules_window_check check (opens_at is null or closes_at is null or closes_at > opens_at);
 
 -- Classroom collaboration tables already present in the deployed project.
 create table if not exists classroom_invitations (

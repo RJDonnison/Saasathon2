@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Router, type RequestHandler } from "express";
 import { requireRole } from "../auth.js";
-import { membershipFor, studentInClassroom } from "../access.js";
+import { inLessonWindow, liveModuleIds, membershipFor, studentInClassroom } from "../access.js";
 import { supabase } from "../supabase.js";
 import { disconnectClassroomMember } from "../sockets.js";
 import {
@@ -352,6 +352,7 @@ classroomsRouter.get("/:id/lessons", requireRole("student"), async (req, res) =>
       .order("id"),
   ) as ModuleRow[];
   const moduleIds = modules.map((m) => m.id);
+  const live = await liveModuleIds(String(req.params.id));
   const sections = moduleIds.length
     ? (unwrap(
         await supabase.from("sections").select("*").in("module_id", moduleIds).order("position").order("id"),
@@ -409,11 +410,15 @@ classroomsRouter.get("/:id/lessons", requireRole("student"), async (req, res) =>
         });
       }
     }
+    const available = inLessonWindow(m) || live.has(m.id);
+    // Outside its window a lesson is only a title and its times: no intro, contents or exercises.
     return {
       ...toModule(m),
+      content: available ? m.content : "",
       status: statusOf.get(m.id) ?? "not_started",
-      sections: mine.map((s) => ({ id: s.id, title: s.title })),
-      exercises: exerciseSummaries,
+      available,
+      sections: available ? mine.map((s) => ({ id: s.id, title: s.title })) : [],
+      exercises: available ? exerciseSummaries : [],
     };
   });
   res.json(body);
@@ -548,7 +553,10 @@ classroomsRouter.get("/:id/modules", async (req, res) => {
   let query = supabase.from("modules").select("*").eq("classroom_id", req.params.id);
   if (req.user!.role === "student") query = query.eq("status", "published");
   const rows = unwrap(await query.order("position").order("id")) as ModuleRow[];
-  const body: ListModulesResponse = rows.map(toModule);
+  const live = req.user!.role === "student" ? await liveModuleIds(String(req.params.id)) : null;
+  const body: ListModulesResponse = rows.map((row) =>
+    live && !(inLessonWindow(row) || live.has(row.id)) ? { ...toModule(row), content: "" } : toModule(row),
+  );
   res.json(body);
 });
 /** Teacher-only student aggregate, scoped to both the classroom and the requested student. */

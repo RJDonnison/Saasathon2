@@ -13,7 +13,7 @@ import Dot from "../ui/Dot.tsx";
 import Heading from "../ui/Heading.tsx";
 import { BookIcon, CheckIcon } from "../ui/icons.tsx";
 import { CARD, FOCUS_RING, TINT } from "../ui/styles.ts";
-import { lessonOverview, plural } from "./lessons.ts";
+import { lessonOverview, lessonWindowLabel, plural } from "./lessons.ts";
 import { useClassData } from "./useClassData.ts";
 import { useWorkspace } from "./useWorkspace.ts";
 
@@ -96,14 +96,16 @@ export default function StudentHome() {
   const lessonNav = useRef<HTMLElement>(null);
 
   // The lesson in view: the one the student picked (or linked to), else where they left off, else the first.
+  // Lessons outside the teacher's time window can't be opened, so they are never the lesson in view.
+  const openModules = modules?.filter((m) => m.available);
   const followedId =
-    session && following && modules?.some((m) => m.id === session.moduleId)
+    session && following && openModules?.some((m) => m.id === session.moduleId)
       ? session.moduleId
       : null;
   const currentId =
     followedId ??
-    (pickedId && modules?.some((m) => m.id === pickedId) ? pickedId : null) ??
-    (modules ? (lessonOverview(modules).current ?? modules[0])?.id : null) ??
+    (pickedId && openModules?.some((m) => m.id === pickedId) ? pickedId : null) ??
+    (modules ? (lessonOverview(modules).current ?? openModules?.[0])?.id : null) ??
     null;
   const followingNow = followedId !== null;
   const phase = followingNow ? session!.phase : "work";
@@ -117,8 +119,10 @@ export default function StudentHome() {
 
   // Lock in the starting lesson (adjusting state during render) so marking one complete doesn't yank the student
   // onto the next.
-  if (pickedId === null && modules?.length)
-    setPickedId((lessonOverview(modules).current ?? modules[0]).id);
+  const startId = modules
+    ? (lessonOverview(modules).current ?? openModules?.[0])?.id
+    : undefined;
+  if (pickedId === null && startId) setPickedId(startId);
 
   // Opening a lesson that hasn't been started marks it in progress.
   const currentStatus = modules?.find((m) => m.id === currentId)?.status;
@@ -149,6 +153,7 @@ export default function StudentHome() {
 
   const currentIndex = modules?.findIndex((m) => m.id === currentId) ?? -1;
   const current = currentIndex >= 0 ? modules![currentIndex] : null;
+  const nextOpen = modules?.slice(currentIndex + 1).find((m) => m.available);
   const doneCount = modules ? lessonOverview(modules).completedCount : 0;
   const teacher = classroom?.teacherName ?? "";
   const classroomLoading = classroom === null;
@@ -311,8 +316,9 @@ export default function StudentHome() {
                       <button
                         type="button"
                         aria-current={m.id === currentId}
+                        disabled={!m.available}
                         onClick={() => browse(m.id)}
-                        className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-[15px]! leading-tight! font-medium! text-muted transition hover:bg-surface-soft aria-[current=true]:bg-mint/70 aria-[current=true]:text-ink ${FOCUS_RING}`}
+                        className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-[15px]! leading-tight! font-medium! text-muted transition hover:bg-surface-soft disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent aria-[current=true]:bg-mint/70 aria-[current=true]:text-ink ${FOCUS_RING}`}
                       >
                         <span className="grid size-8 flex-none place-items-center rounded-full border border-border bg-surface text-[13px] font-semibold text-muted [[aria-current=true]>&]:border-transparent [[aria-current=true]>&]:bg-accent [[aria-current=true]>&]:text-ink">
                           {m.status === "completed" ? (
@@ -323,14 +329,22 @@ export default function StudentHome() {
                         </span>
                         <span className="flex min-w-0 flex-col gap-0.5">
                           <span className="truncate">{m.title}</span>
-                          {session?.moduleId === m.id ? (
+                          {!m.available ? (
+                            <span className="text-xs! font-medium! text-peach-ink">
+                              {lessonWindowLabel(m) ?? "Not open"}
+                            </span>
+                          ) : session?.moduleId === m.id ? (
                             <span className="text-xs! font-medium! text-mint-ink">
                               The class is here
                             </span>
+                          ) : m.id === currentId ? (
+                            <span className="text-xs! font-medium! text-mint-ink">
+                              You’re here
+                            </span>
                           ) : (
-                            m.id === currentId && (
-                              <span className="text-xs! font-medium! text-mint-ink">
-                                You’re here
+                            lessonWindowLabel(m) && (
+                              <span className="text-xs! font-medium! text-muted">
+                                {lessonWindowLabel(m)}
                               </span>
                             )
                           )}
@@ -379,7 +393,24 @@ export default function StudentHome() {
               </div>
             )}
 
-            {modules && modules.length > 0 && (
+            {modules && modules.length > 0 && !current && (
+              <div
+                className={`flex flex-col items-center gap-3 px-6 py-14 text-center ${CARD}`}
+              >
+                <span
+                  className={`grid size-12 place-items-center rounded-2xl ${TINT.peach}`}
+                >
+                  <BookIcon className="size-5" />
+                </span>
+                <Heading>No lesson is open right now</Heading>
+                <p className="m-0 max-w-sm text-sm text-muted">
+                  Your teacher sets when each lesson opens. Check the times in
+                  the lesson list.
+                </p>
+              </div>
+            )}
+
+            {modules && modules.length > 0 && current && (
               <ModuleView
                 module={current}
                 index={Math.max(currentIndex, 0)}
@@ -413,12 +444,10 @@ export default function StudentHome() {
                       Mark lesson complete
                     </Button>
                   )}
-                  {current.status === "completed" &&
-                    modules &&
-                    modules[currentIndex + 1] && (
+                  {current.status === "completed" && nextOpen && (
                       <Button
                         variant="primary"
-                        onClick={() => browse(modules[currentIndex + 1].id)}
+                        onClick={() => browse(nextOpen.id)}
                       >
                         Next lesson
                       </Button>
