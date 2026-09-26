@@ -123,6 +123,16 @@ npm run dev
 
 Open [http://localhost:5173](http://localhost:5173). The API and Socket.io server run on [http://localhost:4000](http://localhost:4000); Vite proxies `/api` and `/socket.io` during development.
 
+## Deploy with Render and Vercel
+
+Connect the GitHub repository to Render and Vercel. Both services can auto-deploy commits pushed to `main`.
+
+1. **Deploy the backend first.** In Render, create a Blueprint from this repository; the root [`render.yaml`](render.yaml) creates the API service and builds from the repository root so imports from `shared/` resolve. Set its dashboard secrets and configuration: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `CLIENT_ORIGIN` (the final Vercel production URL), and a production `PISTON_API_URL`. Set `PISTON_AUTH_TOKEN` when that hosted Piston service requires it. `OPENAI_API_KEY` and `OPENAI_MODEL` are optional.
+2. **Deploy the frontend.** In Vercel, set the project root directory to `frontend`. Set `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`, `VITE_API_ORIGIN`, and `VITE_SOCKET_ORIGIN`; both origin variables should be the HTTPS Render service URL, without a trailing slash. The included `frontend/vercel.json` only supplies the React Router SPA fallback—it does not proxy API or Socket.io traffic.
+3. After Vercel has its final URL, confirm Render's `CLIENT_ORIGIN` exactly matches it and redeploy the backend if it changed. In Supabase Authentication URL Configuration, add the Vercel URL and `https://<vercel-domain>/**` to Redirect URLs (and use it as the Site URL as appropriate). Keep the Supabase Google callback URL as `https://<project-ref>.supabase.co/auth/v1/callback`.
+
+The local Piston default cannot serve production traffic: deploy or subscribe to a hosted Piston `/api/v2` endpoint before enabling production code runs. Render's free web services can cold-start and temporarily interrupt Socket.io; the client reconnects, but users may briefly see stale realtime presence until it reconnects. Protect `main` in GitHub branch protection and require the **Typecheck** status check before merge so the Render/Vercel main-branch deployments only receive reviewed changes.
+
 ### Try the complete workflow
 
 Use two Google accounts (or a normal and private browser window): sign in as a teacher, create a classroom, invite the second account, accept the invitation as that student, create or generate and publish a lesson, then start it live. The teacher and student views can then be used side by side to test live presence, hands, activity, feedback, and the hint-only assistant.

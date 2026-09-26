@@ -17,13 +17,19 @@ import type {
 } from "../../shared/events";
 import { supabase } from "./supabase.ts";
 
+// Empty locally: Vite proxies Socket.io to the backend. In a hosted frontend
+// this points at the separately deployed Socket.io origin.
+const socketOrigin =
+  import.meta.env.VITE_SOCKET_ORIGIN?.replace(/\/$/, "") || undefined;
+
 type AppSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
 // One long-lived socket that does NOT connect on its own (autoConnect: false).
 // Listeners can be attached at any time (even before login); the connection itself is opened
-// by connectSocket() only once the user is signed in and in a classroom. Same origin — Vite proxies
-// /socket.io. `auth` is a function so every (re)connect sends the current, auto-refreshed Supabase token.
-const socket: AppSocket = io({
+// by connectSocket() only once the user is signed in and in a classroom. With no configured origin,
+// Vite proxies /socket.io locally. `auth` is a function so every (re)connect sends the current,
+// auto-refreshed Supabase token.
+const socket: AppSocket = io(socketOrigin, {
   autoConnect: false,
   auth: (cb) => {
     void supabase.auth

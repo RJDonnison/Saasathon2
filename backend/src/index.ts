@@ -75,7 +75,7 @@ try {
 const server = http.createServer(app);
 attachSockets(server);
 
-server.listen(PORT, () => {
+server.listen(PORT, "0.0.0.0", () => {
   console.log(
     `[backend] REST + Socket.io listening on http://localhost:${PORT}`,
   );

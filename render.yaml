@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: loop-classroom-api
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npm ci --prefix backend && npm run build --prefix backend
+    startCommand: npm run start --prefix backend
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: CLIENT_ORIGIN
+        sync: false
+      - key: PISTON_API_URL
+        sync: false
+      - key: PISTON_AUTH_TOKEN
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        sync: false
