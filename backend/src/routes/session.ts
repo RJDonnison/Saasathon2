@@ -135,10 +135,14 @@ sessionRouter.post("/", requireRole("teacher"), async (req, res) => {
       .status(400)
       .json({ error: "moduleId and a valid phase are required" });
   }
-  if (!(await moduleInClassroom(moduleId, classroomId))) {
+  const [module, current] = await Promise.all([
+    moduleInClassroom(moduleId, classroomId),
+    liveRow(classroomId),
+  ]);
+  if (!module) {
     return res.status(404).json({ error: "Lesson not found" });
   }
-  if (await liveRow(classroomId)) {
+  if (current) {
     return res
       .status(409)
       .json({
@@ -158,8 +162,8 @@ sessionRouter.post("/", requireRole("teacher"), async (req, res) => {
       .select("*")
       .single(),
   ) as SessionRow;
-  await recordSessionModule(row, (await withTitle(row)).moduleTitle);
-  publish(res, classroomId, await withTitle(row), 201);
+  await recordSessionModule(row, module.title);
+  publish(res, classroomId, toSession(row, module.title), 201);
 });
 
 sessionRouter.patch("/", requireRole("teacher"), async (req, res) => {

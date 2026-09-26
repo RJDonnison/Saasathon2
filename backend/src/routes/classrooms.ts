@@ -52,13 +52,8 @@ import type {
 
 export const classroomsRouter = Router();
 async function member(req: any, res: any): Promise<boolean> {
-  // A token represents one selected membership; a teacher creating a classroom, or a student accepting an invitation, switches it.
+  // requireMember has already resolved and validated this request's active membership.
   if (req.params.id !== req.user!.classroomId) {
-    res.status(403).json({ error: "Not a member of this classroom" });
-    return false;
-  }
-  const membership = await membershipFor(req.user!.userId, req.params.id);
-  if (!membership) {
     res.status(403).json({ error: "Not a member of this classroom" });
     return false;
   }
@@ -323,17 +318,17 @@ classroomsRouter.get("/", async (req, res) => {
 classroomsRouter.post("/:id/activate", async (req, res) => {
   const membership = await membershipFor(req.user!.userId, String(req.params.id));
   if (!membership) return res.status(404).json({ error: "Not a member of this classroom" });
-  const updated = unwrap(
-    await supabase
+  const [updatedResult, userResult] = await Promise.all([
+    supabase
       .from("memberships")
       .update({ created_at: new Date().toISOString() })
       .eq("id", membership.id)
       .select("*")
       .single(),
-  ) as MembershipRow;
-  const user = unwrap(
-    await supabase.from("users").select("*").eq("id", req.user!.userId).single(),
-  ) as UserRow;
+    supabase.from("users").select("*").eq("id", req.user!.userId).single(),
+  ]);
+  const updated = unwrap(updatedResult) as MembershipRow;
+  const user = unwrap(userResult) as UserRow;
   const body: ActivateClassroomResponse = { user: toUser(user, updated) };
   res.json(body);
 });
@@ -342,22 +337,29 @@ classroomsRouter.post("/:id/activate", async (req, res) => {
 classroomsRouter.get("/:id/lessons", requireRole("student"), async (req, res) => {
   if (!(await member(req, res))) return;
   const studentId = req.user!.userId;
-  const modules = unwrap(
-    await supabase
+  const [moduleResult, live] = await Promise.all([
+    supabase
       .from("modules")
       .select("*")
       .eq("classroom_id", req.params.id)
       .eq("status", "published")
       .order("position")
       .order("id"),
-  ) as ModuleRow[];
+    liveModuleIds(String(req.params.id)),
+  ]);
+  const modules = unwrap(moduleResult) as ModuleRow[];
   const moduleIds = modules.map((m) => m.id);
-  const live = await liveModuleIds(String(req.params.id));
-  const sections = moduleIds.length
-    ? (unwrap(
-        await supabase.from("sections").select("*").in("module_id", moduleIds).order("position").order("id"),
-      ) as Array<{ id: string; module_id: string; title: string }>)
-    : [];
+  const [sections, progress] = await Promise.all([
+    moduleIds.length
+      ? supabase.from("sections").select("*").in("module_id", moduleIds).order("position").order("id")
+      : Promise.resolve({ data: [], error: null }),
+    moduleIds.length
+      ? supabase.from("module_progress").select("module_id,status").eq("student_id", studentId).in("module_id", moduleIds)
+      : Promise.resolve({ data: [], error: null }),
+  ]).then((results) => results.map(unwrap)) as [
+    Array<{ id: string; module_id: string; title: string }>,
+    Array<{ module_id: string; status: ProgressStatus }>,
+  ];
   const sectionIds = sections.map((s) => s.id);
   const questions = sectionIds.length
     ? (unwrap(
@@ -378,8 +380,7 @@ classroomsRouter.get("/:id/lessons", requireRole("student"), async (req, res) =>
         await supabase.from("code_exercises").select("id,question_id").in("question_id", codeQuestionIds),
       ) as Array<{ id: string; question_id: string }>)
     : [];
-  const [progress, submissions, attempts, work] = await Promise.all([
-    supabase.from("module_progress").select("module_id,status").eq("student_id", studentId).in("module_id", moduleIds.length ? moduleIds : [""]),
+  const [submissions, attempts, work] = await Promise.all([
     exercises.length
       ? supabase
           .from("code_submissions")
@@ -404,7 +405,7 @@ classroomsRouter.get("/:id/lessons", requireRole("student"), async (req, res) =>
       : Promise.resolve({ data: [], error: null }),
   ]);
   const statusOf = new Map(
-    (unwrap(progress) as Array<{ module_id: string; status: ProgressStatus }>).map((p) => [p.module_id, p.status]),
+    progress.map((p) => [p.module_id, p.status]),
   );
   const runs = unwrap(submissions as { data: Array<{ code_exercise_id: string; passed: boolean | null }>; error: null }) as Array<{
     code_exercise_id: string;
@@ -530,24 +531,24 @@ classroomsRouter.delete("/:id/announcements/:announcementId", requireRole("teach
 
 classroomsRouter.get("/:id", async (req, res) => {
   if (!(await member(req, res))) return;
-  const row = unwrap(
-    await supabase
+  const [classroomResult, teacherResult] = await Promise.all([
+    supabase
       .from("classrooms")
       .select("*")
       .eq("id", req.params.id)
       .maybeSingle(),
-  ) as ClassroomRow | null;
-  if (!row) return res.status(404).json({ error: "Classroom not found" });
-  const teacher = unwrap(
-    await supabase
+    supabase
       .from("memberships")
       .select("user_id")
-      .eq("classroom_id", row.id)
+      .eq("classroom_id", req.params.id)
       .eq("role", "teacher")
       .order("created_at")
       .limit(1)
       .maybeSingle(),
-  ) as { user_id: string } | null;
+  ]);
+  const row = unwrap(classroomResult) as ClassroomRow | null;
+  if (!row) return res.status(404).json({ error: "Classroom not found" });
+  const teacher = unwrap(teacherResult) as { user_id: string } | null;
   const teacherRow = teacher
     ? (unwrap(
         await supabase.from("users").select("name").eq("id", teacher.user_id).maybeSingle(),

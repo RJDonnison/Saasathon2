@@ -63,21 +63,21 @@ export async function verifyToken(token: string): Promise<AuthIdentity | null> {
 
 /** The classroom profile for a signed-in user, or null if they haven't joined one yet. */
 export async function findProfile(authId: string): Promise<User | null> {
-  const row = unwrap(
-    await supabase.from("users").select("*").eq("id", authId).maybeSingle(),
-  ) as UserRow | null;
-  if (!row) return null;
-  // The most recently joined membership is the active classroom. Joining an existing
-  // classroom refreshes its timestamp, so it also switches the active membership.
-  const membership = unwrap(
-    await supabase
+  const [userResult, membershipResult] = await Promise.all([
+    supabase.from("users").select("*").eq("id", authId).maybeSingle(),
+    supabase
       .from("memberships")
       .select("*")
       .eq("user_id", authId)
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
-  ) as MembershipRow | null;
+  ]);
+  const row = unwrap(userResult) as UserRow | null;
+  if (!row) return null;
+  // The most recently joined membership is the active classroom. Joining an existing
+  // classroom refreshes its timestamp, so it also switches the active membership.
+  const membership = unwrap(membershipResult) as MembershipRow | null;
   return membership ? toUser(row, membership) : null;
 }
 
