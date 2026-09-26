@@ -2,22 +2,29 @@ import { useState, type FormEvent } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/useAuth.ts";
 import InvitationList from "../student/InvitationList.tsx";
+import Button from "../ui/Button.tsx";
+import Heading from "../ui/Heading.tsx";
+import { CARD, INPUT } from "../ui/styles.ts";
 import ProfileRecovery from "../auth/ProfileRecovery.tsx";
 import type { Role } from "../../../shared/types";
 
-function Arrow() {
-  return (
-    <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
-      <path
-        d="M4 10h12m-5-5 5 5-5 5"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
+const LINK_BUTTON =
+  "self-start border-0 bg-transparent p-0 text-[13px]! text-muted underline underline-offset-2 hover:text-ink";
+
+const POINTS = [
+  {
+    title: "Teach together",
+    body: "Start a lesson and bring everyone to the same page, or let students work through it at their own pace.",
+  },
+  {
+    title: "See how it’s going",
+    body: "Progress, raised hands and questions sit in one view, so you know who needs you.",
+  },
+  {
+    title: "Help without the answers",
+    body: "A student who is stuck gets a nudge in the right direction, not the solution.",
+  },
+];
 
 export default function JoinPage() {
   const {
@@ -37,9 +44,9 @@ export default function JoinPage() {
 
   if (loading)
     return (
-      <main className="landing-loading">
-        <img className="loading-mark" src="/favicon.svg" alt="" /> Getting your
-        workspace ready…
+      <main className="grid min-h-screen place-content-center justify-items-center gap-4 bg-canvas font-mono text-xs text-ink">
+        <img className="size-[46px] object-contain" src="/favicon.svg" alt="" />
+        Getting your workspace ready…
       </main>
     );
   if (user) return <Navigate to={`/${user.role}`} replace />;
@@ -70,224 +77,62 @@ export default function JoinPage() {
     }
   }
 
+  const name =
+    (session?.user.user_metadata?.full_name as string | undefined) ??
+    session?.user.email;
+
   return (
-    <main className="landing-shell" id="top">
-      <div className="landing-grain" aria-hidden="true" />
-      <nav className="landing-nav">
-        <a className="brand" href="/" aria-label="Loop home">
-          <img
-            className="brand-icon"
-            src="/favicon.svg"
-            alt=""
-            width="33"
-            height="33"
-          />
-          <span>
-            loop<span className="brand-dot">.</span>
-          </span>
-        </a>
-        <a className="nav-cta" href="#get-started">
-          Get started <Arrow />
-        </a>
-      </nav>
-
-      <section className="hero">
-        <div className="hero-copy">
-          <div className="eyebrow">
-            <span>The classroom, rewired</span>
-          </div>
-          <h1>
-            Big ideas
-            <br />
-            start with <span className="headline-highlight">a line.</span>
-          </h1>
-          <p className="hero-description">
-            A creative coding classroom where students make, explore, and learn
-            together.
-          </p>
-          <div className="hero-actions">
-            <a className="button-primary" href="#get-started">
-              Bring your class in <Arrow />
-            </a>
-            <span className="action-caption">For students and teachers</span>
-          </div>
-          <div className="hero-social-proof">
-            <div className="avatar-stack">
-              <span>J</span>
-              <span>M</span>
-              <span>A</span>
-              <span>+</span>
-            </div>
-            <p>
-              <strong>Made for the “what if?”</strong>
-              <br />
-              moment in every student.
-            </p>
-          </div>
-        </div>
-
-        <div className="hero-arrow" aria-hidden="true">
-          <svg viewBox="0 0 120 54" fill="none">
-            <path
-              d="M5 27h96M79 5l22 22-22 22"
-              stroke="currentColor"
-              strokeWidth="7"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </div>
-        <div
-          className="hero-art"
-          aria-label="A preview of students learning to code together"
+    <main className="flex min-h-screen flex-col bg-canvas text-ink" id="top">
+      <header className="mx-auto flex h-20 w-full max-w-6xl items-center justify-between px-4 sm:px-6">
+        <a
+          className="inline-flex items-center gap-2.5 font-display! text-[23px]! font-bold! tracking-[-1.3px]"
+          href="/"
+          aria-label="loop home"
         >
-          <div className="art-orbit orbit-one" />
-          <div className="art-orbit orbit-two" />
-          <div className="spark spark-one">✳</div>
-          <div className="spark spark-two">✦</div>
-          <div className="code-window">
-            <div className="window-top">
-              <div className="window-lights">
-                <i />
-                <i />
-                <i />
-              </div>
-              <span>first_project.js</span>
-              <span className="window-live">
-                <i /> JAVASCRIPT
-              </span>
-            </div>
-            <div className="code-body">
-              <div className="line-numbers">
-                01
-                <br />
-                02
-                <br />
-                03
-                <br />
-                04
-                <br />
-                05
-                <br />
-                06
-              </div>
-              <div className="code-lines">
-                <div>
-                  <span className="code-purple">const</span>{" "}
-                  <span className="code-yellow">makeItReal</span> = () =&gt;{" "}
-                  {"{"}
-                </div>
-                <div className="indent">
-                  <span className="code-purple">const</span> idea ={" "}
-                  <span className="code-green">"anything"</span>;
-                </div>
-                <div className="indent">
-                  <span className="code-purple">return</span>{" "}
-                  <span className="code-blue">idea</span>.
-                  <span className="code-pink">create</span>();
-                </div>
-                <div>{"};"}</div>
-                <div className="code-gap" />
-                <div>
-                  <span className="code-yellow">makeItReal</span>();{" "}
-                  <span className="cursor" />{" "}
-                  <span className="code-comment">// ready to explore</span>
-                </div>
-              </div>
-            </div>
-            <div className="window-footer">
-              <span>
-                <i className="success-dot" /> Ready to run
-              </span>
-              <span>
-                JavaScript <b>⌄</b>
-              </span>
-            </div>
-          </div>
-          <div className="float-card student-float">
-            <span className="float-avatar avatar-coral">M</span>
-            <span>
-              <b>Maya just made</b>
-              <small>a tiny universe ✨</small>
-            </span>
-            <span className="float-heart">♥</span>
-          </div>
-          <div className="float-card teacher-float">
-            <span className="teacher-check">✓</span>
-            <span>
-              <b>Room 3 is buzzing</b>
-              <small>12 minds at work</small>
-            </span>
-            <span className="pulse-bars">
-              <i />
-              <i />
-              <i />
-              <i />
-              <i />
-            </span>
-          </div>
-        </div>
-      </section>
+          <img className="size-[33px] object-contain" src="/favicon.svg" alt="" />
+          <span>
+            loop<span className="text-accent">.</span>
+          </span>
+        </a>
+      </header>
 
-      <section className="feature-strip" aria-label="Classroom features">
-        <div className="feature-item">
-          <span className="feature-icon mint-icon">⌘</span>
-          <span>
-            <b>Make, don’t memorize</b>
-            <small>Hands-on coding from day one</small>
-          </span>
-        </div>
-        <div className="feature-item">
-          <span className="feature-icon peach-icon">↗</span>
-          <span>
-            <b>See every breakthrough</b>
-            <small>Teachers stay in the loop</small>
-          </span>
-        </div>
-        <div className="feature-item">
-          <span className="feature-icon lavender-icon">✳</span>
-          <span>
-            <b>Find their own way</b>
-            <small>Room to explore and experiment</small>
-          </span>
-        </div>
-        <div className="strip-aside">
-          GOOD THINGS HAPPEN
-          <br />
-          WHEN WE MAKE THINGS.
-        </div>
-      </section>
-
-      <section className="join-section" id="get-started">
-        <div className="join-copy">
-          <span className="section-kicker">GET STARTED</span>
-          <h2>
-            Make room
-            <br />
-            to <em>create.</em>
-          </h2>
-          <p>
-            Sign in to create a classroom, or to accept your teacher’s
-            invitation.
+      <div className="mx-auto grid w-full max-w-6xl flex-1 items-center gap-12 px-4 py-10 sm:px-6 lg:grid-cols-[1.15fr_1fr] lg:gap-20 lg:py-16">
+        <section className="flex flex-col gap-5">
+          <h1 className="m-0! max-w-xl font-display! text-[length:clamp(36px,5vw,56px)]! leading-[1.08]! font-semibold! tracking-[-0.035em]!">
+            A shared space for the whole class.
+          </h1>
+          <p className="m-0 max-w-md text-lg leading-relaxed text-muted">
+            Teachers plan and run lessons. Students follow along, ask questions
+            and see their progress, all in one place.
           </p>
-        </div>
-        <div className="join-card">
+        </section>
+
+        <section
+          className={`flex flex-col gap-5 p-6 sm:p-8 ${CARD}`}
+          id="get-started"
+          aria-label="Sign in"
+        >
           {!session ? (
             <>
-              <span className="card-step">
-                01 <i /> YOUR WORKSPACE
-              </span>
-              <h3>Come on in.</h3>
-              <p className="card-description">
-                Sign in with Google to join your classroom and get creating.
-              </p>
-              {error && <p className="form-error">{error}</p>}
-              <button
-                onClick={onGoogle}
-                disabled={busy}
-                className="google-button"
-              >
-                <svg viewBox="0 0 48 48" aria-hidden="true">
+              <div className="flex flex-col gap-1.5">
+                <Heading as="h2" variant="name">
+                  Sign in
+                </Heading>
+                <p className="m-0 text-sm text-muted">
+                  Use your Google account to create a classroom or accept an
+                  invitation from your teacher.
+                </p>
+              </div>
+              {error && (
+                <p
+                  className="m-0 rounded-xl bg-peach px-4 py-3 text-sm text-peach-ink"
+                  role="alert"
+                >
+                  {error}
+                </p>
+              )}
+              <Button size="lg" onClick={onGoogle} disabled={busy}>
+                <svg viewBox="0 0 48 48" className="size-[18px]" aria-hidden="true">
                   <path
                     fill="#FFC107"
                     d="M43.6 24.5c0-1.4-.1-2.8-.4-4.1H24v7.8h11a9.4 9.4 0 0 1-4.1 6.2v5.1h6.7c3.9-3.6 6-8.8 6-15Z"
@@ -306,45 +151,40 @@ export default function JoinPage() {
                   />
                 </svg>
                 {busy ? "Opening Google…" : "Continue with Google"}
-                <Arrow />
-              </button>
-              <p className="card-footnote">
+              </Button>
+              <p className="m-0 text-xs text-subtle">
                 Students join by accepting an invitation from their teacher.
               </p>
             </>
           ) : (
             <>
-              <span className="card-step">
-                02 <i /> YOUR CLASSROOM
-              </span>
-              <p className="card-description">
-                Signed in as{" "}
-                <strong>
-                  {(session.user.user_metadata?.full_name as
-                    string | undefined) ?? session.user.email}
-                </strong>
-                .
+              <p className="m-0 text-sm text-muted">
+                Signed in as <strong className="text-ink">{name}</strong>
               </p>
               {role === "student" ? (
                 <>
-                  <h3>Waiting for an invitation.</h3>
-                  <p className="card-description">
-                    Ask your teacher to invite this email address. Invitations
-                    show up here, and you choose whether to join.
-                  </p>
+                  <div className="flex flex-col gap-1.5">
+                    <Heading as="h2" variant="name">
+                      Waiting for an invitation
+                    </Heading>
+                    <p className="m-0 text-sm text-muted">
+                      Ask your teacher to invite this email address. Invitations
+                      show up here, and you choose whether to join.
+                    </p>
+                  </div>
                   <InvitationList />
-                  <div className="mt-5 flex flex-col items-start gap-3">
+                  <div className="flex flex-col items-start gap-3">
                     <button
                       type="button"
                       onClick={() => setRole("teacher")}
-                      className="signout-link"
+                      className={LINK_BUTTON}
                     >
                       Are you a teacher? Set up a classroom
                     </button>
                     <button
                       type="button"
                       onClick={() => void signOut()}
-                      className="signout-link"
+                      className={LINK_BUTTON}
                     >
                       Sign out
                     </button>
@@ -352,15 +192,20 @@ export default function JoinPage() {
                 </>
               ) : (
                 <>
-                  <h3>Create your classroom</h3>
-                  <p className="card-description">
-                    Name it, then invite your students by email. They choose
-                    whether to join.
-                  </p>
-                  <form onSubmit={onCreate} className="join-form">
-                    <label>
-                      CLASSROOM NAME
+                  <div className="flex flex-col gap-1.5">
+                    <Heading as="h2" variant="name">
+                      Create your classroom
+                    </Heading>
+                    <p className="m-0 text-sm text-muted">
+                      Name it, then invite your students by email. They choose
+                      whether to join.
+                    </p>
+                  </div>
+                  <form onSubmit={onCreate} className="flex flex-col gap-4">
+                    <label className="flex flex-col gap-1.5 text-sm font-medium">
+                      Classroom name
                       <input
+                        className={`h-11 w-full ${INPUT}`}
                         value={classroomName}
                         onChange={(e) => setClassroomName(e.target.value)}
                         placeholder="For example, Year 11 Digital Technologies"
@@ -368,57 +213,71 @@ export default function JoinPage() {
                         required
                       />
                     </label>
-                    {error && <p className="form-error">{error}</p>}
-                    <button
+                    {error && (
+                      <p
+                        className="m-0 rounded-xl bg-peach px-4 py-3 text-sm text-peach-ink"
+                        role="alert"
+                      >
+                        {error}
+                      </p>
+                    )}
+                    <Button
                       type="submit"
+                      variant="primary"
+                      size="lg"
                       disabled={busy}
-                      className="button-primary join-submit"
                     >
                       {busy ? "Creating…" : "Create classroom"}
-                      <Arrow />
-                    </button>
+                    </Button>
                   </form>
-                  <button
-                    type="button"
-                    onClick={() => setRole("student")}
-                    className="signout-link"
-                  >
-                    I’m a student
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void signOut()}
-                    className="signout-link"
-                  >
-                    Sign out
-                  </button>
+                  <div className="flex flex-col items-start gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setRole("student")}
+                      className={LINK_BUTTON}
+                    >
+                      I’m a student
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void signOut()}
+                      className={LINK_BUTTON}
+                    >
+                      Sign out
+                    </button>
+                  </div>
                 </>
               )}
             </>
           )}
-          <div className="card-bottom">
-            <span>
-              <i /> PRIVATE CLASSROOMS
-            </span>
-            <span>MADE FOR LEARNING&nbsp; ✳</span>
-          </div>
+        </section>
+      </div>
+
+      <section
+        className="mx-auto w-full max-w-6xl px-4 pb-16 sm:px-6"
+        aria-label="What it does"
+      >
+        <div className="grid gap-8 border-t border-border pt-10 md:grid-cols-3 md:gap-10">
+          {POINTS.map((point) => (
+            <div key={point.title} className="flex flex-col gap-2">
+              <Heading as="h2" variant="h2">
+                {point.title}
+              </Heading>
+              <p className="m-0 text-sm leading-relaxed text-muted">
+                {point.body}
+              </p>
+            </div>
+          ))}
         </div>
       </section>
-      <footer className="landing-footer">
-        <a className="brand footer-brand" href="#top" aria-label="Back to top">
-          <img
-            className="brand-icon"
-            src="/favicon.svg"
-            alt=""
-            width="25"
-            height="25"
-          />
-          <span>
-            loop<span className="brand-dot">.</span>
-          </span>
-        </a>
-        <span>Make room for big ideas.</span>
-        <span>© 2026 LOOP CLASSROOM</span>
+
+      <footer className="mx-auto w-full max-w-6xl px-4 sm:px-6">
+        <div className="flex h-16 items-center justify-between border-t border-border text-xs text-subtle">
+          <span>© 2026 Loop</span>
+          <a className="hover:text-ink" href="#top">
+            Back to top
+          </a>
+        </div>
       </footer>
     </main>
   );
