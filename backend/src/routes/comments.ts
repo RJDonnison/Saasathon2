@@ -116,6 +116,7 @@ commentsRouter.post("/attempts", async (req, res) => {
       ? null
       : question.answer_key.trim().toLowerCase() ===
         b.answer.trim().toLowerCase();
+  const checkedAt = new Date().toISOString();
   const row = unwrap(
     await supabase
       .from("attempts")
@@ -128,6 +129,23 @@ commentsRouter.post("/attempts", async (req, res) => {
       })
       .select("*")
       .single(),
+  );
+  unwrap(
+    await supabase
+      .from("student_work")
+      .upsert(
+        {
+          id: `${req.user!.userId}:${question.id}`,
+          student_id: req.user!.userId,
+          question_id: question.id,
+          answer: b.answer,
+          code: null,
+          is_correct: isCorrect,
+          checked_at: checkedAt,
+          updated_at: checkedAt,
+        },
+        { onConflict: "student_id,question_id" },
+      ),
   );
   res.status(201).json(toAttempt(row as AttemptRow));
 });
@@ -288,6 +306,20 @@ commentsRouter.post("/questions/:id/comments", async (req, res) => {
     return res.status(403).json({ error: "Not allowed to comment for this student" });
   if (!(await questionInClassroom(questionId, req.user!.classroomId, req.user!.role)))
     return res.status(404).json({ error: "Question not found" });
+  if (req.user!.role === "student") {
+    const teacherComment = unwrap(
+      await supabase
+        .from("question_comments")
+        .select("id")
+        .eq("question_id", questionId)
+        .eq("student_id", studentId)
+        .neq("author_id", studentId)
+        .limit(1)
+        .maybeSingle(),
+    );
+    if (!teacherComment)
+      return res.status(403).json({ error: "A teacher must start this conversation" });
+  }
   const row = unwrap(
     await supabase
       .from("question_comments")

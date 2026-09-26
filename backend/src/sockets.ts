@@ -5,6 +5,7 @@ import { CLIENT_ORIGIN } from "./config.js";
 import type {
   ClientToServerEvents,
   ModuleChangedPayload,
+  ModuleProgressUpdatePayload,
   QuestionCommentCreatedPayload,
   ModuleDeletedPayload,
   PresenceUpdatePayload,
@@ -35,8 +36,20 @@ const raisedHands = new Map<string, Map<string, number>>();
 let activeIo: AppServer | null = null;
 
 /** Tell everyone in the classroom the live lesson changed (null = it ended). */
-export function emitSessionUpdate(classroomId: string, session: LessonSession | null): void {
-  activeIo?.to(classroomId).emit("session_update", { type: "session_update", classroomId, session });
+export function emitSessionUpdate(
+  classroomId: string,
+  session: LessonSession | null,
+): void {
+  activeIo
+    ?.to(classroomId)
+    .emit("session_update", { type: "session_update", classroomId, session });
+}
+
+/** Tell the classroom that a student's durable module progress changed. */
+export function emitModuleProgressUpdate(
+  payload: ModuleProgressUpdatePayload,
+): void {
+  activeIo?.to(payload.classroomId).emit("module_progress_update", payload);
 }
 
 /** Tell everyone in the classroom a module was edited. */
@@ -45,7 +58,10 @@ export function emitModuleChanged(payload: ModuleChangedPayload): void {
 }
 
 /** Close live classroom sockets as soon as a teacher removes a student. */
-export async function disconnectClassroomMember(classroomId: string, userId: string): Promise<void> {
+export async function disconnectClassroomMember(
+  classroomId: string,
+  userId: string,
+): Promise<void> {
   if (!activeIo) return;
   const sockets = await activeIo.in(classroomId).fetchSockets();
   await Promise.all(
@@ -57,10 +73,14 @@ export async function disconnectClassroomMember(classroomId: string, userId: str
 export function emitModuleDeleted(payload: ModuleDeletedPayload) {
   activeIo?.to(payload.classroomId).emit("module_deleted", payload);
 }
-export function emitStudentActivityUpdate(payload: StudentActivityUpdatePayload) {
+export function emitStudentActivityUpdate(
+  payload: StudentActivityUpdatePayload,
+) {
   activeIo?.to(payload.classroomId).emit("student_activity_update", payload);
 }
-export function emitQuestionCommentCreated(payload: QuestionCommentCreatedPayload) {
+export function emitQuestionCommentCreated(
+  payload: QuestionCommentCreatedPayload,
+) {
   activeIo?.to(payload.classroomId).emit("question_comment_created", payload);
 }
 
@@ -84,7 +104,9 @@ function raisedHandsPayload(classroomId: string): RaisedHandsUpdatePayload {
 }
 
 function emitRaisedHands(classroomId: string) {
-  activeIo?.to(classroomId).emit("raised_hands_update", raisedHandsPayload(classroomId));
+  activeIo
+    ?.to(classroomId)
+    .emit("raised_hands_update", raisedHandsPayload(classroomId));
 }
 
 export function attachSockets(httpServer: HttpServer): AppServer {

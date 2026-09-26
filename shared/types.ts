@@ -78,6 +78,54 @@ export interface LessonSession {
   phase: LessonPhase;
   startedAt: string;
 }
+
+export type LessonFeedbackSafetyFlag = "harassment" | "violence" | "self_harm" | "sexual";
+export interface LessonFeedbackStudentSummary {
+  studentId: string;
+  studentName: string;
+  progress: ProgressStatus;
+  finishedAt: string | null;
+  activeMinutes: number;
+  aiHintCount: number;
+  trackedActionCount: number;
+  aiUsePercent: number;
+  usedHelper: boolean;
+  followedPercent: number;
+  detachCount: number;
+  taskCount: number;
+  quizCount: number;
+  safetyFlags: LessonFeedbackSafetyFlag[];
+  aiSummary: string;
+  greenFlag: string | null;
+  redFlag: string | null;
+}
+export interface LessonFeedbackReport {
+  session: LessonSession & { endedAt: string; durationMinutes: number };
+  classroomName: string;
+  studentCount: number;
+  helperUsePercent: number;
+  independentCount: number;
+  followedPercent: number;
+  averageFinishMinutes: number | null;
+  averageQuizMinutes: number | null;
+  completedCount: number;
+  aiSummary: string;
+  strengths: string[];
+  attentionSuggestions: Array<{ studentId: string; studentName: string; reason: string }>;
+  students: LessonFeedbackStudentSummary[];
+}
+export interface LessonFeedbackStudentDetail extends LessonFeedbackStudentSummary {
+  aiLogs: Array<{
+    askedAt: string;
+    question: string;
+    reply: string;
+    safetyFlags: LessonFeedbackSafetyFlag[];
+    misuse: string | null;
+    reviewAvailable: boolean;
+  }>;
+  activityTimeline: Array<{ at: string; type: StudentActivityType; moduleTitle: string }>;
+  aiSuggestion: string;
+}
 /**
  * GET /api/classrooms/:id/session (any member) — the live lesson, or null.
  * POST (teacher) `{ moduleId, phase? }` starts one (409 if already live; phase defaults to teach).
@@ -137,6 +185,10 @@ export interface Module {
   position: number;
   status: ModuleStatus;
   revision: number;
+  /** Students can only open the lesson from this time (ISO), or any time before closesAt when null. */
+  opensAt: string | null;
+  /** Students can no longer open the lesson after this time (ISO), or never when null. */
+  closesAt: string | null;
 }
 export interface Section {
   id: string;
@@ -211,8 +263,14 @@ export interface ExerciseSummary {
 /** A lesson as one student sees it: the module plus their progress and what is in it. */
 export interface LessonSummary extends Omit<Module, "status"> {
   status: ProgressStatus;
+  /** Whether the student can open it right now: inside its time window, or the teacher is running it live. */
+  available: boolean;
   sections: Array<{ id: string; title: string }>;
   exercises: ExerciseSummary[];
+  /** All student-visible questions in this lesson, including non-code questions. */
+  questionCount: number;
+  /** Questions with saved work, an answer attempt, or a code submission from this student. */
+  startedQuestionCount: number;
 }
 /** GET /api/classrooms/:id/lessons (student) — every lesson in order, with the caller's progress. */
 export type ListLessonSummariesResponse = LessonSummary[];
@@ -258,6 +316,11 @@ export interface ModuleProgress {
   status: ProgressStatus;
   updatedAt: string;
 }
+/** One student's durable progress in the module currently being taught live. */
+export interface LiveModuleProgress {
+  studentId: string;
+  status: ProgressStatus;
+}
 export interface SectionProgress {
   id: string;
   studentId: string;
@@ -292,6 +355,10 @@ export interface StudentWork {
   questionId: string;
   answer: string | null;
   code: string | null;
+  /** Result of the most recent answer check; null when the answer has not been checked or cannot be graded. */
+  isCorrect: boolean | null;
+  /** Present only after the student has checked this answer. */
+  checkedAt: string | null;
   updatedAt: string;
 }
 export type StudentActivityType =
@@ -446,6 +513,11 @@ export interface AiModuleSuggestionsResponse {
   /** Present when the assistant could not produce a reviewable builder document. */
   warning?: string;
 }
+/** PUT /api/modules/:id/availability (teacher) — the time window students may open the lesson in; null = unbounded. */
+export interface UpdateModuleAvailabilityRequest {
+  opensAt: string | null;
+  closesAt: string | null;
+}
 export interface UpdateModuleRequest {
   title?: string;
   content?: string;
@@ -579,6 +651,15 @@ export type GetModuleResponse = StudentModule | TeacherModule;
 export type ListModulesResponse = Module[];
 export type GetClassroomResponse = Classroom;
 export type GetClassroomStudentsResponse = User[];
+/**
+ * GET /api/classrooms/:id/session/progress (teacher only) — durable progress for every student in the active
+ * classroom's current live module. Returns 409 when the classroom has no live lesson.
+ */
+export interface GetLiveModuleProgressResponse {
+  sessionId: string;
+  moduleId: string;
+  progress: LiveModuleProgress[];
+}
 export type GetStudentProgressResponse = ModuleProgress[];
 export type UpsertProgressRequest = UpsertModuleProgressRequest;
 export type UpsertProgressResponse = ModuleProgress;
@@ -628,6 +709,7 @@ export interface ValidateMathRequest {
 export interface ValidateMathResponse {
   value: number;
   isCorrect: boolean;
+  checkedAt: string;
 }
 /** One turn of an AI conversation. The AI endpoints are stateless: the client re-sends the transcript each call. */
 export interface AiChatMessage {
