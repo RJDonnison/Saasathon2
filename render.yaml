@@ -14,8 +14,8 @@ services:
         sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
-      - key: CLIENT_ORIGIN
-        sync: false
+      - key: CLIENT_ORIGINS
+        value: https://saasathon2-5plpmnqdj-reuben19.vercel.app
       - key: PISTON_API_URL
         sync: false
       - key: PISTON_AUTH_TOKEN

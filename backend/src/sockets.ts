@@ -1,7 +1,7 @@
 import type { Server as HttpServer } from "node:http";
 import { Server, type Socket } from "socket.io";
 import { findProfile, verifyToken, type AuthUser } from "./auth.js";
-import { CLIENT_ORIGIN } from "./config.js";
+import { isAllowedClientOrigin } from "./config.js";
 import { supabase } from "./supabase.js";
 import { unwrap } from "./rows.js";
 import type {
@@ -140,7 +140,12 @@ function emitRaisedHands(classroomId: string) {
 
 export function attachSockets(httpServer: HttpServer): AppServer {
   const io: AppServer = new Server(httpServer, {
-    cors: { origin: CLIENT_ORIGIN },
+    cors: {
+      origin: (origin, callback) =>
+        callback(null, isAllowedClientOrigin(origin)),
+      methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+      allowedHeaders: ["Authorization", "Content-Type"],
+    },
   });
   activeIo = io;
 
@@ -226,7 +231,8 @@ export function attachSockets(httpServer: HttpServer): AppServer {
       if (hands.size === 0) raisedHands.delete(classroomId);
 
       const cooldownUntil = Date.now() + HAND_RAISE_COOLDOWN_MS;
-      const cooldowns = handRaiseCooldowns.get(classroomId) ?? new Map<string, number>();
+      const cooldowns =
+        handRaiseCooldowns.get(classroomId) ?? new Map<string, number>();
       cooldowns.set(userId, cooldownUntil);
       handRaiseCooldowns.set(classroomId, cooldowns);
       emitRaisedHands(classroomId);

@@ -1,7 +1,7 @@
 import http from "node:http";
 import cors from "cors";
 import express, { type ErrorRequestHandler } from "express";
-import { CLIENT_ORIGIN, PORT } from "./config.js";
+import { isAllowedClientOrigin, PORT } from "./config.js";
 import { assertDatabaseReady } from "./supabase.js";
 import { requireIdentity, requireMember } from "./auth.js";
 import { authRouter } from "./routes/auth.js";
@@ -20,7 +20,13 @@ import { lessonPlansRouter } from "./routes/lessonPlans.js";
 import { attachSockets } from "./sockets.js";
 
 const app = express();
-app.use(cors({ origin: CLIENT_ORIGIN }));
+app.use(
+  cors({
+    origin: (origin, callback) => callback(null, isAllowedClientOrigin(origin)),
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Authorization", "Content-Type"],
+  }),
+);
 app.use(express.json());
 
 // Public
