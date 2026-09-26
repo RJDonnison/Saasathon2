@@ -21,6 +21,7 @@ import { createBlankModuleDocument } from "./moduleBuilderDocument.ts";
 import type {
   AiModuleSuggestion,
   AiCodeTestCandidate,
+  ModuleAccess,
   ModuleBuilderDocument,
   QuestionKind,
   TeacherModule,
@@ -178,7 +179,7 @@ export default function ModuleBuilder() {
     () => (!moduleId && plannerDocument) || createBlankModuleDocument(),
   );
   const [revision, setRevision] = useState(0);
-  const [availability, setAvailability] = useState<{ opensAt: string | null; closesAt: string | null }>({ opensAt: null, closesAt: null });
+  const [access, setAccess] = useState<ModuleAccess>("anytime");
   const [loading, setLoading] = useState(Boolean(moduleId));
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
@@ -197,7 +198,7 @@ export default function ModuleBuilder() {
         const teacher = module as TeacherModule;
         setDocument(documentFrom(teacher));
         setRevision(teacher.revision);
-        setAvailability({ opensAt: teacher.opensAt, closesAt: teacher.closesAt });
+        setAccess(teacher.access);
         const questionId = searchParams.get("questionId");
         if (questionId) setSelected(questionId);
       })
@@ -503,8 +504,7 @@ export default function ModuleBuilder() {
           <AvailabilityCard
             key={moduleId ?? "new"}
             moduleId={moduleId}
-            opensAt={availability.opensAt}
-            closesAt={availability.closesAt}
+            access={access}
           />
 
           {document.sections.map((section, sectionIndex) => (
