@@ -35,11 +35,14 @@ export default function ModuleView({
   index,
   total,
   locked,
+  focusQuestionId,
 }: {
   module: Omit<Module, "status"> | null;
   index: number;
   total: number;
   locked: boolean;
+  /** A comment notification can link directly to one question in this lesson. */
+  focusQuestionId?: string | null;
 }) {
   if (!module) {
     return (
@@ -55,6 +58,7 @@ export default function ModuleView({
       index={index}
       total={total}
       locked={locked}
+      focusQuestionId={focusQuestionId}
     />
   );
 }
@@ -64,11 +68,13 @@ function Lesson({
   index,
   total,
   locked,
+  focusQuestionId,
 }: {
   module: Omit<Module, "status">;
   index: number;
   total: number;
   locked: boolean;
+  focusQuestionId?: string | null;
 }) {
   const [full, setFull] = useState<StudentModule | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -122,6 +128,16 @@ function Lesson({
       .find((question) => question.kind === "math");
     if (firstMathQuestion) setActiveQuestion(firstMathQuestion.id);
   }, [full, setActiveQuestion]);
+
+  useEffect(() => {
+    if (!full || !focusQuestionId) return;
+    const question = document.getElementById(
+      `question-comment-${focusQuestionId}`,
+    );
+    if (!question) return;
+    question.scrollIntoView({ behavior: "smooth", block: "center" });
+    question.focus({ preventScroll: true });
+  }, [focusQuestionId, full]);
 
   // Older intros start with a markdown "# Title" line that just repeats the heading.
   const intro = module.content.replace(/^#{1,6}[ \t]+.*\n+/, "").trim();
@@ -197,6 +213,7 @@ function Lesson({
             )}
           work={work}
           locked={locked}
+          focusQuestionId={focusQuestionId}
         />
       ))}
 
@@ -288,6 +305,7 @@ function SectionView({
   questionStart,
   work,
   locked,
+  focusQuestionId,
 }: {
   section: StudentSection;
   moduleId: string;
@@ -295,6 +313,7 @@ function SectionView({
   questionStart: number;
   work: Record<string, StudentWork>;
   locked: boolean;
+  focusQuestionId?: string | null;
 }) {
   const reading = section.blocks.filter((b) => blockText(b)?.trim());
   const questions = section.questions;
@@ -364,6 +383,7 @@ function SectionView({
             sectionId={section.id}
             savedWork={work[item.value.id]}
             locked={locked}
+            forceOpen={item.value.id === focusQuestionId}
           />
         ),
       )}
@@ -378,6 +398,7 @@ function QuestionView({
   sectionId,
   savedWork,
   locked,
+  forceOpen,
 }: {
   question: StudentQuestion;
   questionNumber: number;
@@ -385,9 +406,10 @@ function QuestionView({
   sectionId: string;
   savedWork?: StudentWork;
   locked: boolean;
+  forceOpen: boolean;
 }) {
-  if (question.kind === "code" && question.codeExercise)
-    return (
+  const content =
+    question.kind === "code" && question.codeExercise ? (
       <>
         <CodeQuestion
           question={question}
@@ -397,11 +419,9 @@ function QuestionView({
           savedWork={savedWork}
           locked={locked}
         />
-        <QuestionConversation questionId={question.id} />
+        <QuestionConversation questionId={question.id} forceOpen={forceOpen} />
       </>
-    );
-  if (question.kind === "math")
-    return (
+    ) : question.kind === "math" ? (
       <>
         <MathQuestion
           question={question}
@@ -411,11 +431,10 @@ function QuestionView({
           savedWork={savedWork}
           locked={locked}
         />
-        <QuestionConversation questionId={question.id} />
+        <QuestionConversation questionId={question.id} forceOpen={forceOpen} />
       </>
-    );
-  return (
-    <>
+    ) : (
+      <>
       <AnswerQuestion
         question={question}
         questionNumber={questionNumber}
@@ -424,9 +443,10 @@ function QuestionView({
         savedWork={savedWork}
         locked={locked}
       />
-      <QuestionConversation questionId={question.id} />
+      <QuestionConversation questionId={question.id} forceOpen={forceOpen} />
     </>
-  );
+    );
+  return content;
 }
 
 /** "Write a function `double(n)` that returns…" -> a short, plain-text name for the exercise. */
