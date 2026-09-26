@@ -7,7 +7,7 @@ import Heading from "../ui/Heading.tsx";
 import InlineText from "../ui/InlineText.tsx";
 import MathText from "../ui/MathText.tsx";
 import Markdown from "../ui/Markdown.tsx";
-import { BookIcon, CodeIcon, PencilIcon } from "../ui/icons.tsx";
+import { BookIcon, PencilIcon } from "../ui/icons.tsx";
 import { CARD, INPUT, TINT } from "../ui/styles.ts";
 import CodeEditor from "./CodeEditor.tsx";
 import { onModuleChanged } from "../socket.ts";
@@ -280,9 +280,31 @@ function CodeQuestion({ question }: { question: StudentQuestion }) {
   );
 }
 
-// PLACEHOLDER: choices and answers stay in this browser tab; there is no attempts endpoint wired up yet.
 function AnswerQuestion({ question }: { question: StudentQuestion }) {
   const [answer, setAnswer] = useState("");
+  const [checking, setChecking] = useState(false);
+  const [result, setResult] = useState<boolean | null | undefined>(undefined);
+  const [error, setError] = useState<string | null>(null);
+
+  async function check() {
+    if (!answer.trim()) return;
+    setChecking(true);
+    setError(null);
+    try {
+      const attempt = await api.createAttempt({
+        questionId: question.id,
+        answer,
+      });
+      setResult(attempt.isCorrect);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Could not check your answer",
+      );
+    } finally {
+      setChecking(false);
+    }
+  }
+
   return (
     <Card
       title="Question"
@@ -305,9 +327,12 @@ function AnswerQuestion({ question }: { question: StudentQuestion }) {
               <input
                 type="radio"
                 name={question.id}
-                value={o.id}
-                checked={answer === o.id}
-                onChange={() => setAnswer(o.id)}
+                value={o.text}
+                checked={answer === o.text}
+                onChange={() => {
+                  setAnswer(o.text);
+                  setResult(undefined);
+                }}
                 className="accent-ink"
               />
               <InlineText text={o.text} />
@@ -323,15 +348,40 @@ function AnswerQuestion({ question }: { question: StudentQuestion }) {
             id={`answer-${question.id}`}
             className={`${INPUT} h-10 w-full`}
             value={answer}
-            onChange={(e) => setAnswer(e.target.value)}
+            onChange={(e) => {
+              setAnswer(e.target.value);
+              setResult(undefined);
+            }}
             placeholder="Type your answer"
           />
         </>
       )}
-      <p className="m-0 flex items-center gap-2 text-xs text-subtle">
-        <CodeIcon className="size-3.5" />
-        Answers aren’t submitted or checked yet.
-      </p>
+      <div className="flex flex-wrap items-center gap-3">
+        <Button
+          variant="primary"
+          size="sm"
+          onClick={() => void check()}
+          disabled={checking || !answer.trim()}
+        >
+          {checking ? "Checking…" : "Check"}
+        </Button>
+        {result !== undefined && (
+          <p
+            className={`m-0 text-sm font-medium ${result === true ? "text-mint-ink" : result === false ? "text-peach-ink" : "text-muted"}`}
+          >
+            {result === true
+              ? "Correct."
+              : result === false
+                ? "Not quite. Try again."
+                : "This question does not have a defined answer yet."}
+          </p>
+        )}
+      </div>
+      {error && (
+        <p className={`m-0 rounded-xl px-3 py-2 text-sm ${TINT.peach}`}>
+          {error}
+        </p>
+      )}
     </Card>
   );
 }

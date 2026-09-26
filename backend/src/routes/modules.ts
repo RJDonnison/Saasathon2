@@ -13,6 +13,7 @@ import {
   toQuestion,
   toReference,
   toSection,
+  toTest,
   toSectionItem,
   unwrap,
   type BlockRow,
@@ -24,6 +25,7 @@ import {
   type ReferenceRow,
   type SectionRow,
   type SectionItemRow,
+  type TestRow,
 } from "../rows.js";
 import type {
   CreateBlockRequest,
@@ -33,9 +35,9 @@ import type {
   CreateQuestionRequest,
   CreateReferenceAnswerRequest,
   CreateSectionRequest,
+  CreateCodeTestRequest,
   GetModuleResponse,
   QuestionKind,
-  TeacherModule,
   UpdateBlockRequest,
   UpdateCodeCheckRequest,
   UpdateModuleRequest,
@@ -43,15 +45,53 @@ import type {
   UpdateQuestionRequest,
   UpdateReferenceAnswerRequest,
   UpdateSectionRequest,
+  UpdateCodeExerciseRequest,
+  UpdateCodeTestRequest,
   UpsertCodeExerciseRequest,
   ModuleBuilderDocument,
   SaveModuleBuilderRequest,
+  TeacherModule,
 } from "../../../shared/types.js";
 
 export const modulesRouter = Router();
 const kinds: QuestionKind[] = ["mcq", "short", "code", "math"];
 const validPosition = (value: unknown) =>
   value === undefined || (Number.isInteger(value) && (value as number) >= 0);
+const FUNCTION_NAME = /^[A-Za-z_$][A-Za-z0-9_$]{0,63}$/;
+const MAX_TESTS_PER_EXERCISE = 20;
+const MAX_JSON_BYTES = 8_000;
+function jsonValue(value: unknown): boolean {
+  if (value === null || typeof value === "string" || typeof value === "boolean")
+    return true;
+  if (typeof value === "number") return Number.isFinite(value);
+  if (Array.isArray(value)) return value.every(jsonValue);
+  return (
+    !!value &&
+    typeof value === "object" &&
+    Object.values(value).every(jsonValue)
+  );
+}
+function validTest(
+  name: unknown,
+  args: unknown,
+  expected: unknown,
+): args is unknown[] {
+  if (
+    typeof name !== "string" ||
+    !name.trim() ||
+    name.length > 120 ||
+    !Array.isArray(args) ||
+    args.length > 10 ||
+    !jsonValue(args) ||
+    !jsonValue(expected)
+  )
+    return false;
+  try {
+    return JSON.stringify({ args, expected }).length <= MAX_JSON_BYTES;
+  } catch {
+    return false;
+  }
+}
 const validMathValue = (value: unknown) =>
   value === undefined ||
   value === null ||
@@ -109,6 +149,9 @@ export function validBuilderDocument(
                   typeof i.starterCode === "string") &&
                 (i.instructions === undefined ||
                   typeof i.instructions === "string") &&
+                (i.functionName === undefined ||
+                  (typeof i.functionName === "string" &&
+                    FUNCTION_NAME.test(i.functionName))) &&
                 (i.hiddenCode === undefined ||
                   typeof i.hiddenCode === "string") &&
                 (i.referenceAnswers === undefined ||
@@ -249,6 +292,7 @@ async function saveBuilder(
               language: item.language || "javascript",
               starter_code: item.starterCode || "",
               instructions: item.instructions || "",
+              function_name: item.functionName || "solution",
               hidden_code: item.hiddenCode || "",
             }),
           );
@@ -257,16 +301,16 @@ async function saveBuilder(
             referencePosition < (item.referenceAnswers?.length ?? 0);
             referencePosition++
           ) {
-              const reference = item.referenceAnswers![referencePosition];
-              unwrap(
-                await supabase.from("reference_answers").insert({
-                  id: reference.id,
-                  code_exercise_id: exerciseId,
-                  title: reference.title,
-                  answer: reference.answer,
-                  position: referencePosition,
-                }),
-              );
+            const reference = item.referenceAnswers![referencePosition];
+            unwrap(
+              await supabase.from("reference_answers").insert({
+                id: reference.id,
+                code_exercise_id: exerciseId,
+                title: reference.title,
+                answer: reference.answer,
+                position: referencePosition,
+              }),
+            );
           }
           for (
             let checkPosition = 0;
@@ -361,7 +405,7 @@ export async function aggregate(
       ]).then((r) => r.map(unwrap))) as [OptionRow[], ExerciseRow[]])
     : [[], []];
   const exerciseIds = exercises.map((e) => e.id);
-  const [references, checks] =
+  const [references, checks, tests] =
     teacher && exerciseIds.length
       ? ((await Promise.all([
           supabase
@@ -376,8 +420,18 @@ export async function aggregate(
             .in("code_exercise_id", exerciseIds)
             .order("position")
             .order("id"),
-        ]).then((r) => r.map(unwrap))) as [ReferenceRow[], CheckRow[]])
-      : [[], []];
+          supabase
+            .from("code_tests")
+            .select("*")
+            .in("code_exercise_id", exerciseIds)
+            .order("position")
+            .order("id"),
+        ]).then((r) => r.map(unwrap))) as [
+          ReferenceRow[],
+          CheckRow[],
+          TestRow[],
+        ])
+      : [[], [], []];
   const result = {
     ...toModule(module),
     sections: sections.map((section) => ({
@@ -411,6 +465,9 @@ export async function aggregate(
                         checks: checks
                           .filter((c) => c.code_exercise_id === exercise.id)
                           .map(toCheck),
+                        tests: tests
+                          .filter((t) => t.code_exercise_id === exercise.id)
+                          .map(toTest),
                       }
                     : toExercise(exercise),
                 }
@@ -447,7 +504,7 @@ export async function aggregate(
       })(),
     })),
   };
-  return result as TeacherModule;
+  return result as GetModuleResponse;
 }
 async function ownedModule(
   req: any,
@@ -828,14 +885,12 @@ modulesRouter.post(
         .select("*")
         .single(),
     ) as QuestionRow;
-    res
-      .status(201)
-      .json({
-        ...toQuestion(row),
-        answerKey: row.answer_key,
-        mathExpectedResult: row.math_expected_result,
-        mathTolerance: row.math_tolerance,
-      });
+    res.status(201).json({
+      ...toQuestion(row),
+      answerKey: row.answer_key,
+      mathExpectedResult: row.math_expected_result,
+      mathTolerance: row.math_tolerance,
+    });
   },
 );
 modulesRouter.patch(
@@ -1000,6 +1055,8 @@ modulesRouter.put(
       typeof b?.language !== "string" ||
       typeof b.starterCode !== "string" ||
       typeof b.instructions !== "string" ||
+      typeof b.functionName !== "string" ||
+      !FUNCTION_NAME.test(b.functionName) ||
       (b.hiddenCode !== undefined && typeof b.hiddenCode !== "string")
     )
       return res
@@ -1015,6 +1072,7 @@ modulesRouter.put(
             language: b.language,
             starter_code: b.starterCode,
             instructions: b.instructions,
+            function_name: b.functionName,
             hidden_code: b.hiddenCode ?? "",
           },
           { onConflict: "question_id" },
@@ -1025,6 +1083,129 @@ modulesRouter.put(
     res.json(toExercise(row));
   },
 );
+
+modulesRouter.patch(
+  "/exercises/:id",
+  requireRole("teacher"),
+  async (req, res) => {
+    const exercise = await exerciseFor(req, res, req.params.id);
+    const body = (req.body ?? {}) as Partial<UpdateCodeExerciseRequest>;
+    if (!exercise) return;
+    if (
+      typeof body.functionName !== "string" ||
+      !FUNCTION_NAME.test(body.functionName)
+    ) {
+      res
+        .status(400)
+        .json({ error: "Function name must be a valid identifier" });
+      return;
+    }
+    const row = unwrap(
+      await supabase
+        .from("code_exercises")
+        .update({ function_name: body.functionName })
+        .eq("id", exercise.id)
+        .select("*")
+        .single(),
+    ) as ExerciseRow;
+    res.json(toExercise(row));
+  },
+);
+
+modulesRouter.post(
+  "/exercises/:id/tests",
+  requireRole("teacher"),
+  async (req, res) => {
+    const exercise = await exerciseFor(req, res, req.params.id);
+    const body = (req.body ?? {}) as Partial<CreateCodeTestRequest>;
+    if (!exercise) return;
+    const name = body.name;
+    if (
+      typeof name !== "string" ||
+      !validTest(name, body.args, body.expected) ||
+      !validPosition(body.position)
+    ) {
+      res.status(400).json({
+        error: "Test arguments, expected value or position is invalid",
+      });
+      return;
+    }
+    const existing = unwrap(
+      await supabase
+        .from("code_tests")
+        .select("id")
+        .eq("code_exercise_id", exercise.id),
+    ) as { id: string }[];
+    if (existing.length >= MAX_TESTS_PER_EXERCISE) {
+      res.status(400).json({
+        error: `An exercise can have at most ${MAX_TESTS_PER_EXERCISE} automated checks`,
+      });
+      return;
+    }
+    const position =
+      body.position ??
+      (await nextPosition("code_tests", "code_exercise_id", exercise.id));
+    const row = unwrap(
+      await supabase
+        .from("code_tests")
+        .insert({
+          id: randomUUID(),
+          code_exercise_id: exercise.id,
+          name: name.trim(),
+          args: body.args,
+          expected: body.expected,
+          position,
+        })
+        .select("*")
+        .single(),
+    ) as TestRow;
+    res.status(201).json(toTest(row));
+  },
+);
+modulesRouter.patch("/tests/:id", requireRole("teacher"), async (req, res) => {
+  const old = unwrap(
+    await supabase
+      .from("code_tests")
+      .select("*")
+      .eq("id", req.params.id)
+      .maybeSingle(),
+  ) as TestRow | null;
+  const body = (req.body ?? {}) as UpdateCodeTestRequest;
+  if (!old || !(await exerciseFor(req, res, old.code_exercise_id))) return;
+  const name = body.name ?? old.name;
+  const args = body.args ?? old.args;
+  const expected = body.expected === undefined ? old.expected : body.expected;
+  if (!validTest(name, args, expected) || !validPosition(body.position))
+    return res
+      .status(400)
+      .json({ error: "Test arguments, expected value or position is invalid" });
+  const row = unwrap(
+    await supabase
+      .from("code_tests")
+      .update({
+        name: name.trim(),
+        args,
+        expected,
+        position: body.position ?? old.position,
+      })
+      .eq("id", old.id)
+      .select("*")
+      .single(),
+  ) as TestRow;
+  res.json(toTest(row));
+});
+modulesRouter.delete("/tests/:id", requireRole("teacher"), async (req, res) => {
+  const old = unwrap(
+    await supabase
+      .from("code_tests")
+      .select("*")
+      .eq("id", req.params.id)
+      .maybeSingle(),
+  ) as TestRow | null;
+  if (!old || !(await exerciseFor(req, res, old.code_exercise_id))) return;
+  unwrap(await supabase.from("code_tests").delete().eq("id", old.id));
+  res.status(204).end();
+});
 
 async function exerciseFor(
   req: any,
