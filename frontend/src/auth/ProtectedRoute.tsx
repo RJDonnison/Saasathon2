@@ -9,7 +9,15 @@ import type { Role } from '../../../shared/types'
  */
 export default function ProtectedRoute({ role, children }: { role: Role; children: ReactNode }) {
   const { user, loading } = useAuth()
-  if (loading) return <p className="p-6 text-gray-500">Loading…</p>
+  if (loading) {
+    // Mirrors the landing page's loading screen (same tokens, built from utilities).
+    return (
+      <main className="grid min-h-screen place-content-center justify-items-center gap-4 bg-canvas font-mono text-xs text-ink">
+        <span className="grid size-[46px] place-items-center rounded-xl bg-accent text-base text-ink">{`{ }`}</span>
+        Getting your workspace ready…
+      </main>
+    )
+  }
   if (!user) return <Navigate to="/" replace />
   if (user.role !== role) return <Navigate to={`/${user.role}`} replace />
   return <>{children}</>

@@ -154,3 +154,18 @@ Check work by running the app and by type-checking (see above) instead.
   media queries.
 - Don't hand-roll spacing with arbitrary margins on every element — prefer `gap-*` on the flex/grid
   parent so spacing lives in one place.
+- **Colours and fonts come from `frontend/src/app.css`'s `@theme`; everything else is Tailwind.** Use the tokens
+  (`bg-canvas`, `bg-surface`, `bg-surface-soft`, `text-ink`, `text-muted`, `border-border`, `bg-accent`, the pastel
+  `bg-mint`/`text-mint-ink`, `bg-peach`/`text-peach-ink`, `bg-lavender`/`text-lavender-ink`, `font-display`,
+  `font-mono`) — no hard-coded hex values and no custom CSS classes in the signed-in screens. If a colour is
+  missing, add a token to `@theme` rather than inlining a hex.
+- **Shared pieces:** build signed-in screens from `frontend/src/ui/` (`AppShell`, `Card`, `Heading`, `Button`,
+  `Eyebrow`, `Avatar`, `Dot`, `InlineText`, `icons`) and the class strings in `ui/styles.ts` (`CARD`, `INPUT`,
+  `TINT`) instead of restyling from scratch.
+- **Gotcha — global rules in `app.css`:** it has *unlayered* element rules (`h1`/`h2`/`h3` sizes, `p { margin-top: 0 }`,
+  `button, a, input, select, textarea { font: inherit }`), and unlayered CSS beats Tailwind's layered utilities. On
+  those elements a size/weight/leading/margin utility silently does nothing unless it uses Tailwind's important
+  modifier (`text-sm!`, `font-semibold!`, `m-0!`). `Heading`, `Button` and `INPUT` already do this — use them rather
+  than a bare `<h1>`/`<button>`/`<input>`, and add `!` to font utilities on a bare `<a>`/`<Link>`. Write `!` utilities
+  out *literally*: Tailwind finds classes by scanning text, so `${CONSTANT}!` produces nothing. No `mt-*` on a `<p>`.
+  Don't edit the landing page's global rules to "fix" this; it depends on them.
