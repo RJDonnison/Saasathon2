@@ -17,6 +17,24 @@ export interface RaiseHandPayload {
   classroomId: string;
 }
 
+export interface LowerHandPayload {
+  type: "lower_hand";
+  studentId: string;
+  classroomId: string;
+}
+
+export interface RaiseHandResult {
+  raised: boolean;
+  /** Set when a recently lowered hand cannot be raised again yet. */
+  cooldownUntil: number | null;
+}
+
+export interface LowerHandResult {
+  lowered: boolean;
+  /** The earliest time this student can raise their hand again. */
+  cooldownUntil: number | null;
+}
+
 export interface AcknowledgeHandPayload {
   type: "acknowledge_hand";
   studentId: string;
@@ -96,6 +114,7 @@ export interface ModuleDeletedPayload {
 /** Discriminated union (on `type`) of every socket payload. */
 export type SocketPayload =
   | RaiseHandPayload
+  | LowerHandPayload
   | AcknowledgeHandPayload
   | RaisedHandsUpdatePayload
   | StudentStatusUpdatePayload
@@ -109,7 +128,14 @@ export type SocketPayload =
 
 /** Events the client emits -> server. */
 export interface ClientToServerEvents {
-  raise_hand: (payload: RaiseHandPayload) => void;
+  raise_hand: (
+    payload: RaiseHandPayload,
+    acknowledge: (result: RaiseHandResult) => void,
+  ) => void;
+  lower_hand: (
+    payload: LowerHandPayload,
+    acknowledge: (result: LowerHandResult) => void,
+  ) => void;
   acknowledge_hand: (payload: AcknowledgeHandPayload) => void;
   student_status_update: (payload: StudentStatusUpdatePayload) => void;
 }
