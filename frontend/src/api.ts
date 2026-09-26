@@ -5,6 +5,10 @@ import type {
   AiHintResponse,
   AiCodeTestCandidatesRequest,
   AiCodeTestCandidatesResponse,
+  AiModuleSuggestionsRequest,
+  AiModuleSuggestionsResponse,
+  ModuleBuilderDocument,
+  SaveModuleBuilderResponse,
   ApiError,
   Comment,
   Attempt,
@@ -27,6 +31,8 @@ import type {
   UpdateCodeTestRequest,
   UpdateCodeExerciseRequest,
   UpdateQuestionRequest,
+  ValidateMathRequest,
+  ValidateMathResponse,
   UpsertProgressRequest,
   UpsertProgressResponse,
 } from "../../shared/types";
@@ -114,10 +120,25 @@ export const api = {
     }),
   deleteCodeTest: (id: string) =>
     request<void>(`/api/modules/tests/${id}`, { method: "DELETE" }),
+  validateMath: (body: ValidateMathRequest) =>
+    post<ValidateMathResponse>("/api/math/validate", body),
   aiHint: (body: AiHintRequest) => post<AiHintResponse>("/api/ai/hint", body),
   /** Teacher-only drafting/planning assistant (for the teacher dashboard to call). */
   aiDraft: (body: AiDraftRequest) =>
     post<AiDraftResponse>("/api/ai/draft", body),
   aiCodeTestCandidates: (body: AiCodeTestCandidatesRequest) =>
     post<AiCodeTestCandidatesResponse>("/api/ai/code-test-candidates", body),
+  createBuilderModule: (document: ModuleBuilderDocument) =>
+    post<SaveModuleBuilderResponse>("/api/modules/builder", { document }),
+  saveBuilderModule: (
+    id: string,
+    revision: number,
+    document: ModuleBuilderDocument,
+  ) =>
+    request<SaveModuleBuilderResponse>(`/api/modules/${id}/builder`, {
+      method: "PUT",
+      json: { revision, document },
+    }),
+  aiModuleSuggestions: (body: AiModuleSuggestionsRequest) =>
+    post<AiModuleSuggestionsResponse>("/api/ai/module-suggestions", body),
 };

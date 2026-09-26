@@ -137,7 +137,7 @@ export default function StudentHome() {
               </div>
               {current && (
                 <aside aria-label="Tutor" className="min-w-0 lg:sticky lg:top-24 lg:h-[calc(100dvh-7rem)]">
-                  <AiChatPanel key={current.id} moduleId={current.id} />
+                  <AiChatPanel moduleId={current.id} />
                 </aside>
               )}
             </div>
