@@ -4,6 +4,7 @@
 import type {
   LessonSession,
   ModuleProgress,
+  LiveModuleStudentAggregate,
   QuestionComment,
   StudentActivity,
   StudentWork,
@@ -87,6 +88,15 @@ export interface ModuleProgressUpdatePayload {
   sessionId: string | null;
   progress: ModuleProgress;
 }
+/** Authoritative live-question outcome after a durable answer, math, or code-grade write. */
+export interface LiveModuleAggregateUpdatePayload {
+  type: "live_module_aggregate_update";
+  classroomId: string;
+  moduleId: string;
+  studentId: string;
+  aggregate: LiveModuleStudentAggregate;
+  version: string;
+}
 
 export interface PresenceUpdatePayload {
   type: "presence_update";
@@ -124,6 +134,7 @@ export type SocketPayload =
   | PresenceUpdatePayload
   | SessionUpdatePayload
   | ModuleProgressUpdatePayload
+  | LiveModuleAggregateUpdatePayload
   | ModuleChangedPayload
   | ModuleDeletedPayload
   | QuestionCommentCreatedPayload;
@@ -150,6 +161,9 @@ export interface ServerToClientEvents {
   presence_update: (payload: PresenceUpdatePayload) => void;
   session_update: (payload: SessionUpdatePayload) => void;
   module_progress_update: (payload: ModuleProgressUpdatePayload) => void;
+  live_module_aggregate_update: (
+    payload: LiveModuleAggregateUpdatePayload,
+  ) => void;
   module_changed: (payload: ModuleChangedPayload) => void;
   question_comment_created: (payload: QuestionCommentCreatedPayload) => void;
   module_deleted: (payload: ModuleDeletedPayload) => void;

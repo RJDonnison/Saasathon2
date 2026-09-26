@@ -5,7 +5,7 @@ import { useAuth } from "../auth/useAuth.ts";
 import { useLiveSession } from "../useLiveSession.ts";
 import {
   emitAcknowledgeHand,
-  onModuleProgressUpdate,
+  onLiveModuleAggregateUpdate,
   onStudentActivityUpdate,
 } from "../socket.ts";
 import { useClassroomPresence } from "../hooks/useClassroomPresence.ts";
@@ -27,7 +27,7 @@ import type {
   Classroom,
   ClassroomInvitation,
   Module,
-  ProgressStatus,
+  LiveModuleStudentAggregate,
   StudentActivitySnapshot,
   User,
 } from "../../../shared/types";
@@ -57,7 +57,7 @@ export default function TeacherHome() {
     Record<string, StudentActivitySnapshot>
   >({});
   const [liveProgress, setLiveProgress] = useState<
-    Record<string, ProgressStatus>
+    Record<string, LiveModuleStudentAggregate>
   >({});
   const liveProgressSession = useRef<{
     classroomId: string;
@@ -122,7 +122,7 @@ export default function TeacherHome() {
             return;
           setLiveProgress(
             Object.fromEntries(
-              snapshot.progress.map((item) => [item.studentId, item.status]),
+              snapshot.progress.map((item) => [item.studentId, item]),
             ),
           );
         })
@@ -135,6 +135,21 @@ export default function TeacherHome() {
       cancelled = true;
       window.clearInterval(interval);
     };
+  }, [classroomId, session]);
+
+  useEffect(() => {
+    if (!classroomId || !session) return;
+    return onLiveModuleAggregateUpdate((update) => {
+      if (
+        update.classroomId !== classroomId ||
+        update.moduleId !== session.moduleId
+      )
+        return;
+      setLiveProgress((current) => ({
+        ...current,
+        [update.studentId]: update.aggregate,
+      }));
+    });
   }, [classroomId, session]);
 
   useEffect(() => {
@@ -232,24 +247,6 @@ export default function TeacherHome() {
         });
       }),
     [user],
-  );
-  useEffect(
-    () =>
-      onModuleProgressUpdate((update) => {
-        if (
-          !user ||
-          !session ||
-          update.classroomId !== user.classroomId ||
-          update.moduleId !== session.moduleId ||
-          update.sessionId !== session.id
-        )
-          return;
-        setLiveProgress((current) => ({
-          ...current,
-          [update.progress.studentId]: update.progress.status,
-        }));
-      }),
-    [session, user],
   );
   async function inviteStudents(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -460,6 +457,7 @@ export default function TeacherHome() {
               onSelect={setSelectedId}
               activity={activity}
               liveProgress={liveProgress}
+              showLiveProgress={!!session}
             />
           </div>
           <div className={`order-5 min-w-0 ${managing ? "" : "hidden"}`}>
@@ -536,6 +534,9 @@ export default function TeacherHome() {
               online={selected ? online.has(selected.id) : false}
               classroomId={user!.classroomId}
               lessons={modules}
+              liveModuleId={session?.moduleId ?? null}
+              activity={selected ? activity[selected.id] : undefined}
+              liveAggregate={selected ? liveProgress[selected.id] : undefined}
             />
           </div>
           <div className={`order-4 min-w-0 ${managing ? "" : "hidden"}`}>

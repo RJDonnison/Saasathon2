@@ -1,7 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { Router } from "express";
 import { moduleForUser, studentInClassroom } from "../access.js";
-import { emitQuestionCommentCreated } from "../sockets.js";
+import {
+  emitLiveModuleAggregateUpdate,
+  emitQuestionCommentCreated,
+} from "../sockets.js";
+import { liveModuleStudentAggregate } from "../questionOutcomes.js";
 import { supabase } from "../supabase.js";
 import {
   toComment,
@@ -22,7 +26,9 @@ import type {
   CreateQuestionCommentRequest,
 } from "../../../shared/types.js";
 export const commentsRouter = Router();
-type WithModule<T> = T & { sections: { module_id: string } | Array<{ module_id: string }> | null };
+type WithModule<T> = T & {
+  sections: { module_id: string } | Array<{ module_id: string }> | null;
+};
 const moduleIdOf = (row: WithModule<object>): string | null => {
   const section = Array.isArray(row.sections) ? row.sections[0] : row.sections;
   return section?.module_id ?? null;
@@ -41,12 +47,18 @@ async function ownedExercise(
       .select("*, questions!inner(sections!inner(module_id))")
       .eq("id", id)
       .maybeSingle(),
-  ) as unknown as (ExerciseRow & { questions: WithModule<object> | WithModule<object>[] | null }) | null;
+  ) as unknown as
+    | (ExerciseRow & {
+        questions: WithModule<object> | WithModule<object>[] | null;
+      })
+    | null;
   if (!row) return null;
   const { questions, ...exercise } = row;
   const question = Array.isArray(questions) ? questions[0] : questions;
   const moduleId = question ? moduleIdOf(question) : null;
-  return moduleId && (await moduleForUser(moduleId, classroomId, role)) ? exercise : null;
+  return moduleId && (await moduleForUser(moduleId, classroomId, role))
+    ? exercise
+    : null;
 }
 async function questionModuleForUser(
   questionId: string,
@@ -61,7 +73,9 @@ async function questionModuleForUser(
       .maybeSingle(),
   ) as unknown as WithModule<{ section_id: string }> | null;
   const moduleId = question ? moduleIdOf(question) : null;
-  return moduleId && (await moduleForUser(moduleId, classroomId, role)) ? moduleId : null;
+  return moduleId && (await moduleForUser(moduleId, classroomId, role))
+    ? moduleId
+    : null;
 }
 commentsRouter.post("/attempts", async (req, res) => {
   const b = (req.body ?? {}) as Partial<CreateAttemptRequest>;
@@ -122,6 +136,18 @@ commentsRouter.post("/attempts", async (req, res) => {
   ]);
   const row = unwrap(attemptResult);
   unwrap(workResult);
+  const aggregate = await liveModuleStudentAggregate(
+    moduleId,
+    req.user!.userId,
+  );
+  await emitLiveModuleAggregateUpdate({
+    type: "live_module_aggregate_update",
+    classroomId: req.user!.classroomId,
+    moduleId,
+    studentId: req.user!.userId,
+    aggregate,
+    version: checkedAt,
+  });
   res.status(201).json(toAttempt(row as AttemptRow));
 });
 commentsRouter.post("/submissions", async (req, res) => {
@@ -131,10 +157,7 @@ commentsRouter.post("/submissions", async (req, res) => {
     typeof b.codeExerciseId !== "string" ||
     typeof b.code !== "string" ||
     (b.stdout !== undefined && typeof b.stdout !== "string") ||
-    (b.stderr !== undefined && typeof b.stderr !== "string") ||
-    (b.passed !== undefined &&
-      b.passed !== null &&
-      typeof b.passed !== "boolean")
+    (b.stderr !== undefined && typeof b.stderr !== "string")
   )
     return res.status(400).json({ error: "Invalid sandbox submission result" });
   if (
@@ -155,7 +178,7 @@ commentsRouter.post("/submissions", async (req, res) => {
         code: b.code,
         stdout: b.stdout ?? "",
         stderr: b.stderr ?? "",
-        passed: b.passed ?? null,
+        passed: null,
       })
       .select("*")
       .single(),
@@ -164,10 +187,22 @@ commentsRouter.post("/submissions", async (req, res) => {
 });
 commentsRouter.get("/submissions/:id/comments", async (req, res) => {
   const [submissionResult, commentsResult] = await Promise.all([
-    supabase.from("code_submissions").select("*").eq("id", req.params.id).maybeSingle(),
-    supabase.from("comments").select("*").eq("submission_id", req.params.id).order("created_at"),
+    supabase
+      .from("code_submissions")
+      .select("*")
+      .eq("id", req.params.id)
+      .maybeSingle(),
+    supabase
+      .from("comments")
+      .select("*")
+      .eq("submission_id", req.params.id)
+      .order("created_at"),
   ]);
-  const submission = unwrap(submissionResult) as { id: string; student_id: string; code_exercise_id: string } | null;
+  const submission = unwrap(submissionResult) as {
+    id: string;
+    student_id: string;
+    code_exercise_id: string;
+  } | null;
   if (
     !submission ||
     !(await ownedExercise(
@@ -239,18 +274,23 @@ commentsRouter.get("/questions/:id/comments", async (req, res) => {
         : null;
   if (
     !studentId ||
-    (req.user!.role === "student" && requestedStudentId !== undefined && requestedStudentId !== studentId)
+    (req.user!.role === "student" &&
+      requestedStudentId !== undefined &&
+      requestedStudentId !== studentId)
   )
-    return res.status(403).json({ error: "Not allowed to view this conversation" });
+    return res
+      .status(403)
+      .json({ error: "Not allowed to view this conversation" });
   // Enrolment and question access are independent checks; the 403 still wins over the 404.
   const [enrolled, moduleId] = await Promise.all([
     studentInClassroom(studentId, req.user!.classroomId),
     questionModuleForUser(questionId, req.user!.classroomId, req.user!.role),
   ]);
   if (!enrolled)
-    return res.status(403).json({ error: "Not allowed to view this conversation" });
-  if (!moduleId)
-    return res.status(404).json({ error: "Question not found" });
+    return res
+      .status(403)
+      .json({ error: "Not allowed to view this conversation" });
+  if (!moduleId) return res.status(404).json({ error: "Question not found" });
   const rows = unwrap(
     await supabase
       .from("question_comments")
@@ -273,17 +313,22 @@ commentsRouter.post("/questions/:id/comments", async (req, res) => {
         ? body.studentId
         : null;
   if (!text || text.length > 4_000)
-    return res.status(400).json({ error: "A comment must be between 1 and 4,000 characters" });
+    return res
+      .status(400)
+      .json({ error: "A comment must be between 1 and 4,000 characters" });
   if (!studentId)
-    return res.status(403).json({ error: "Not allowed to comment for this student" });
+    return res
+      .status(403)
+      .json({ error: "Not allowed to comment for this student" });
   const [enrolled, moduleId] = await Promise.all([
     studentInClassroom(studentId, req.user!.classroomId),
     questionModuleForUser(questionId, req.user!.classroomId, req.user!.role),
   ]);
   if (!enrolled)
-    return res.status(403).json({ error: "Not allowed to comment for this student" });
-  if (!moduleId)
-    return res.status(404).json({ error: "Question not found" });
+    return res
+      .status(403)
+      .json({ error: "Not allowed to comment for this student" });
+  if (!moduleId) return res.status(404).json({ error: "Question not found" });
   if (req.user!.role === "student") {
     const teacherComment = unwrap(
       await supabase
@@ -296,7 +341,9 @@ commentsRouter.post("/questions/:id/comments", async (req, res) => {
         .maybeSingle(),
     );
     if (!teacherComment)
-      return res.status(403).json({ error: "A teacher must start this conversation" });
+      return res
+        .status(403)
+        .json({ error: "A teacher must start this conversation" });
   }
   const row = unwrap(
     await supabase

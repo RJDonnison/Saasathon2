@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { Router } from "express";
 import { moduleForUser } from "../access.js";
 import { PISTON_API_URL, PISTON_AUTH_TOKEN } from "../config.js";
@@ -10,6 +11,8 @@ import type {
 } from "../../../shared/types.js";
 import { requireRole } from "../auth.js";
 import { supabase } from "../supabase.js";
+import { liveModuleStudentAggregate } from "../questionOutcomes.js";
+import { emitLiveModuleAggregateUpdate } from "../sockets.js";
 import {
   unwrap,
   type ExerciseRow,
@@ -17,6 +20,55 @@ import {
 } from "../rows.js";
 
 export const codeRouter = Router();
+
+async function persistGrade(
+  exercise: ExerciseRow,
+  studentId: string,
+  classroomId: string,
+  code: string,
+  passed: boolean,
+): Promise<void> {
+  const checkedAt = new Date().toISOString();
+  unwrap(
+    await supabase.from("code_submissions").insert({
+      id: randomUUID(),
+      student_id: studentId,
+      code_exercise_id: exercise.id,
+      code,
+      stdout: "",
+      stderr: "",
+      passed,
+      created_at: checkedAt,
+      graded_at: checkedAt,
+    }),
+  );
+  const question = unwrap(
+    await supabase
+      .from("questions")
+      .select("section_id")
+      .eq("id", exercise.question_id)
+      .single(),
+  ) as { section_id: string };
+  const section = unwrap(
+    await supabase
+      .from("sections")
+      .select("module_id")
+      .eq("id", question.section_id)
+      .single(),
+  ) as { module_id: string };
+  const aggregate = await liveModuleStudentAggregate(
+    section.module_id,
+    studentId,
+  );
+  await emitLiveModuleAggregateUpdate({
+    type: "live_module_aggregate_update",
+    classroomId,
+    moduleId: section.module_id,
+    studentId,
+    aggregate,
+    version: checkedAt,
+  });
+}
 
 const MAX_CODE_LENGTH = 25_000;
 const MAX_HIDDEN_CODE_LENGTH = 25_000;
@@ -294,6 +346,13 @@ codeRouter.post("/grade", requireRole("student"), async (req, res) => {
     !tests.length ||
     tests.length > MAX_TESTS_PER_EXERCISE
   ) {
+    await persistGrade(
+      exercise,
+      req.user!.userId,
+      req.user!.classroomId,
+      code,
+      false,
+    );
     res.json({
       passed: false,
       error: "Automated checks are not configured for this exercise.",
@@ -307,6 +366,13 @@ codeRouter.post("/grade", requireRole("student"), async (req, res) => {
     tests,
   );
   if (!source) {
+    await persistGrade(
+      exercise,
+      req.user!.userId,
+      req.user!.classroomId,
+      code,
+      false,
+    );
     res.json({
       passed: false,
       error: "Automated checks are not available for this exercise.",
@@ -366,7 +432,14 @@ codeRouter.post("/grade", requireRole("student"), async (req, res) => {
       !Array.isArray(resultValues) ||
       resultValues.length !== tests.length ||
       !resultValues.every((passed) => typeof passed === "boolean")
-    )
+    ) {
+      await persistGrade(
+        exercise,
+        req.user!.userId,
+        req.user!.classroomId,
+        code,
+        false,
+      );
       res.json({
         passed: false,
         error:
@@ -374,13 +447,21 @@ codeRouter.post("/grade", requireRole("student"), async (req, res) => {
             ? `We could not find a function named ${exercise.function_name}. Check its name and declaration.`
             : "Your code could not be checked. Fix any syntax errors and try again.",
       } satisfies GradeCodeExerciseResponse);
-    else {
+    } else {
       const results: GradeCodeTestResult[] = tests.map((test, index) => ({
         name: test.name,
         passed: resultValues[index] as boolean,
       }));
+      const passed = results.every((test) => test.passed);
+      await persistGrade(
+        exercise,
+        req.user!.userId,
+        req.user!.classroomId,
+        code,
+        passed,
+      );
       res.json({
-        passed: results.every((test) => test.passed),
+        passed,
         results,
         ...(result.noReturn === true
           ? {
@@ -396,6 +477,13 @@ codeRouter.post("/grade", requireRole("student"), async (req, res) => {
       } satisfies GradeCodeExerciseResponse);
     }
   } catch {
+    await persistGrade(
+      exercise,
+      req.user!.userId,
+      req.user!.classroomId,
+      code,
+      false,
+    );
     res.json({
       passed: false,
       error: "Your code could not be checked. Please try again.",

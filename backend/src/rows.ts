@@ -171,6 +171,7 @@ export type CodeSubmissionRow = {
   stdout: string;
   stderr: string;
   passed: boolean | null;
+  graded_at?: string | null;
   created_at: string;
 };
 export type StudentWorkRow = {

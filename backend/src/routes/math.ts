@@ -3,6 +3,8 @@ import { ArithmeticError, parseArithmetic } from "../../../math/arithmetic.js";
 import { supabase } from "../supabase.js";
 import { unwrap } from "../rows.js";
 import { moduleForUser } from "../access.js";
+import { liveModuleStudentAggregate } from "../questionOutcomes.js";
+import { emitLiveModuleAggregateUpdate } from "../sockets.js";
 import type {
   ValidateMathRequest,
   ValidateMathResponse,
@@ -71,22 +73,32 @@ mathRouter.post("/validate", async (req, res) => {
       Math.abs(value - question.math_expected_result) <=
       question.math_tolerance;
     unwrap(
-      await supabase
-        .from("student_work")
-        .upsert(
-          {
-            id: `${req.user!.userId}:${body.questionId}`,
-            student_id: req.user!.userId,
-            question_id: body.questionId,
-            answer: body.expression,
-            code: null,
-            is_correct: isCorrect,
-            checked_at: checkedAt,
-            updated_at: checkedAt,
-          },
-          { onConflict: "student_id,question_id" },
-        ),
+      await supabase.from("student_work").upsert(
+        {
+          id: `${req.user!.userId}:${body.questionId}`,
+          student_id: req.user!.userId,
+          question_id: body.questionId,
+          answer: body.expression,
+          code: null,
+          is_correct: isCorrect,
+          checked_at: checkedAt,
+          updated_at: checkedAt,
+        },
+        { onConflict: "student_id,question_id" },
+      ),
     );
+    const aggregate = await liveModuleStudentAggregate(
+      question.sections.module_id,
+      req.user!.userId,
+    );
+    await emitLiveModuleAggregateUpdate({
+      type: "live_module_aggregate_update",
+      classroomId: req.user!.classroomId,
+      moduleId: question.sections.module_id,
+      studentId: req.user!.userId,
+      aggregate,
+      version: checkedAt,
+    });
     const response: ValidateMathResponse = {
       value,
       isCorrect,

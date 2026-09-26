@@ -117,8 +117,12 @@ export default function StudentHome() {
       : null;
   const currentId =
     followedId ??
-    (pickedId && openModules?.some((m) => m.id === pickedId) ? pickedId : null) ??
-    (modules ? (lessonOverview(modules).current ?? openModules?.[0])?.id : null) ??
+    (pickedId && openModules?.some((m) => m.id === pickedId)
+      ? pickedId
+      : null) ??
+    (modules
+      ? (lessonOverview(modules).current ?? openModules?.[0])?.id
+      : null) ??
     null;
   const followingNow = followedId !== null;
 
@@ -169,7 +173,8 @@ export default function StudentHome() {
   const teacher = classroom?.teacherName ?? "";
   const classroomLoading = classroom === null;
   const sessionLoading = session === undefined;
-  const overviewLoading = classroomLoading || sessionLoading || modules === null;
+  const overviewLoading =
+    classroomLoading || sessionLoading || modules === null;
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden">
@@ -389,7 +394,7 @@ export default function StudentHome() {
                 module={current}
                 index={Math.max(currentIndex, 0)}
                 total={modules.length}
-                locked={current?.status === "completed"}
+                locked={false}
                 focusQuestionId={targetQuestionId}
               />
             )}
@@ -420,13 +425,13 @@ export default function StudentHome() {
                     </Button>
                   )}
                   {current.status === "completed" && nextOpen && (
-                      <Button
-                        variant="primary"
-                        onClick={() => browse(nextOpen.id)}
-                      >
-                        Next lesson
-                      </Button>
-                    )}
+                    <Button
+                      variant="primary"
+                      onClick={() => browse(nextOpen.id)}
+                    >
+                      Next lesson
+                    </Button>
+                  )}
                 </div>
               </div>
             )}

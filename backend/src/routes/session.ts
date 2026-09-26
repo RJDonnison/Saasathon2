@@ -4,6 +4,7 @@ import { requireRole } from "../auth.js";
 import { moduleInClassroom } from "../access.js";
 import { supabase } from "../supabase.js";
 import { emitSessionUpdate } from "../sockets.js";
+import { liveModuleAggregates } from "../questionOutcomes.js";
 import { toSession, unwrap, type SessionRow } from "../rows.js";
 import type {
   GetSessionResponse,
@@ -48,19 +49,27 @@ function toView(row: SessionWithTitle): LessonSession {
   return toSession(session, modules?.title ?? "Lesson");
 }
 
-async function recordSessionModule(row: SessionRow, title: string): Promise<void> {
+async function recordSessionModule(
+  row: SessionRow,
+  title: string,
+): Promise<void> {
   try {
-    unwrap(await supabase.from("lesson_feedback_events").insert({
-      id: randomUUID(),
-      session_id: row.id,
-      classroom_id: row.classroom_id,
-      student_id: null,
-      module_id: row.module_id,
-      event_type: "lesson_module",
-      payload: { title },
-    }));
+    unwrap(
+      await supabase.from("lesson_feedback_events").insert({
+        id: randomUUID(),
+        session_id: row.id,
+        classroom_id: row.classroom_id,
+        student_id: null,
+        module_id: row.module_id,
+        event_type: "lesson_module",
+        payload: { title },
+      }),
+    );
   } catch (error) {
-    console.warn("[feedback] Could not record lesson change:", error instanceof Error ? error.message : error);
+    console.warn(
+      "[feedback] Could not record lesson change:",
+      error instanceof Error ? error.message : error,
+    );
   }
 }
 
@@ -97,26 +106,11 @@ sessionRouter.get("/progress", requireRole("teacher"), async (req, res) => {
   if (!session) return res.status(409).json({ error: "No lesson is live" });
   const memberships = unwrap(membershipsResult) as Array<{ user_id: string }>;
   const studentIds = memberships.map((membership) => membership.user_id);
-  const rows = studentIds.length
-    ? (unwrap(
-        await supabase
-          .from("module_progress")
-          .select("student_id,status")
-          .eq("module_id", session.module_id)
-          .in("student_id", studentIds),
-      ) as Array<{
-        student_id: string;
-        status: GetLiveModuleProgressResponse["progress"][number]["status"];
-      }>)
-    : [];
-  const statuses = new Map(rows.map((row) => [row.student_id, row.status]));
   const body: GetLiveModuleProgressResponse = {
     sessionId: session.id,
     moduleId: session.module_id,
-    progress: studentIds.map((studentId) => ({
-      studentId,
-      status: statuses.get(studentId) ?? "not_started",
-    })),
+    progress: await liveModuleAggregates(session.module_id, studentIds),
+    version: new Date().toISOString(),
   };
   res.json(body);
 });
@@ -139,11 +133,9 @@ sessionRouter.post("/", requireRole("teacher"), async (req, res) => {
     return res.status(404).json({ error: "Lesson not found" });
   }
   if (running) {
-    return res
-      .status(409)
-      .json({
-        error: "A lesson is already live. End it or move the class on.",
-      });
+    return res.status(409).json({
+      error: "A lesson is already live. End it or move the class on.",
+    });
   }
   const row = unwrap(
     await supabase
@@ -177,7 +169,9 @@ sessionRouter.patch("/", requireRole("teacher"), async (req, res) => {
   }
   const [current, lesson] = await Promise.all([
     liveRow(classroomId),
-    moduleId !== undefined ? moduleInClassroom(moduleId, classroomId) : Promise.resolve(true),
+    moduleId !== undefined
+      ? moduleInClassroom(moduleId, classroomId)
+      : Promise.resolve(true),
   ]);
   if (!current) return res.status(409).json({ error: "No lesson is live" });
   if (!lesson) {
@@ -195,7 +189,8 @@ sessionRouter.patch("/", requireRole("teacher"), async (req, res) => {
       .single(),
   ) as SessionWithTitle;
   const view = toView(row);
-  if (row.module_id !== current.module_id) void recordSessionModule(row, view.moduleTitle);
+  if (row.module_id !== current.module_id)
+    void recordSessionModule(row, view.moduleTitle);
   publish(res, classroomId, view);
 });
 

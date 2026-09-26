@@ -22,7 +22,7 @@ import type {
   UpsertModuleProgressRequest,
   UpsertSectionProgressRequest,
 } from "../../../shared/types.js";
-const statuses: ProgressStatus[] = ["not_started", "in_progress", "completed"];
+const statuses: ProgressStatus[] = ["not_started", "in_progress"];
 export const progressRouter = Router();
 async function permitted(req: any, studentId: string) {
   return (
