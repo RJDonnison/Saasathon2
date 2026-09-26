@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { api } from "../api.ts";
 import { useAuth } from "../auth/useAuth.ts";
 import { useLiveSession } from "../useLiveSession.ts";
@@ -41,6 +41,7 @@ const INVITATION_LABEL: Record<ClassroomInvitation["status"], string> = {
 export default function TeacherHome() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const { confirm } = useDialog();
   const { session, setSession } = useLiveSession();
   const [students, setStudents] = useState<User[] | null>(null);
@@ -353,6 +354,7 @@ export default function TeacherHome() {
     month: "long",
   });
   const studentCount = students?.length ?? 0;
+  const managing = pathname.endsWith("/manage");
 
   return (
     <div className="mx-auto flex max-w-[1020px] flex-col gap-6 sm:gap-7">
@@ -377,22 +379,42 @@ export default function TeacherHome() {
         </Link>
       </div>
 
+      <nav
+        aria-label="Class workspace"
+        className="flex w-fit items-center gap-1 rounded-xl border border-border bg-surface-soft p-1"
+      >
+        <Link
+          to={`/teacher/class/${user!.classroomId}/live`}
+          className={`rounded-lg px-3 py-2 text-sm! font-semibold! transition ${managing ? "text-muted hover:text-ink" : "bg-surface text-ink shadow-sm"}`}
+        >
+          Live class
+        </Link>
+        <Link
+          to={`/teacher/class/${user!.classroomId}/manage`}
+          className={`rounded-lg px-3 py-2 text-sm! font-semibold! transition ${managing ? "bg-surface text-ink shadow-sm" : "text-muted hover:text-ink"}`}
+        >
+          Manage class
+        </Link>
+      </nav>
+
       {error && (
         <p className={`m-0 rounded-xl px-4 py-3 text-sm ${TINT.peach}`}>
           {error}
         </p>
       )}
 
-      <LiveLessonControl
-        classroomId={user!.classroomId}
-        classroomName={classroom?.name ?? "your classroom"}
-        lessons={modules.filter((m) => m.status === "published")}
-        session={session}
-        onSession={setSession}
-        online={onlineCount}
-        students={studentCount}
-        hands={hands.length}
-      />
+      {!managing && (
+        <LiveLessonControl
+          classroomId={user!.classroomId}
+          classroomName={classroom?.name ?? "your classroom"}
+          lessons={modules.filter((m) => m.status === "published")}
+          session={session}
+          onSession={setSession}
+          online={onlineCount}
+          students={studentCount}
+          hands={hands.length}
+        />
+      )}
 
       {/*
         Two columns on large screens: [students + lessons] | [raised hands, detail, invitations]. The column wrappers
@@ -401,7 +423,7 @@ export default function TeacherHome() {
       */}
       <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1.7fr)_minmax(290px,.95fr)]">
         <div className="contents lg:flex lg:min-w-0 lg:flex-col lg:gap-5">
-          <div className="order-2 min-w-0">
+          <div className={`order-2 min-w-0 ${managing ? "hidden" : ""}`}>
             <ClassroomGrid
               students={students}
               online={online}
@@ -411,9 +433,10 @@ export default function TeacherHome() {
               liveProgress={liveProgress}
             />
           </div>
-          <div className="order-5 min-w-0">
+          <div className={`order-5 min-w-0 ${managing ? "" : "hidden"}`}>
             <Card
               title="Lessons"
+              eyebrow="Your modules"
               icon={<BookIcon className="size-[18px]" />}
               tint="mint"
               bodyClassName="flex flex-col divide-y divide-border"
@@ -458,10 +481,11 @@ export default function TeacherHome() {
           </div>
         </div>
         <div className="contents lg:flex lg:min-w-0 lg:flex-col lg:gap-5">
-          <div className="order-1 min-w-0">
+          <div className={`order-1 min-w-0 ${managing ? "hidden" : ""}`}>
             <RaiseHandAlert
               hands={hands}
               nameOf={(id) => byId.get(id)?.name ?? "A student"}
+              onSelect={setSelectedId}
               onHelp={(id) => {
                 setSelectedId(id);
                 if (user) emitAcknowledgeHand(id, user.classroomId);
@@ -474,11 +498,10 @@ export default function TeacherHome() {
                   `/teacher/student-work/${id}/${active.moduleId}${question}`,
                 );
               }}
-              onSelect={setSelectedId}
               activity={activity}
             />
           </div>
-          <div className="order-3 min-w-0">
+          <div className={`order-3 min-w-0 ${managing ? "hidden" : ""}`}>
             <StudentDetailPanel
               student={selected}
               online={selected ? online.has(selected.id) : false}
@@ -486,15 +509,16 @@ export default function TeacherHome() {
               lessons={modules}
             />
           </div>
-          <div className="order-4 min-w-0">
+          <div className={`order-4 min-w-0 ${managing ? "" : "hidden"}`}>
             <AnnouncementsCard
               key={user!.classroomId}
               classroomId={user!.classroomId}
             />
           </div>
-          <div className="order-6 min-w-0">
+          <div className={`order-6 min-w-0 ${managing ? "" : "hidden"}`}>
             <Card
               title="Invite students"
+              eyebrow="Class invitations"
               icon={<UsersIcon className="size-[18px]" />}
               tint="lavender"
               bodyClassName="flex flex-col gap-4 p-5"
@@ -576,7 +600,7 @@ export default function TeacherHome() {
         </div>
       </div>
 
-      <LessonPlanner />
+      {managing && <LessonPlanner />}
     </div>
   );
 }
