@@ -414,9 +414,8 @@ export default function TeacherHome() {
       )}
 
       {managing && (
-        <section className="flex flex-col gap-4 rounded-2xl border border-border bg-surface-soft p-4 sm:p-5">
+        <>
           <div className="flex flex-col gap-1">
-            <span className="text-xs font-semibold text-muted">START HERE</span>
             <Heading as="h2">Plan with AI</Heading>
             <p className="m-0 text-sm text-muted">
               Start with a complete lesson draft, then review and refine it in
@@ -424,14 +423,11 @@ export default function TeacherHome() {
             </p>
           </div>
           <LessonPlanner />
-        </section>
+        </>
       )}
 
       {managing && (
         <div className="flex flex-col gap-1 border-t border-border pt-6">
-          <span className="text-xs font-semibold text-muted">
-            MANUAL WORKSPACE
-          </span>
           <Heading as="h2">Lesson management</Heading>
           <p className="m-0 text-sm text-muted">
             Build from scratch, edit existing lessons, and manage your class
