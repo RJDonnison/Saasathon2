@@ -1,0 +1,13 @@
+.git
+.idea
+node_modules
+**/node_modules
+dist
+**/dist
+build
+**/build
+coverage
+*.log
+.env
+.env.*
+!.env.example
