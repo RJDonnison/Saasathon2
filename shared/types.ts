@@ -167,6 +167,8 @@ export interface MyClassroom {
   completedCount: number;
   /** The classroom the app is currently showing (the most recently joined). */
   active: boolean;
+  /** The lesson the teacher is running right now, or null when nothing is live. */
+  liveSession: LessonSession | null;
 }
 /** GET /api/classrooms — every classroom the caller belongs to. */
 export type ListMyClassroomsResponse = MyClassroom[];
@@ -183,6 +185,10 @@ export interface Module {
   position: number;
   status: ModuleStatus;
   revision: number;
+  /** Students can only open the lesson from this time (ISO), or any time before closesAt when null. */
+  opensAt: string | null;
+  /** Students can no longer open the lesson after this time (ISO), or never when null. */
+  closesAt: string | null;
 }
 export interface Section {
   id: string;
@@ -237,13 +243,6 @@ export interface CodeTest {
   expected: unknown;
   position: number;
 }
-export interface ReferenceAnswer {
-  id: string;
-  codeExerciseId: string;
-  title: string;
-  answer: string;
-  position: number;
-}
 export interface CodeCheck {
   id: string;
   codeExerciseId: string;
@@ -264,13 +263,15 @@ export interface ExerciseSummary {
 /** A lesson as one student sees it: the module plus their progress and what is in it. */
 export interface LessonSummary extends Omit<Module, "status"> {
   status: ProgressStatus;
+  /** Whether the student can open it right now: inside its time window, or the teacher is running it live. */
+  available: boolean;
   sections: Array<{ id: string; title: string }>;
   exercises: ExerciseSummary[];
 }
 /** GET /api/classrooms/:id/lessons (student) — every lesson in order, with the caller's progress. */
 export type ListLessonSummariesResponse = LessonSummary[];
 
-/** Teacher aggregate. Includes answer keys, reference answers and checks. */
+/** Teacher aggregate. Includes answer keys and checks. */
 export interface TeacherQuestion extends Question {
   answerKey: string | null;
   /** Teacher-only target values; student aggregates deliberately omit both fields. */
@@ -279,7 +280,6 @@ export interface TeacherQuestion extends Question {
   codeExercise?: CodeExercise & {
     /** Appended by the server at run time; deliberately absent from student aggregates. */
     hiddenCode: string;
-    referenceAnswers: ReferenceAnswer[];
     checks: CodeCheck[];
     tests: CodeTest[];
   };
@@ -292,7 +292,7 @@ export interface TeacherSection extends Section {
 export interface TeacherModule extends Module {
   sections: TeacherSection[];
 }
-/** Student aggregate. Deliberately excludes answer keys, reference answers and checks. */
+/** Student aggregate. Deliberately excludes answer keys and checks. */
 export interface StudentQuestion extends Question {
   codeExercise?: CodeExercise;
 }
@@ -311,6 +311,11 @@ export interface ModuleProgress {
   moduleId: string;
   status: ProgressStatus;
   updatedAt: string;
+}
+/** One student's durable progress in the module currently being taught live. */
+export interface LiveModuleProgress {
+  studentId: string;
+  status: ProgressStatus;
 }
 export interface SectionProgress {
   id: string;
@@ -346,6 +351,10 @@ export interface StudentWork {
   questionId: string;
   answer: string | null;
   code: string | null;
+  /** Result of the most recent answer check; null when the answer has not been checked or cannot be graded. */
+  isCorrect: boolean | null;
+  /** Present only after the student has checked this answer. */
+  checkedAt: string | null;
   updatedAt: string;
 }
 export type StudentActivityType =
@@ -459,11 +468,6 @@ export interface ModuleBuilderDocument {
           functionName?: string;
           /** Teacher-only test harness appended on the server when this exercise runs. */
           hiddenCode?: string;
-          referenceAnswers?: Array<{
-            id: string;
-            title: string;
-            answer: string;
-          }>;
           checks?: Array<{ id: string; name: string; description: string }>;
           tests?: Array<{
             id: string;
@@ -502,6 +506,11 @@ export interface AiModuleSuggestionsRequest {
 }
 export interface AiModuleSuggestionsResponse {
   suggestions: AiModuleSuggestion[];
+}
+/** PUT /api/modules/:id/availability (teacher) — the time window students may open the lesson in; null = unbounded. */
+export interface UpdateModuleAvailabilityRequest {
+  opensAt: string | null;
+  closesAt: string | null;
 }
 export interface UpdateModuleRequest {
   title?: string;
@@ -572,16 +581,6 @@ export interface UpdateCodeTestRequest {
   expected?: unknown;
   position?: number;
 }
-export interface CreateReferenceAnswerRequest {
-  title: string;
-  answer: string;
-  position?: number;
-}
-export interface UpdateReferenceAnswerRequest {
-  title?: string;
-  answer?: string;
-  position?: number;
-}
 export interface CreateCodeCheckRequest {
   name: string;
   description: string;
@@ -646,6 +645,15 @@ export type GetModuleResponse = StudentModule | TeacherModule;
 export type ListModulesResponse = Module[];
 export type GetClassroomResponse = Classroom;
 export type GetClassroomStudentsResponse = User[];
+/**
+ * GET /api/classrooms/:id/session/progress (teacher only) — durable progress for every student in the active
+ * classroom's current live module. Returns 409 when the classroom has no live lesson.
+ */
+export interface GetLiveModuleProgressResponse {
+  sessionId: string;
+  moduleId: string;
+  progress: LiveModuleProgress[];
+}
 export type GetStudentProgressResponse = ModuleProgress[];
 export type UpsertProgressRequest = UpsertModuleProgressRequest;
 export type UpsertProgressResponse = ModuleProgress;
@@ -695,6 +703,7 @@ export interface ValidateMathRequest {
 export interface ValidateMathResponse {
   value: number;
   isCorrect: boolean;
+  checkedAt: string;
 }
 /** One turn of an AI conversation. The AI endpoints are stateless: the client re-sends the transcript each call. */
 export interface AiChatMessage {
@@ -704,7 +713,7 @@ export interface AiChatMessage {
 
 /**
  * POST /api/ai/hint (student only) — "I'm stuck" tutor. Gives hints, never the solution, scoped to `moduleId`.
- * The server loads the module itself (student-safe view: no answer keys/reference answers/checks).
+ * The server loads the module itself (student-safe view: no answer keys/checks).
  * Limits: question <= 2000 chars, history <= 20 turns of <= 2000 chars, code <= 8000 chars, error <= 2000 chars.
  * Errors: 503 if the server has no OPENAI_API_KEY, 502 if OpenAI fails, 429 if rate limited.
  * When `code` is sent and the tutor can point at the problem (a syntax error, a crash), the response carries a

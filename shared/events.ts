@@ -3,6 +3,7 @@
 
 import type {
   LessonSession,
+  ModuleProgress,
   QuestionComment,
   StudentActivity,
   StudentWork,
@@ -60,6 +61,15 @@ export interface SessionUpdatePayload {
   session: LessonSession | null;
 }
 
+/** A durable module-progress write. `sessionId` is set only when this module is currently live. */
+export interface ModuleProgressUpdatePayload {
+  type: "module_progress_update";
+  classroomId: string;
+  moduleId: string;
+  sessionId: string | null;
+  progress: ModuleProgress;
+}
+
 export interface PresenceUpdatePayload {
   type: "presence_update";
   classroomId: string;
@@ -92,6 +102,7 @@ export type SocketPayload =
   | StudentActivityUpdatePayload
   | PresenceUpdatePayload
   | SessionUpdatePayload
+  | ModuleProgressUpdatePayload
   | ModuleChangedPayload
   | ModuleDeletedPayload
   | QuestionCommentCreatedPayload;
@@ -110,6 +121,7 @@ export interface ServerToClientEvents {
   student_activity_update: (payload: StudentActivityUpdatePayload) => void;
   presence_update: (payload: PresenceUpdatePayload) => void;
   session_update: (payload: SessionUpdatePayload) => void;
+  module_progress_update: (payload: ModuleProgressUpdatePayload) => void;
   module_changed: (payload: ModuleChangedPayload) => void;
   question_comment_created: (payload: QuestionCommentCreatedPayload) => void;
   module_deleted: (payload: ModuleDeletedPayload) => void;

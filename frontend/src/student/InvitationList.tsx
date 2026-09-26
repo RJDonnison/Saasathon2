@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api.ts'
 import { useAuth } from '../auth/useAuth.ts'
 import Button from '../ui/Button.tsx'
-import Eyebrow from '../ui/Eyebrow.tsx'
 import { CARD, TINT } from '../ui/styles.ts'
 import type { MyInvitation } from '../../../shared/types'
 
@@ -47,8 +46,7 @@ export default function InvitationList() {
     <div className="flex flex-col gap-3" role="region" aria-label="Classroom invitations">
       {invitations.map((invitation) => (
         <div key={invitation.id} className={`flex flex-wrap items-center justify-between gap-3 p-4 ${CARD}`}>
-          <div className="flex min-w-0 flex-col gap-1.5">
-            <Eyebrow>Invitation</Eyebrow>
+          <div className="flex min-w-0 flex-col">
             <p className="m-0 text-sm text-ink">
               <strong>{invitation.invitedByName}</strong> invited you to join <strong>{invitation.classroomName}</strong>
             </p>

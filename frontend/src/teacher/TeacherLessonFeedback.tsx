@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api } from '../api.ts'
 import Card from '../ui/Card.tsx'
-import Eyebrow from '../ui/Eyebrow.tsx'
 import Heading from '../ui/Heading.tsx'
 import { BookIcon, CheckIcon, UsersIcon } from '../ui/icons.tsx'
 import { CARD, TINT } from '../ui/styles.ts'
@@ -59,7 +58,7 @@ export default function TeacherLessonFeedback() {
 
   if (studentId && detail) return <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-5 pb-12 sm:p-8">
     <Link to={`/teacher/feedback/${encodeURIComponent(sessionId)}`} className="text-sm! font-medium! text-muted">← All students</Link>
-    <header className="flex flex-col gap-2"><Eyebrow>Individual lesson feedback</Eyebrow><Heading as="h1" variant="title">{detail.studentName}</Heading><p className="m-0 text-sm text-muted">{report.session.moduleTitle} · {report.classroomName} · {STATUS[detail.progress]}</p></header>
+    <header className="flex flex-col gap-2"><p className="m-0 text-sm font-medium text-mint-ink">Individual lesson feedback</p><Heading as="h1" variant="title">{detail.studentName}</Heading><p className="m-0 text-sm text-muted">{report.session.moduleTitle} · {report.classroomName} · {STATUS[detail.progress]}</p></header>
     {detail.redFlag && <div className={`flex flex-col gap-2 rounded-2xl p-4 ${TINT.peach}`}><strong className="text-sm">Needs teacher review</strong><p className="m-0 text-sm">{detail.redFlag}</p><p className="m-0 text-xs">Automated safety and misuse signals can be wrong. Review the conversation before acting.</p></div>}
     <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
       <Stat label="Lesson progress" value={STATUS[detail.progress]} note={detail.finishedAt ? `Finished ${stamp(detail.finishedAt)}` : 'Completion was not recorded'} />
@@ -80,7 +79,7 @@ export default function TeacherLessonFeedback() {
 
   return <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-5 pb-12 sm:p-8">
     <Link to="/teacher" className="text-sm! font-medium! text-muted">← Teacher home</Link>
-    <header className="flex flex-col gap-2"><Eyebrow>Lesson complete · {report.classroomName}</Eyebrow><Heading as="h1" variant="title">{report.session.moduleTitle}</Heading><p className="m-0 text-sm text-muted">{stamp(report.session.startedAt)} to {stamp(report.session.endedAt)} · {report.session.durationMinutes} minutes</p></header>
+    <header className="flex flex-col gap-2"><p className="m-0 text-sm font-medium text-mint-ink">Lesson complete · {report.classroomName}</p><Heading as="h1" variant="title">{report.session.moduleTitle}</Heading><p className="m-0 text-sm text-muted">{stamp(report.session.startedAt)} to {stamp(report.session.endedAt)} · {report.session.durationMinutes} minutes</p></header>
     <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
       <Stat label="Class completion" value={`${report.completedCount}/${report.studentCount}`} note="students with completion recorded" />
       <Stat label="Used AI hints" value={`${report.helperUsePercent}%`} note="of enrolled students used the helper" />

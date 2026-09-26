@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Router } from "express";
 import { requireRole } from "../auth.js";
-import { moduleInClassroom } from "../access.js";
+import { moduleForUser } from "../access.js";
 import { supabase } from "../supabase.js";
 import { emitStudentActivityUpdate } from "../sockets.js";
 import {
@@ -55,7 +55,7 @@ async function validLocation(
   sectionId?: unknown,
   questionId?: unknown,
 ): Promise<Location | null> {
-  if (typeof moduleId !== "string" || !(await moduleInClassroom(moduleId, classroomId)))
+  if (typeof moduleId !== "string" || !(await moduleForUser(moduleId, classroomId, "student")))
     return null;
   let section: { id: string; module_id: string } | null = null;
   if (sectionId !== undefined) {
@@ -139,6 +139,16 @@ activityRouter.put("/work", requireRole("student"), async (req, res) => {
   ) as { kind: string };
   if ((body.kind === "code") !== (question.kind === "code"))
     return res.status(400).json({ error: "Work type does not match this question" });
+  const existing = unwrap(
+    await supabase
+      .from("student_work")
+      .select("*")
+      .eq("student_id", req.user!.userId)
+      .eq("question_id", location.questionId)
+      .maybeSingle(),
+  ) as StudentWorkRow | null;
+  const unchanged =
+    (body.kind === "answer" ? existing?.answer : existing?.code) === body.value;
   const row = unwrap(
     await supabase
       .from("student_work")
@@ -149,6 +159,8 @@ activityRouter.put("/work", requireRole("student"), async (req, res) => {
           question_id: location.questionId,
           answer: body.kind === "answer" ? body.value : null,
           code: body.kind === "code" ? body.value : null,
+          is_correct: unchanged ? existing?.is_correct ?? null : null,
+          checked_at: unchanged ? existing?.checked_at ?? null : null,
           updated_at: new Date().toISOString(),
         },
         { onConflict: "student_id,question_id" },
@@ -203,7 +215,7 @@ activityRouter.post("/", requireRole("student"), async (req, res) => {
 
 activityRouter.get("/work", requireRole("student"), async (req, res) => {
   const moduleId = req.query.moduleId;
-  if (typeof moduleId !== "string" || !(await moduleInClassroom(moduleId, req.user!.classroomId)))
+  if (typeof moduleId !== "string" || !(await moduleForUser(moduleId, req.user!.classroomId, "student")))
     return res.status(400).json({ error: "Invalid module" });
   const sections = unwrap(
     await supabase.from("sections").select("id").eq("module_id", moduleId),

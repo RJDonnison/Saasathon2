@@ -4,7 +4,7 @@ import { timeAgo } from '../student/lessons.ts'
 import Button from '../ui/Button.tsx'
 import Card from '../ui/Card.tsx'
 import { PencilIcon, XIcon } from '../ui/icons.tsx'
-import { INPUT } from '../ui/styles.ts'
+import { INPUT, TINT } from '../ui/styles.ts'
 import type { Announcement } from '../../../shared/types'
 
 /** Post short notes to the class; students see them on their dashboard and class page. */
@@ -48,7 +48,7 @@ export default function AnnouncementsCard({ classroomId }: { classroomId: string
   }
 
   return (
-    <Card title="Post to the class" eyebrow="Announcements" icon={<PencilIcon className="size-[18px]" />} tint="peach" bodyClassName="flex flex-col gap-4 p-5">
+    <Card title="Post to the class" icon={<PencilIcon className="size-[18px]" />} tint="peach" bodyClassName="flex flex-col gap-4 p-5">
       <form onSubmit={(event) => void post(event)} className="flex flex-col gap-3">
         <textarea
           className={`${INPUT} min-h-20 resize-y py-3`}
@@ -60,7 +60,7 @@ export default function AnnouncementsCard({ classroomId }: { classroomId: string
         />
         <div className="flex flex-wrap items-center gap-3">
           <Button type="submit" variant="primary" disabled={busy || !text.trim()}>{busy ? 'Posting…' : 'Post note'}</Button>
-          {message && <span role="status" className="text-sm text-muted">{message}</span>}
+          {message && <span role="alert" className={`rounded-lg px-3 py-2 text-sm ${TINT.peach}`}>{message}</span>}
         </div>
       </form>
       {notes.length > 0 && (
