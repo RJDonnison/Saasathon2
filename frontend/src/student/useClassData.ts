@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api.ts'
 import { useAuth } from '../auth/useAuth.ts'
+import { onModuleChanged, onModuleDeleted } from '../socket.ts'
 import type { Announcement, Classroom, LessonSummary, ProgressStatus } from '../../../shared/types'
 
 /** The active classroom, the student's lessons (with their progress) and the teacher's notes. `null` = still loading. */
@@ -29,6 +30,20 @@ export function useClassData() {
       })
     return () => {
       active = false
+    }
+  }, [classroomId])
+
+  // The teacher edited, published or deleted a lesson: reload the list (statuses come with it).
+  useEffect(() => {
+    if (!classroomId) return
+    const refresh = () => {
+      api.getLessons(classroomId).then(setLessons).catch(() => {})
+    }
+    const changed = onModuleChanged(refresh)
+    const deleted = onModuleDeleted(refresh)
+    return () => {
+      changed()
+      deleted()
     }
   }, [classroomId])
 
