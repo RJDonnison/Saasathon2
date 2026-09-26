@@ -251,6 +251,8 @@ codeRouter.post("/run", async (req, res) => {
         status: response.status,
         statusText: response.statusText,
         message,
+        server: response.headers.get("server"),
+        cfRay: response.headers.get("cf-ray"),
       });
       res
         .status(response.status === 400 ? 400 : 502)
@@ -423,6 +425,8 @@ codeRouter.post("/grade", requireRole("student"), async (req, res) => {
       console.error("Piston grading request failed", {
         status: response.status,
         statusText: response.statusText,
+        server: response.headers.get("server"),
+        cfRay: response.headers.get("cf-ray"),
       });
     }
     const output = [
