@@ -4,7 +4,6 @@ import { plural, STATUS_LABEL, timeAgo } from '../student/lessons.ts'
 import Avatar from '../ui/Avatar.tsx'
 import Card from '../ui/Card.tsx'
 import Dot from '../ui/Dot.tsx'
-import Eyebrow from '../ui/Eyebrow.tsx'
 import Heading from '../ui/Heading.tsx'
 import { BookIcon } from '../ui/icons.tsx'
 import { TINT } from '../ui/styles.ts'
@@ -49,7 +48,7 @@ export default function StudentDetailPanel({
   const runs = [...(aggregate?.submissions ?? [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
   const done = lessons.filter((l) => statusOf(l.id) === 'completed').length
   return (
-    <Card title="Student detail" eyebrow="Focus" icon={<BookIcon className="size-[18px]" />} tint="mint">
+    <Card title="Student detail" icon={<BookIcon className="size-[18px]" />} tint="mint">
       {!student ? (
         <p className="m-0 py-4 text-center text-sm text-muted">Select a student to see how they’re getting on.</p>
       ) : (
@@ -69,7 +68,6 @@ export default function StudentDetailPanel({
           ) : (
             <>
               <div className="flex flex-col gap-2">
-                <Eyebrow>Lesson progress</Eyebrow>
                 {lessons.length === 0 ? (
                   <p className="m-0 text-sm text-muted">No lessons yet.</p>
                 ) : (
@@ -88,7 +86,6 @@ export default function StudentDetailPanel({
               </div>
 
               <div className="flex flex-col gap-2">
-                <Eyebrow>Code runs</Eyebrow>
                 {runs.length === 0 ? (
                   <p className="m-0 text-sm text-muted">No code runs yet.</p>
                 ) : (

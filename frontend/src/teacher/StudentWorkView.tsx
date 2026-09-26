@@ -4,7 +4,6 @@ import { api } from "../api.ts";
 import { useAuth } from "../auth/useAuth.ts";
 import { onStudentActivityUpdate } from "../socket.ts";
 import Card from "../ui/Card.tsx";
-import Eyebrow from "../ui/Eyebrow.tsx";
 import Heading from "../ui/Heading.tsx";
 import InlineText from "../ui/InlineText.tsx";
 import MathText from "../ui/MathText.tsx";
@@ -93,13 +92,12 @@ export default function StudentWorkView() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex flex-col gap-3">
-          <Eyebrow>Live student work</Eyebrow>
           <Heading as="h1" variant="title">{studentName}'s workspace</Heading>
           <p className="m-0 text-[15px] text-muted">
             This is read-only and updates when the student saves more work.
           </p>
         </div>
-        <Link to="/teacher" className="rounded-xl border border-border bg-surface px-3 py-2 text-sm! font-semibold! text-ink hover:bg-surface-soft">
+        <Link to={`/teacher/class/${user?.classroomId ?? ""}`} className="rounded-xl border border-border bg-surface px-3 py-2 text-sm! font-semibold! text-ink hover:bg-surface-soft">
           Back to dashboard
         </Link>
       </div>
@@ -114,7 +112,7 @@ export default function StudentWorkView() {
       )}
 
       {module && !question && (
-        <Card title="No active question" eyebrow="Live student work" icon={<BookIcon className="size-[18px]" />} tint="mint" bodyClassName="p-5">
+        <Card title="No active question" icon={<BookIcon className="size-[18px]" />} tint="mint" bodyClassName="p-5">
           <p className="m-0 text-sm text-muted">This student is not currently working on a question in this lesson.</p>
         </Card>
       )}
@@ -123,7 +121,6 @@ export default function StudentWorkView() {
         <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
           <Card
             title={isCode ? "Code exercise" : "Question"}
-            eyebrow={module?.title ?? "Lesson"}
             icon={isCode ? <CodeIcon className="size-[18px]" /> : <PencilIcon className="size-[18px]" />}
             tint={isCode ? "mint" : "peach"}
             bodyClassName="flex flex-col gap-5 p-5 sm:p-6"
@@ -135,7 +132,6 @@ export default function StudentWorkView() {
               <p className="m-0 text-sm leading-relaxed text-muted">{question.codeExercise.instructions}</p>
             )}
             <div className="flex flex-col gap-2">
-              <Eyebrow>Saved student work</Eyebrow>
               {draft ? (
                 isCode ? (
                   <pre className="m-0 max-h-[34rem] overflow-auto rounded-xl border border-border bg-surface-soft p-4 text-[13px] leading-6 whitespace-pre text-ink font-mono">
@@ -153,12 +149,12 @@ export default function StudentWorkView() {
             {studentId && <QuestionConversation questionId={question.id} studentId={studentId} />}
           </Card>
 
-          <Card title="Live status" eyebrow="Student activity" tint="lavender" bodyClassName="flex flex-col gap-3 p-5">
+          <Card title="Live status" tint="lavender" bodyClassName="flex flex-col gap-3 p-5">
             <p className="m-0 text-sm font-medium text-ink">
               {active ? activityLabel[active.type] : "No live update yet"}
             </p>
             {active && <p className="m-0 text-xs text-muted">Updated {new Date(active.createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" })}</p>}
-            <Link to="/teacher" className="inline-flex self-start rounded-xl bg-accent px-3 py-2 text-sm! font-semibold! text-white">
+            <Link to={`/teacher/class/${user?.classroomId ?? ""}`} className="inline-flex self-start rounded-xl bg-accent px-3 py-2 text-sm! font-semibold! text-white">
               Return to dashboard
             </Link>
           </Card>

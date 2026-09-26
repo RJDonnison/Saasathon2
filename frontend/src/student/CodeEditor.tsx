@@ -3,10 +3,10 @@ import type { OnMount } from "@monaco-editor/react";
 import type { GradeCodeTestResult } from "../../../shared/types";
 import { api } from "../api.ts";
 import Button from "../ui/Button.tsx";
-import Eyebrow from "../ui/Eyebrow.tsx";
+import Card from "../ui/Card.tsx";
 import InlineText from "../ui/InlineText.tsx";
-import { PlayIcon, SparklesIcon, XIcon } from "../ui/icons.tsx";
-import { CARD } from "../ui/styles.ts";
+import { CodeIcon, PlayIcon, SparklesIcon, XIcon } from "../ui/icons.tsx";
+import { GRADED_CARD_SHADOW } from "../ui/styles.ts";
 import { useWorkspace, type EditorInfo } from "./useWorkspace.ts";
 import { useStudentActivity } from "./useStudentActivity.ts";
 
@@ -27,8 +27,10 @@ export default function CodeEditor({
   initialCode,
   prompt,
   instructions,
+  questionNumber,
   moduleId,
   sectionId,
+  readOnly = false,
 }: {
   editor: EditorInfo;
   /** Shown in the window title bar, without extension. */
@@ -38,15 +40,19 @@ export default function CodeEditor({
   /** The task, and any extra detail, shown above the editor. */
   prompt?: string;
   instructions?: string;
+  /** The lesson-wide number shown in a code-question header. */
+  questionNumber?: number;
   /** Present for a lesson exercise; omitted by the free playground. */
   moduleId?: string;
   sectionId?: string;
+  readOnly?: boolean;
 }) {
   const {
     codes,
     setCode,
     setRunError,
     setActive,
+    active,
     highlight,
     clearHighlight,
     requestHelp,
@@ -70,6 +76,7 @@ export default function CodeEditor({
 
   const code = codes[editor.key] ?? initialCode;
   const mine = highlight?.editorKey === editor.key ? highlight : null;
+  const isOpen = active?.key === editor.key;
 
   useEffect(() => {
     latestCode.current = code;
@@ -240,9 +247,25 @@ export default function CodeEditor({
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <Card
+      title={
+        editor.exerciseId && questionNumber
+          ? `Question ${questionNumber}`
+          : "Playground"
+      }
+      icon={<CodeIcon className="size-[18px]" />}
+      tint="peach"
+      className={
+        tested
+          ? failed
+            ? GRADED_CARD_SHADOW.incorrect
+            : GRADED_CARD_SHADOW.correct
+          : ""
+      }
+      bodyClassName="flex flex-col gap-4 p-5 sm:p-6"
+    >
       {(prompt || instructions) && (
-        <section className={`flex flex-col gap-2.5 p-5 sm:p-6 ${CARD}`}>
+        <div className="flex flex-col gap-2.5">
           <span className="w-fit rounded-lg border border-border bg-surface-soft px-2.5 py-1 text-xs font-semibold text-ink capitalize">
             {language}
           </span>
@@ -256,39 +279,55 @@ export default function CodeEditor({
               <InlineText text={instructions} />
             </p>
           )}
-        </section>
+        </div>
       )}
 
-      <section className={`overflow-hidden ${CARD}`}>
+      <section className="overflow-hidden rounded-xl border border-border bg-surface">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-surface-soft px-4 py-3">
           <span className="min-w-0 truncate text-[13px] font-medium text-ink font-mono">
             {filename}.{EXTENSION[language] ?? "txt"}
           </span>
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <Button
-              size="sm"
-              onClick={() =>
-                requestHelp(editor, failed ? (output ?? undefined) : undefined)
-              }
-            >
-              <SparklesIcon className="size-3.5" />
-              Find the error
-            </Button>
-            <Button
-              variant={editor.exerciseId ? "default" : "primary"}
-              onClick={runCode}
-              disabled={running}
-            >
-              <PlayIcon className="size-3.5" />
-              {running && !tested ? "Running…" : "Run"}
-            </Button>
-            {editor.exerciseId && (
-              <Button variant="primary" onClick={runTests} disabled={running}>
-                <PlayIcon className="size-3.5" />
-                {running && tested ? "Checking…" : "Check"}
-              </Button>
-            )}
-          </div>
+          {!readOnly && (
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {isOpen ? (
+              <>
+                <Button
+                  size="sm"
+                  onClick={() =>
+                    requestHelp(
+                      editor,
+                      failed ? (output ?? undefined) : undefined,
+                    )
+                  }
+                >
+                  <SparklesIcon className="size-3.5" /> Find the error
+                </Button>
+                <Button
+                  variant={editor.exerciseId ? "default" : "primary"}
+                  onClick={runCode}
+                  disabled={running}
+                >
+                  <PlayIcon className="size-3.5" />{" "}
+                  {running && !tested ? "Running…" : "Run"}
+                </Button>
+                {editor.exerciseId && (
+                  <Button
+                    variant="primary"
+                    onClick={runTests}
+                    disabled={running}
+                  >
+                    <PlayIcon className="size-3.5" />{" "}
+                    {running && tested ? "Checking…" : "Check"}
+                  </Button>
+                )}
+              </>
+              ) : (
+                <Button variant="primary" onClick={() => setActive(editor)}>
+                  Open editor
+                </Button>
+              )}
+            </div>
+          )}
         </div>
 
         {mine && (
@@ -315,60 +354,70 @@ export default function CodeEditor({
           </div>
         )}
 
-        <div className="h-[22rem] min-h-28 overflow-hidden bg-surface">
-          <Suspense
-            fallback={
-              <div className="grid h-full place-items-center text-sm text-muted">
-                Loading editor…
-              </div>
-            }
-          >
-            <MonacoEditor
-              height="100%"
-              defaultLanguage={language}
-              language={language}
-              value={code}
-              theme="vs"
-              onMount={onMount}
-              onChange={(value) => {
-                setCode(editor.key, value ?? "");
-                setEdited(true);
-                startWriting();
-                setTested(false);
-                setTestResults(null);
-                // A run error only applies to the exact code that produced it.
-                setRunError(editor.key);
-                // Line numbers shift as they edit, so an old highlight would point at the wrong place.
-                if (mine) clearHighlight();
-              }}
-              options={{
-                ariaLabel: `Code editor: ${editor.label}`,
-                automaticLayout: true,
-                // The card and editor wrapper are overflow-hidden, which clips suggestion/hover widgets that extend past
-                // the editor. Fixed positioning lets them render above the prompt, eyebrow and header instead.
-                fixedOverflowWidgets: true,
-                fontFamily: "var(--font-mono)",
-                fontSize: 14,
-                lineHeight: 24,
-                minimap: { enabled: false },
-                padding: { top: 12, bottom: 12 },
-                scrollBeyondLastLine: false,
-                // Only consume the wheel while the editor can still scroll in that direction; at its top/bottom (or when
-                // the code fits) the event falls through to the page, like any nested scroller.
-                scrollbar: { alwaysConsumeMouseWheel: false },
-                tabSize: 2,
-                wordWrap: "off",
-              }}
-            />
-          </Suspense>
-        </div>
+        {readOnly ? (
+          <pre className="m-0 max-h-96 overflow-auto bg-surface px-5 py-4 text-[13px] leading-6 text-ink font-mono">
+            <code>{code}</code>
+          </pre>
+        ) : isOpen ? (
+          <div className="h-[22rem] min-h-28 overflow-hidden bg-surface">
+            <Suspense
+              fallback={
+                <div className="grid h-full place-items-center text-sm text-muted">
+                  Loading editor…
+                </div>
+              }
+            >
+              <MonacoEditor
+                height="100%"
+                defaultLanguage={language}
+                language={language}
+                value={code}
+                theme="vs"
+                onMount={onMount}
+                onChange={(value) => {
+                  setCode(editor.key, value ?? "");
+                  setEdited(true);
+                  startWriting();
+                  setTested(false);
+                  setTestResults(null);
+                  // A run error only applies to the exact code that produced it.
+                  setRunError(editor.key);
+                  // Line numbers shift as they edit, so an old highlight would point at the wrong place.
+                  if (mine) clearHighlight();
+                }}
+                options={{
+                  ariaLabel: `Code editor: ${editor.label}`,
+                  automaticLayout: true,
+                  // The card and editor wrapper are overflow-hidden, which clips suggestion/hover widgets that extend past
+                  // the editor. Fixed positioning lets them render above the prompt, eyebrow and header instead.
+                  fixedOverflowWidgets: true,
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 14,
+                  lineHeight: 24,
+                  minimap: { enabled: false },
+                  readOnly,
+                  padding: { top: 12, bottom: 12 },
+                  scrollBeyondLastLine: false,
+                  // Only consume the wheel while the editor can still scroll in that direction; at its top/bottom (or when
+                  // the code fits) the event falls through to the page, like any nested scroller.
+                  scrollbar: { alwaysConsumeMouseWheel: false },
+                  tabSize: 2,
+                  wordWrap: "off",
+                }}
+              />
+            </Suspense>
+          </div>
+        ) : (
+          <div className="flex min-h-28 items-center justify-center bg-surface px-4 py-8 text-center text-sm text-muted">
+            Open this editor to write, run, or check your code.
+          </div>
+        )}
 
         {testResults && (
           <div
             className="flex flex-col gap-2 border-t border-border bg-surface px-5 py-4"
             role="status"
           >
-            <Eyebrow>Check results</Eyebrow>
             <div className="flex flex-col gap-2">
               {testResults.map((result) => (
                 <div
@@ -411,6 +460,6 @@ export default function CodeEditor({
           </div>
         )}
       </section>
-    </div>
+    </Card>
   );
 }

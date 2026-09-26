@@ -8,24 +8,21 @@ import Dot from "../ui/Dot.tsx";
 import { useDialog } from "../ui/DialogContext.tsx";
 import Heading from "../ui/Heading.tsx";
 import { CARD, TINT } from "../ui/styles.ts";
-import InvitationList from "./InvitationList.tsx";
-import { plural } from "./lessons.ts";
+import { plural } from "../student/lessons.ts";
 import type { MyClassroom } from "../../../shared/types";
 
-/** Pages read the student's *active* classroom, so opening another class makes it the active one first. */
+/** The class screens read the teacher's *active* classroom, so opening another class makes it the active one first. */
 function useOpenClass() {
   const { switchClassroom } = useAuth();
   const { toast } = useDialog();
   const navigate = useNavigate();
   const [opening, setOpening] = useState<string | null>(null);
 
-  const open = async (item: MyClassroom, live: boolean) => {
+  const open = async (item: MyClassroom) => {
     setOpening(item.id);
     try {
       if (!item.active) await switchClassroom(item.id);
-      navigate(
-        `/student/class/${item.id}${live ? `/live?lesson=${item.liveSession?.moduleId ?? ""}` : ""}`,
-      );
+      navigate(`/teacher/class/${item.id}`);
     } catch (error) {
       toast(
         error instanceof Error ? error.message : "Could not open this class.",
@@ -38,17 +35,20 @@ function useOpenClass() {
   return { open, opening };
 }
 
-export default function StudentDashboard() {
-  const { user } = useAuth();
+export default function TeacherDashboard() {
+  const { user, createClassroom: createClassroomFor } = useAuth();
+  const { prompt, toast } = useDialog();
+  const navigate = useNavigate();
   const { open, opening } = useOpenClass();
   const [classes, setClasses] = useState<MyClassroom[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
   const activeId = user?.classroomId;
 
   const load = useCallback(async () => {
     try {
       const items = await api.myClassrooms();
-      setClasses(items.filter((item) => item.role === "student"));
+      setClasses(items.filter((item) => item.role === "teacher"));
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load your classes");
@@ -56,8 +56,7 @@ export default function StudentDashboard() {
     }
   }, []);
 
-  // Live status for every class: refetch when the active class's session changes, and poll for the others
-  // (session pushes only reach the classroom the student currently has open).
+  // Session pushes only reach the classroom the teacher has active, so poll for the rest.
   useEffect(() => {
     void load();
     const interval = window.setInterval(() => void load(), 15_000);
@@ -68,6 +67,27 @@ export default function StudentDashboard() {
     };
   }, [load, activeId]);
 
+  async function createClassroom() {
+    const name = await prompt({
+      title: "Name your classroom",
+      message: "Choose a name students will recognize.",
+      confirmLabel: "Create classroom",
+    });
+    if (!name?.trim()) return;
+    setCreating(true);
+    try {
+      const created = await createClassroomFor(name.trim());
+      navigate(`/teacher/class/${created.classroomId}`);
+    } catch (e) {
+      toast(
+        e instanceof Error ? e.message : "Could not create classroom",
+        "error",
+      );
+    } finally {
+      setCreating(false);
+    }
+  }
+
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Morning" : hour < 18 ? "Afternoon" : "Evening";
   const today = new Date().toLocaleDateString(undefined, {
@@ -76,31 +96,33 @@ export default function StudentDashboard() {
     month: "long",
   });
   const firstName = user?.name.trim().split(/\s+/)[0] || "there";
-
   const live = (classes ?? []).filter((c) => c.liveSession);
 
   return (
     <div className="mx-auto flex max-w-[1020px] flex-col gap-6 sm:gap-7">
-      <InvitationList />
-
-      <div className="pt-1">
-        <p className="mb-1! text-[13px]! font-medium! text-muted">{today}</p>
-        <Heading
-          as="h1"
-          variant="title"
-          className="text-[34px]! sm:text-[38px]!"
-        >
-          {greeting}, {firstName}
-        </Heading>
-        <p className="mt-2! text-[15px]! text-muted">
-          {classes === null
-            ? "Loading your classes…"
-            : classes.length === 0
-              ? "You are not in any classes yet."
-              : live.length === 0
-                ? `No classes are live right now. You are in ${classes.length} ${classes.length === 1 ? "class" : "classes"}.`
-                : `${live.length} ${live.length === 1 ? "class is" : "classes are"} live now.`}
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-4 pt-1">
+        <div className="flex flex-col gap-2">
+          <p className="m-0 text-[13px] font-medium text-muted">{today}</p>
+          <Heading
+            as="h1"
+            variant="title"
+            className="text-[34px]! sm:text-[38px]!"
+          >
+            {greeting}, {firstName}
+          </Heading>
+          <p className="m-0 text-[15px] text-muted">
+            {classes === null
+              ? "Loading your classes…"
+              : classes.length === 0
+                ? "You have no classes yet. Create one to get started."
+                : live.length === 0
+                  ? `No classes are live right now. You teach ${classes.length} ${classes.length === 1 ? "class" : "classes"}.`
+                  : `${live.length} ${live.length === 1 ? "class is" : "classes are"} live now.`}
+          </p>
+        </div>
+        <Button disabled={creating} onClick={() => void createClassroom()}>
+          {creating ? "Creating…" : "＋ New classroom"}
+        </Button>
       </div>
 
       {error && (
@@ -118,14 +140,13 @@ export default function StudentDashboard() {
           />
         ) : live.length === 0 ? (
           <p className={`m-0 px-5 py-6 text-center text-sm text-muted ${CARD}`}>
-            None of your teachers are running a lesson right now. Live lessons
-            show up here as soon as they start.
+            None of your classes are running a lesson. Start one from a class
+            and it shows up here.
           </p>
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
             {live.map((item) => {
               const session = item.liveSession!;
-              const teacher = item.teacherName ?? "Your teacher";
               return (
                 <div
                   key={item.id}
@@ -142,19 +163,19 @@ export default function StudentDashboard() {
                       {session.moduleTitle}
                     </h2>
                     <p className="mb-0! mt-2! text-sm! text-white/80">
-                      {item.name} with {teacher}.{" "}
+                      {item.name}.{" "}
                       {session.phase === "teach"
-                        ? "Teaching now. Join to follow along."
-                        : "Work time. Join to work with the helper."}
+                        ? "Teaching now."
+                        : "Work time, the helper is on."}
                     </p>
                   </div>
                   <Button
                     variant="primary"
                     size="lg"
                     disabled={opening !== null}
-                    onClick={() => void open(item, true)}
+                    onClick={() => void open(item)}
                   >
-                    {opening === item.id ? "Joining…" : "Join lesson"}
+                    {opening === item.id ? "Opening…" : "Open live class"}
                   </Button>
                 </div>
               );
@@ -164,7 +185,7 @@ export default function StudentDashboard() {
       </section>
 
       <section className="flex flex-col gap-3">
-        <Heading>All my classes</Heading>
+        <Heading>All classes</Heading>
         {classes === null ? (
           <div className="grid gap-4 sm:grid-cols-2" aria-busy="true">
             {[0, 1].map((i) => (
@@ -176,8 +197,7 @@ export default function StudentDashboard() {
           </div>
         ) : classes.length === 0 ? (
           <p className={`m-0 px-5 py-6 text-center text-sm text-muted ${CARD}`}>
-            When a teacher invites you to a class, the invitation appears at the
-            top of this page.
+            Create a classroom to invite students and build lessons.
           </p>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2">
@@ -192,7 +212,9 @@ export default function StudentDashboard() {
                       {item.name}
                     </strong>
                     <span className="text-xs text-muted">
-                      {item.teacherName ?? "No teacher yet"}
+                      {item.lessonCount === 0
+                        ? "No lessons yet"
+                        : plural(item.lessonCount, "lesson")}
                     </span>
                   </div>
                   {item.liveSession && (
@@ -204,30 +226,9 @@ export default function StudentDashboard() {
                     </span>
                   )}
                 </div>
-                <div className="flex flex-col gap-2">
-                  <div
-                    className="flex gap-1"
-                    role="img"
-                    aria-label={`${item.completedCount} of ${plural(item.lessonCount, "lesson")} complete`}
-                  >
-                    {Array.from({ length: Math.min(item.lessonCount, 20) }).map(
-                      (_, i) => (
-                        <span
-                          key={i}
-                          className={`h-1.5 flex-1 rounded-full ${i < item.completedCount ? "bg-accent" : "bg-border"}`}
-                        />
-                      ),
-                    )}
-                  </div>
-                  <span className="text-xs text-muted">
-                    {item.lessonCount === 0
-                      ? "No lessons yet"
-                      : `${item.completedCount} of ${plural(item.lessonCount, "lesson")} complete`}
-                  </span>
-                </div>
                 <Button
                   disabled={opening !== null}
-                  onClick={() => void open(item, false)}
+                  onClick={() => void open(item)}
                 >
                   {opening === item.id ? "Opening…" : "Open class"}
                 </Button>

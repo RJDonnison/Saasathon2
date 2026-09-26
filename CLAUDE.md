@@ -66,7 +66,8 @@ lessons and their progress (`module_progress`, written when a student opens or m
 (`code_submissions`, saved on every Run of a real exercise), question attempts (`attempts`), teacher announcements
 (`classroom_announcements`), and the student's classes (`GET /api/classrooms`, switch with `POST
 /api/classrooms/:id/activate`). Don't reintroduce placeholder/demo content; if a screen needs data that has no source
-yet, add the table/endpoint or leave the section out. There is deliberately no timetable, due-date or marks feature.
+yet, add the table/endpoint or leave the section out. There is deliberately no timetable, due-date or marks feature; the one time rule is a lesson's **time window**
+(see "Lesson time windows"), which limits when students may open it and has no marks or deadlines.
 
 ## Database: Supabase only
 
@@ -99,8 +100,8 @@ module itself (scoped to the caller's classroom), so clients can't inject or swa
   unsaved `draft` as context. Replies in Markdown. No UI yet: the teacher dashboard calls `api.aiDraft`.
 - **Never give the student prompt answer material.** The student context is built only from the
   student-safe module aggregate (`aggregate(module, false)` → `studentModuleContext`), which excludes
-  answer keys, reference answers and checks. Keep it that way; don't add those fields to it. (The teacher
-  prompt does include them — it's the teacher's own material.)
+   answer keys and checks. Keep it that way; don't add those fields to it. (The teacher prompt does include
+   them — it's the teacher's own material.)
 - The hint behaviour lives in `hintSystemPrompt`; change tutoring style there. Prompt quality is best judged
   against a real model — tune it with real conversations.
 - Config: `OPENAI_API_KEY` (no key -> the AI routes return 503 with a clear message; the rest of the app
@@ -121,10 +122,23 @@ with a slow poll as a safety net. Students see a "Live now" banner with Join les
 step off (pick another lesson, or "I'm lost" during Teach) and return with "Back to {teacher}". With no live session the
 live page is self-paced.
 
+## Lesson time windows
+
+A teacher can give each lesson an optional `opens_at` / `closes_at` (`modules` columns, either side may be null =
+unbounded; both null = "open any time", the default), set from the lesson builder's "When students can open it" card via `PUT /api/modules/:id/availability`.
+It is enforced **on the server**: `moduleForUser` (`backend/src/access.ts`) returns nothing to a student outside the
+window, which covers lesson fetch, progress, comments, code runs/grading, math checks and the tutor; the student activity
+routes use it too. `GET /api/modules/:id` answers 403 with an explanation. A lesson the teacher is running live
+(`lesson_sessions`) is open regardless of its window, and teachers are never limited. `GET /classrooms/:id/lessons`
+returns `available` per lesson and blanks the intro, sections and exercises of a locked one, so the frontend only greys
+out. `useClassData` reloads the list at the next opening/closing moment. Times are stored as UTC instants and edited in
+the teacher's local time zone.
+
 ## Student screens
 
-- **Home** (`StudentDashboard`): invitations, a "pick up where you left off" banner, the class's lessons with status, a
-  to-do list, the teacher's notes, and "My classes" (switchable).
+- **Home** (`StudentDashboard`): invitations, a "Live now" section (every class of the student's with a live lesson, from
+  `liveSession` on `GET /api/classrooms`, refreshed by a 15s poll since socket pushes only reach the active class) and "All my
+  classes" (progress, Open). Opening a class first activates it, because the class pages read the active classroom.
 - **Class page** (`StudentClassPage`, `/student/class/:id`): continue card, per-lesson sections and code-run status,
   progress, up next, teacher notes. It and the live lesson bring their own `ClassTopBar`; `AppShell` steps aside for
   `/student/class/*`.
@@ -135,7 +149,8 @@ live page is self-paced.
   mixed *within* a section without a contract change. Each code exercise gets its own `CodeEditor` (Monaco,
   lazy-loaded); there is also a free playground at the end. `WorkspaceContext` shares editor text, the active editor and
   the tutor's highlight between the columns. Opening a lesson marks it in progress; "Mark lesson complete" completes it.
-- **Teacher home** (`TeacherHome`): banner with live counts, roll call, raised hands, student detail (real progress and
+- **Teacher dashboard** (`TeacherDashboard`, `/teacher`): "Live now" (the teacher's classes with a live lesson, from `liveSession` on `GET /api/classrooms`, 15s poll) and "All classes", plus "New classroom". Opening a class activates it and goes to `/teacher/class/:classroomId` (`TeacherClass`, which also activates on a direct visit).
+- **Teacher class** (`TeacherHome`): banner with live counts, roll call, raised hands, student detail (real progress and
   runs), announcements, invitations, lessons (with a quick "Add a lesson") and the AI lesson planner.
 
 ## Code execution (Piston)

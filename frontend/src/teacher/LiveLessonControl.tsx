@@ -141,7 +141,7 @@ export default function LiveLessonControl({
           </Button>
         </div>
       )}
-      {error && <p role="alert" className="m-0 text-sm text-peach">{error}</p>}
+      {error && <p role="alert" className="m-0 text-sm text-peach-ink">{error}</p>}
     </div>
   )
 }

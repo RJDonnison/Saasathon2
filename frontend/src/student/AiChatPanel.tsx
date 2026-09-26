@@ -221,15 +221,6 @@ export default function AiChatPanel({ moduleId }: { moduleId: string }) {
             <Heading variant="name">Helper</Heading>
           </div>
           <div className="flex items-center gap-2">
-            {messages.length > 0 && (
-              <Button
-                size="sm"
-                disabled={thinking}
-                onClick={() => setChats((c) => ({ ...c, [moduleId]: EMPTY }))}
-              >
-                Clear chat
-              </Button>
-            )}
             <span
               className={`rounded-full px-3 py-1 text-xs font-semibold ${TINT.lavender}`}
             >

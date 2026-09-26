@@ -88,7 +88,7 @@ Then set up Supabase (the only database):
 - A `Demo Classroom` with teacher `Ms. Rivera` and students `Alex`, `Sam` (demo rows with no login, so the
   classroom itself can't be entered from the app)
 - One ordered module with two sections, markdown content, MCQ/short/code questions, a code exercise,
-  two teacher reference answers/checks, progress, an attempt, a sandbox result, and a line comment.
+  teacher checks, progress, an attempt, a sandbox result, and a line comment.
 
 To try it end to end, use two Google accounts (or a normal window plus a private one): sign in as a teacher and
 create a classroom, invite the other account's email, then sign in as that student and accept the invitation.
@@ -133,8 +133,8 @@ classroom selects its membership for subsequent requests.
 
 ### Authored learning content (teacher only)
 
-`GET /api/modules/:id` returns a nested ordered module. Teachers receive answer keys, reference answers,
-and checks; students receive the same content without those fields.
+`GET /api/modules/:id` returns a nested ordered module. Teachers receive answer keys and checks;
+students receive the same content without those fields.
 
 - Modules: `POST /api/modules`, `PATCH|DELETE /api/modules/:id`
 - Sections: `POST /api/modules/:id/sections`, `PATCH|DELETE /api/modules/sections/:id`
@@ -142,8 +142,6 @@ and checks; students receive the same content without those fields.
 - Questions: `POST /api/modules/sections/:id/questions`, `PATCH|DELETE /api/modules/questions/:id`
 - MCQ options: `POST /api/modules/questions/:id/options`, `PATCH|DELETE /api/modules/options/:id`
 - Code exercise (one per code question): `PUT /api/modules/questions/:id/exercise`
-- Reference answers: `POST /api/modules/exercises/:id/references`,
-  `PATCH|DELETE /api/modules/references/:id`
 - Code checks: `POST /api/modules/exercises/:id/checks`, `PATCH|DELETE /api/modules/checks/:id`
 
 Create/update bodies and response shapes are defined in [`shared/types.ts`](shared/types.ts). Every ordered
