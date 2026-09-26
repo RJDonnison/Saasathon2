@@ -24,6 +24,8 @@
   --color-coral: #e99888;
   --color-amber: #e8c878;
   --color-leaf: #8bc678;
+  /* Deep green for the landing page's dark band. */
+  --color-forest: #1f2f1d;
   --font-display: "Space Grotesk", sans-serif;
   --font-mono: "DM Mono", ui-monospace, monospace;
 }
