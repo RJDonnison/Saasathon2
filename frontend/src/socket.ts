@@ -5,6 +5,7 @@ import type {
   RaisedHandsUpdatePayload,
   ServerToClientEvents,
   StudentStatusUpdatePayload,
+  StudentActivityUpdatePayload,
   ModuleChangedPayload,
 } from "../../shared/events";
 import { supabase } from "./supabase.ts";
@@ -85,6 +86,12 @@ export function onStudentStatusUpdate(
 ): () => void {
   socket.on("student_status_update", cb);
   return () => void socket.off("student_status_update", cb);
+}
+export function onStudentActivityUpdate(
+  cb: (p: StudentActivityUpdatePayload) => void,
+): () => void {
+  socket.on("student_activity_update", cb);
+  return () => void socket.off("student_activity_update", cb);
 }
 
 export function onPresenceUpdate(

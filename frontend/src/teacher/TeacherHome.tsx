@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api.ts";
 import { useAuth } from "../auth/useAuth.ts";
 import {
   emitAcknowledgeHand,
   onPresenceUpdate,
   onRaisedHandsUpdate,
+  onStudentActivityUpdate,
 } from "../socket.ts";
 import ClassroomGrid from "./ClassroomGrid.tsx";
 import StudentDetailPanel from "./StudentDetailPanel.tsx";
@@ -17,7 +18,7 @@ import Eyebrow from "../ui/Eyebrow.tsx";
 import Heading from "../ui/Heading.tsx";
 import { HandIcon, PencilIcon, SparklesIcon, UsersIcon } from "../ui/icons.tsx";
 import { CARD, INPUT, TINT, type Tint } from "../ui/styles.ts";
-import type { Classroom, Module, User } from "../../../shared/types";
+import type { Classroom, Module, StudentActivitySnapshot, User } from "../../../shared/types";
 import type { RaisedHand } from "../../../shared/events";
 import CodeTestPanel from "./CodeTestPanel.tsx";
 import AnswerKeyPanel from "./AnswerKeyPanel.tsx";
@@ -71,6 +72,8 @@ export default function TeacherHome() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [lesson, setLesson] = useState("");
+  const [activity, setActivity] = useState<Record<string, StudentActivitySnapshot>>({});
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (!user) return;
@@ -99,10 +102,40 @@ export default function TeacherHome() {
         if (!cancelled) setModules(m);
       })
       .catch(() => {});
+    api
+      .getClassroomStudentActivity(user.classroomId)
+      .then((snapshots) => {
+        if (!cancelled)
+          setActivity(Object.fromEntries(snapshots.map((snapshot) => [snapshot.studentId, snapshot])));
+      })
+      .catch(() => {});
     return () => {
       cancelled = true;
     };
   }, [user]);
+
+  useEffect(
+    () =>
+      onStudentActivityUpdate((update) => {
+        if (!user || update.classroomId !== user.classroomId) return;
+        setActivity((current) => {
+          const previous = current[update.studentId] ?? {
+            studentId: update.studentId,
+            active: null,
+            recent: [],
+            work: [],
+          };
+          const recent = update.activity
+            ? [update.activity, ...previous.recent.filter((entry) => entry.id !== update.activity!.id)].slice(0, 6)
+            : previous.recent;
+          const work = update.work
+            ? [update.work, ...previous.work.filter((entry) => entry.questionId !== update.work!.questionId)]
+            : previous.work;
+          return { ...current, [update.studentId]: { ...previous, active: update.active, recent, work } };
+        });
+      }),
+    [user],
+  );
 
   useEffect(
     () =>
@@ -253,6 +286,7 @@ export default function TeacherHome() {
               online={online}
               selectedId={selectedId}
               onSelect={setSelectedId}
+              activity={activity}
             />
           </div>
         </div>
@@ -261,14 +295,23 @@ export default function TeacherHome() {
             <RaiseHandAlert
               hands={hands}
               nameOf={(id) => byId.get(id)?.name ?? "A student"}
-              onHelp={(id) => user && emitAcknowledgeHand(id, user.classroomId)}
+              onHelp={(id) => {
+                setSelectedId(id);
+                if (user) emitAcknowledgeHand(id, user.classroomId);
+              }}
               onSelect={setSelectedId}
+              activity={activity}
             />
           </div>
           <div className="order-4 min-w-0">
             <StudentDetailPanel
               student={selected}
               online={selected ? online.has(selected.id) : false}
+              activity={selected ? activity[selected.id] : undefined}
+              onOpenQuestion={(current) =>
+                current.questionId &&
+                navigate(`/teacher/modules/${current.moduleId}?questionId=${encodeURIComponent(current.questionId)}`)
+              }
             />
           </div>
         </div>

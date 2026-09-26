@@ -189,6 +189,32 @@ create table if not exists code_submissions (
   id text primary key, student_id text not null references users(id), code_exercise_id text not null references code_exercises(id) on delete cascade,
   code text not null, stdout text not null default '', stderr text not null default '', passed boolean, created_at timestamptz not null default now()
 );
+-- Persistent drafts and live location/activity let teachers see progress across reloads and reconnects.
+create table if not exists student_work (
+  id text primary key, student_id text not null references users(id) on delete cascade,
+  question_id text not null references questions(id) on delete cascade,
+  answer text, code text, updated_at timestamptz not null default now(),
+  unique(student_id, question_id), check (answer is not null or code is not null)
+);
+create table if not exists student_activities (
+  id text primary key, student_id text not null references users(id) on delete cascade,
+  classroom_id text not null references classrooms(id) on delete cascade,
+  module_id text not null references modules(id) on delete cascade,
+  section_id text references sections(id) on delete cascade,
+  question_id text references questions(id) on delete cascade,
+  type text not null check (type in ('viewing_lesson','answering_question','checking_answer','writing_code','running_code','checking_code')),
+  created_at timestamptz not null default now()
+);
+create index if not exists student_activities_student_created_idx on student_activities (student_id, created_at desc);
+create table if not exists student_activity_state (
+  student_id text primary key references users(id) on delete cascade,
+  classroom_id text not null references classrooms(id) on delete cascade,
+  module_id text not null references modules(id) on delete cascade,
+  section_id text references sections(id) on delete cascade,
+  question_id text references questions(id) on delete cascade,
+  type text not null check (type in ('viewing_lesson','answering_question','checking_answer','writing_code','running_code','checking_code')),
+  updated_at timestamptz not null default now()
+);
 create table if not exists comments (
   id text primary key, submission_id text not null references code_submissions(id) on delete cascade,
   author_id text not null references users(id), text text not null,
@@ -206,6 +232,8 @@ alter table code_checks enable row level security; alter table module_progress e
 alter table code_tests enable row level security;
 alter table section_progress enable row level security; alter table attempts enable row level security;
 alter table code_submissions enable row level security; alter table comments enable row level security;
+alter table student_work enable row level security; alter table student_activities enable row level security;
+alter table student_activity_state enable row level security;
 
 -- Demo: a complete small lesson with authored answers/checks and student activity.
 insert into classrooms values ('classroom-demo','Demo Classroom','DEMO123') on conflict do nothing;
