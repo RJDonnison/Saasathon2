@@ -9,6 +9,24 @@ export interface RaiseHandPayload {
   classroomId: string;
 }
 
+export interface AcknowledgeHandPayload {
+  type: "acknowledge_hand";
+  studentId: string;
+  classroomId: string;
+}
+
+export interface RaisedHand {
+  studentId: string;
+  raisedAt: number;
+}
+
+/** The complete set of unacknowledged hands for one classroom. */
+export interface RaisedHandsUpdatePayload {
+  type: "raised_hands_update";
+  classroomId: string;
+  hands: RaisedHand[];
+}
+
 export interface StudentStatusUpdatePayload {
   type: "student_status_update";
   studentId: string;
@@ -37,6 +55,8 @@ export interface ModuleDeletedPayload {
 /** Discriminated union (on `type`) of every socket payload. */
 export type SocketPayload =
   | RaiseHandPayload
+  | AcknowledgeHandPayload
+  | RaisedHandsUpdatePayload
   | StudentStatusUpdatePayload
   | PresenceUpdatePayload
   | ModuleChangedPayload
@@ -45,12 +65,13 @@ export type SocketPayload =
 /** Events the client emits -> server. */
 export interface ClientToServerEvents {
   raise_hand: (payload: RaiseHandPayload) => void;
+  acknowledge_hand: (payload: AcknowledgeHandPayload) => void;
   student_status_update: (payload: StudentStatusUpdatePayload) => void;
 }
 
 /** Events the server emits -> clients. */
 export interface ServerToClientEvents {
-  raise_hand: (payload: RaiseHandPayload) => void;
+  raised_hands_update: (payload: RaisedHandsUpdatePayload) => void;
   student_status_update: (payload: StudentStatusUpdatePayload) => void;
   presence_update: (payload: PresenceUpdatePayload) => void;
   module_changed: (payload: ModuleChangedPayload) => void;
