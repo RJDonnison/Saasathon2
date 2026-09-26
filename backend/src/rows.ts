@@ -177,6 +177,8 @@ export type StudentWorkRow = {
   question_id: string;
   answer: string | null;
   code: string | null;
+  is_correct: boolean | null;
+  checked_at: string | null;
   updated_at: string;
 };
 export type StudentActivityRow = {
@@ -354,6 +356,8 @@ export const toStudentWork = (r: StudentWorkRow): StudentWork => ({
   questionId: r.question_id,
   answer: r.answer,
   code: r.code,
+  isCorrect: r.is_correct,
+  checkedAt: r.checked_at ? iso(r.checked_at) : null,
   updatedAt: iso(r.updated_at),
 });
 export const toStudentActivity = (r: StudentActivityRow): StudentActivity => ({

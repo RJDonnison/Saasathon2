@@ -298,9 +298,12 @@ create table if not exists code_submissions (
 create table if not exists student_work (
   id text primary key, student_id text not null references users(id) on delete cascade,
   question_id text not null references questions(id) on delete cascade,
-  answer text, code text, updated_at timestamptz not null default now(),
+  answer text, code text, is_correct boolean, checked_at timestamptz,
+  updated_at timestamptz not null default now(),
   unique(student_id, question_id), check (answer is not null or code is not null)
 );
+alter table student_work add column if not exists is_correct boolean;
+alter table student_work add column if not exists checked_at timestamptz;
 create table if not exists student_activities (
   id text primary key, student_id text not null references users(id) on delete cascade,
   classroom_id text not null references classrooms(id) on delete cascade,

@@ -11,6 +11,8 @@ import type {
 export const mathRouter = Router();
 
 mathRouter.post("/validate", async (req, res) => {
+  if (req.user!.role !== "student")
+    return res.status(403).json({ error: "Only students can check answers" });
   const body = req.body as Partial<ValidateMathRequest> | null;
   if (
     !body ||
@@ -64,11 +66,31 @@ mathRouter.post("/validate", async (req, res) => {
 
   try {
     const value = parseArithmetic(body.expression);
+    const checkedAt = new Date().toISOString();
+    const isCorrect =
+      Math.abs(value - question.math_expected_result) <=
+      question.math_tolerance;
+    unwrap(
+      await supabase
+        .from("student_work")
+        .upsert(
+          {
+            id: `${req.user!.userId}:${body.questionId}`,
+            student_id: req.user!.userId,
+            question_id: body.questionId,
+            answer: body.expression,
+            code: null,
+            is_correct: isCorrect,
+            checked_at: checkedAt,
+            updated_at: checkedAt,
+          },
+          { onConflict: "student_id,question_id" },
+        ),
+    );
     const response: ValidateMathResponse = {
       value,
-      isCorrect:
-        Math.abs(value - question.math_expected_result) <=
-        question.math_tolerance,
+      isCorrect,
+      checkedAt,
     };
     res.json(response);
   } catch (error) {
