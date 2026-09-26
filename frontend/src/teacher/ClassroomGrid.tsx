@@ -4,6 +4,7 @@ import Dot from "../ui/Dot.tsx";
 import { UsersIcon } from "../ui/icons.tsx";
 import { FOCUS_RING } from "../ui/styles.ts";
 import type {
+  LiveModuleStudentAggregate,
   ProgressStatus,
   StudentActivitySnapshot,
   User,
@@ -44,15 +45,17 @@ export default function ClassroomGrid({
   liveProgress,
   fallbackModuleId,
   onConnect,
+  showLiveProgress,
 }: {
   students: User[] | null;
   online: Set<string>;
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   activity: Record<string, StudentActivitySnapshot>;
-  liveProgress: Record<string, ProgressStatus>;
+  liveProgress: Record<string, LiveModuleStudentAggregate>;
   fallbackModuleId?: string | null;
   onConnect: (studentId: string, moduleId: string, questionId: string | null) => void;
+  showLiveProgress: boolean;
 }) {
   // Online students first, then alphabetical.
   const sorted = [...(students ?? [])].sort(
@@ -98,8 +101,15 @@ export default function ClassroomGrid({
           {sorted.map((s) => {
             const isOnline = online.has(s.id);
             const active = activity[s.id]?.active;
-            const progress = liveProgress[s.id];
-            const progressDisplay = progress
+            const aggregate = showLiveProgress ? liveProgress[s.id] : undefined;
+            const progress = aggregate?.completed
+              ? "completed"
+              : aggregate?.questions.some(
+                    (question) => question.status !== "not_started",
+                  )
+                ? "in_progress"
+                : "not_started";
+            const progressDisplay = aggregate
               ? LIVE_PROGRESS_DISPLAY[progress]
               : null;
             const activeModuleId = active?.moduleId ?? fallbackModuleId ?? null;

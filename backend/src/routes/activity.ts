@@ -48,37 +48,62 @@ function fromState(row: StateRow): StudentActivity {
   };
 }
 
-/** Resolve every client supplied location through the lesson hierarchy before saving it. */
+type ResolvedLocation = Location & { questionKind: string | null };
+type SectionRef = { id: string; module_id: string };
+const one = <T>(value: T | T[] | null | undefined): T | null =>
+  (Array.isArray(value) ? value[0] : value) ?? null;
+
+/**
+ * Resolve every client supplied location through the lesson hierarchy before saving it. The module, section and
+ * question lookups don't depend on each other (the question brings its section along), so they go out together.
+ */
 async function validLocation(
   classroomId: string,
   moduleId: unknown,
   sectionId?: unknown,
   questionId?: unknown,
-): Promise<Location | null> {
-  if (typeof moduleId !== "string" || !(await moduleForUser(moduleId, classroomId, "student")))
-    return null;
-  let section: { id: string; module_id: string } | null = null;
-  if (sectionId !== undefined) {
-    if (typeof sectionId !== "string") return null;
-    section = unwrap(
-      await supabase.from("sections").select("id,module_id").eq("id", sectionId).maybeSingle(),
-    ) as { id: string; module_id: string } | null;
+): Promise<ResolvedLocation | null> {
+  if (typeof moduleId !== "string") return null;
+  if (sectionId !== undefined && typeof sectionId !== "string") return null;
+  if (questionId !== undefined && typeof questionId !== "string") return null;
+  const [module, sectionResult, questionResult] = await Promise.all([
+    moduleForUser(moduleId, classroomId, "student"),
+    sectionId !== undefined
+      ? supabase.from("sections").select("id,module_id").eq("id", sectionId as string).maybeSingle()
+      : null,
+    questionId !== undefined
+      ? supabase
+          .from("questions")
+          .select("id,kind,section_id, sections(id,module_id)")
+          .eq("id", questionId as string)
+          .maybeSingle()
+      : null,
+  ]);
+  if (!module) return null;
+  let section: SectionRef | null = null;
+  if (sectionResult) {
+    section = unwrap(sectionResult) as SectionRef | null;
     if (!section || section.module_id !== moduleId) return null;
   }
-  if (questionId !== undefined) {
-    if (typeof questionId !== "string") return null;
-    const question = unwrap(
-      await supabase.from("questions").select("id,section_id").eq("id", questionId).maybeSingle(),
-    ) as { id: string; section_id: string } | null;
-    if (!question) return null;
-    const questionSection = section ?? (unwrap(
-      await supabase.from("sections").select("id,module_id").eq("id", question.section_id).maybeSingle(),
-    ) as { id: string; module_id: string } | null);
-    if (!questionSection || questionSection.id !== question.section_id || questionSection.module_id !== moduleId)
+  let question: { id: string; kind: string; section_id: string } | null = null;
+  if (questionResult) {
+    const row = unwrap(questionResult) as unknown as
+      | { id: string; kind: string; section_id: string; sections: SectionRef | SectionRef[] | null }
+      | null;
+    if (!row) return null;
+    question = row;
+    // The question must sit in the requested section, or (if none was named) in a section of this module.
+    const questionSection: SectionRef | null = section ?? one(row.sections);
+    if (!questionSection || questionSection.id !== row.section_id || questionSection.module_id !== moduleId)
       return null;
     section = questionSection;
   }
-  return { moduleId, sectionId: section?.id ?? null, questionId: typeof questionId === "string" ? questionId : null };
+  return {
+    moduleId,
+    sectionId: section?.id ?? null,
+    questionId: question?.id ?? null,
+    questionKind: question?.kind ?? null,
+  };
 }
 
 async function saveState(
@@ -126,31 +151,29 @@ activityRouter.put("/work", requireRole("student"), async (req, res) => {
     (body.kind !== "answer" && body.kind !== "code")
   )
     return res.status(400).json({ error: "Invalid student work" });
-  const location = await validLocation(
-    req.user!.classroomId,
-    body.moduleId,
-    body.sectionId,
-    body.questionId,
-  );
+  // The caller's saved copy of this answer is looked up alongside the location check; it is only used if the
+  // location turns out to be valid.
+  const [location, existingResult] = await Promise.all([
+    validLocation(req.user!.classroomId, body.moduleId, body.sectionId, body.questionId),
+    typeof body.questionId === "string"
+      ? supabase
+          .from("student_work")
+          .select("*")
+          .eq("student_id", req.user!.userId)
+          .eq("question_id", body.questionId)
+          .maybeSingle()
+      : null,
+  ]);
   if (!location?.questionId || !location.sectionId)
     return res.status(400).json({ error: "Invalid question location" });
-  const question = unwrap(
-    await supabase.from("questions").select("kind").eq("id", location.questionId).single(),
-  ) as { kind: string };
-  if ((body.kind === "code") !== (question.kind === "code"))
+  if ((body.kind === "code") !== (location.questionKind === "code"))
     return res.status(400).json({ error: "Work type does not match this question" });
-  const existing = unwrap(
-    await supabase
-      .from("student_work")
-      .select("*")
-      .eq("student_id", req.user!.userId)
-      .eq("question_id", location.questionId)
-      .maybeSingle(),
-  ) as StudentWorkRow | null;
+  const existing = (existingResult ? unwrap(existingResult) : null) as StudentWorkRow | null;
   const unchanged =
     (body.kind === "answer" ? existing?.answer : existing?.code) === body.value;
-  const row = unwrap(
-    await supabase
+  // Saving the work and updating the live "what is this student doing" state are independent writes.
+  const [workResult, active] = await Promise.all([
+    supabase
       .from("student_work")
       .upsert(
         {
@@ -167,14 +190,14 @@ activityRouter.put("/work", requireRole("student"), async (req, res) => {
       )
       .select("*")
       .single(),
-  ) as StudentWorkRow;
-  const active = await saveState(
-    req.user!.userId,
-    req.user!.classroomId,
-    location,
-    body.kind === "code" ? "writing_code" : "answering_question",
-  );
-  const work = toStudentWork(row);
+    saveState(
+      req.user!.userId,
+      req.user!.classroomId,
+      location,
+      body.kind === "code" ? "writing_code" : "answering_question",
+    ),
+  ]);
+  const work = toStudentWork(unwrap(workResult) as StudentWorkRow);
   broadcast(req.user!.classroomId, req.user!.userId, active, undefined, work);
   res.json(work);
 });
@@ -192,8 +215,8 @@ activityRouter.post("/", requireRole("student"), async (req, res) => {
   );
   if (!location || (type !== "viewing_lesson" && !location.questionId))
     return res.status(400).json({ error: "Invalid activity location" });
-  const record = unwrap(
-    await supabase
+  const [recordResult, active] = await Promise.all([
+    supabase
       .from("student_activities")
       .insert({
         id: randomUUID(),
@@ -206,30 +229,29 @@ activityRouter.post("/", requireRole("student"), async (req, res) => {
       })
       .select("*")
       .single(),
-  ) as StudentActivityRow;
-  const active = await saveState(req.user!.userId, req.user!.classroomId, location, type);
-  const activity = toStudentActivity(record);
+    saveState(req.user!.userId, req.user!.classroomId, location, type),
+  ]);
+  const activity = toStudentActivity(unwrap(recordResult) as StudentActivityRow);
   broadcast(req.user!.classroomId, req.user!.userId, active, activity);
   res.status(201).json(activity);
 });
 
 activityRouter.get("/work", requireRole("student"), async (req, res) => {
   const moduleId = req.query.moduleId;
-  if (typeof moduleId !== "string" || !(await moduleForUser(moduleId, req.user!.classroomId, "student")))
-    return res.status(400).json({ error: "Invalid module" });
-  const sections = unwrap(
-    await supabase.from("sections").select("id").eq("module_id", moduleId),
-  ) as Array<{ id: string }>;
-  const sectionIds = sections.map((section) => section.id);
-  const questions = sectionIds.length
-    ? (unwrap(await supabase.from("questions").select("id").in("section_id", sectionIds)) as Array<{ id: string }>)
-    : [];
-  const questionIds = questions.map((question) => question.id);
-  const work = questionIds.length
-    ? (unwrap(
-        await supabase.from("student_work").select("*").eq("student_id", req.user!.userId).in("question_id", questionIds),
-      ) as StudentWorkRow[])
-    : [];
+  if (typeof moduleId !== "string") return res.status(400).json({ error: "Invalid module" });
+  // The lesson's questions are reached by joining up to the module, so this is one query beside the access check.
+  const [module, workResult] = await Promise.all([
+    moduleForUser(moduleId, req.user!.classroomId, "student"),
+    supabase
+      .from("student_work")
+      .select("*, questions!inner(sections!inner(module_id))")
+      .eq("student_id", req.user!.userId)
+      .eq("questions.sections.module_id", moduleId),
+  ]);
+  if (!module) return res.status(400).json({ error: "Invalid module" });
+  const work = (unwrap(workResult) as unknown as Array<StudentWorkRow & { questions?: unknown }>).map(
+    ({ questions: _path, ...row }) => row,
+  );
   const body: GetStudentWorkResponse = work.map(toStudentWork);
   res.json(body);
 });
@@ -238,43 +260,36 @@ activityRouter.get("/classrooms/:id", requireRole("teacher"), async (req, res) =
   const classroomId = String(req.params.id);
   if (classroomId !== req.user!.classroomId)
     return res.status(403).json({ error: "Not a member of this classroom" });
-  const memberships = unwrap(
-    await supabase.from("memberships").select("user_id").eq("classroom_id", classroomId).eq("role", "student"),
-  ) as Array<{ user_id: string }>;
-  const studentIds = memberships.map((membership) => membership.user_id);
-  if (!studentIds.length) return res.json([] satisfies GetClassroomStudentActivityResponse);
-  const [states, activities, modules] = await Promise.all([
+  // The teacher's roll-call polls this, so everything goes out in one wave. Work reaches the classroom through
+  // inner joins (question -> section -> module) rather than by first collecting every id in the classroom.
+  const [memberships, states, activities, workResult] = await Promise.all([
+    supabase.from("memberships").select("user_id").eq("classroom_id", classroomId).eq("role", "student"),
     supabase.from("student_activity_state").select("*").eq("classroom_id", classroomId),
     supabase.from("student_activities").select("*").eq("classroom_id", classroomId).order("created_at", { ascending: false }).limit(150),
-    supabase.from("modules").select("id").eq("classroom_id", classroomId),
-  ]).then((results) => results.map(unwrap));
-  const moduleIds = (modules as Array<{ id: string }>).map((module) => module.id);
-  const sections = moduleIds.length
-    ? (unwrap(await supabase.from("sections").select("id").in("module_id", moduleIds)) as Array<{ id: string }>)
-    : [];
-  const sectionIds = sections.map((section) => section.id);
-  const questions = sectionIds.length
-    ? (unwrap(await supabase.from("questions").select("id").in("section_id", sectionIds)) as Array<{ id: string }>)
-    : [];
-  const questionIds = questions.map((question) => question.id);
-  const work = questionIds.length
-    ? (unwrap(
-        await supabase.from("student_work").select("*").in("student_id", studentIds).in("question_id", questionIds).order("updated_at", { ascending: false }),
-      ) as StudentWorkRow[])
-    : [];
+    supabase
+      .from("student_work")
+      .select("*, questions!inner(sections!inner(modules!inner(classroom_id)))")
+      .eq("questions.sections.modules.classroom_id", classroomId)
+      .order("updated_at", { ascending: false }),
+  ]);
+  const studentIds = (unwrap(memberships) as Array<{ user_id: string }>).map((membership) => membership.user_id);
+  if (!studentIds.length) return res.json([] satisfies GetClassroomStudentActivityResponse);
+  const enrolled = new Set(studentIds);
+  const work = (unwrap(workResult) as unknown as Array<StudentWorkRow & { questions?: unknown }>)
+    .filter((entry) => enrolled.has(entry.student_id))
+    .map(({ questions: _path, ...row }) => row);
   const stateByStudent = new Map(
-    (states as StateRow[]).map((state) => [state.student_id, fromState(state)]),
+    (unwrap(states) as StateRow[]).map((state) => [state.student_id, fromState(state)]),
   );
+  const recent = unwrap(activities) as StudentActivityRow[];
   const response: GetClassroomStudentActivityResponse = studentIds.map((studentId): StudentActivitySnapshot => ({
     studentId,
     active: stateByStudent.get(studentId) ?? null,
-    recent: (activities as StudentActivityRow[])
+    recent: recent
       .filter((activity) => activity.student_id === studentId)
       .slice(0, 6)
       .map(toStudentActivity),
-    work: (work as StudentWorkRow[])
-      .filter((entry) => entry.student_id === studentId)
-      .map(toStudentWork),
+    work: work.filter((entry) => entry.student_id === studentId).map(toStudentWork),
   }));
   res.json(response);
 });

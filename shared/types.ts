@@ -87,7 +87,10 @@ export type LessonFeedbackFlag =
   | "sexual"
   | "abusive_language"
   | "cyber_abuse";
-export type LessonFeedbackSafetyFlag = Exclude<LessonFeedbackFlag, "answer_seeking">;
+export type LessonFeedbackSafetyFlag = Exclude<
+  LessonFeedbackFlag,
+  "answer_seeking"
+>;
 export interface LessonFeedbackStudentSummary {
   studentId: string;
   studentName: string;
@@ -121,7 +124,11 @@ export interface LessonFeedbackReport {
   aiSummary: string;
   teachingSuggestions: string[];
   strengths: string[];
-  attentionSuggestions: Array<{ studentId: string; studentName: string; reason: string }>;
+  attentionSuggestions: Array<{
+    studentId: string;
+    studentName: string;
+    reason: string;
+  }>;
   students: LessonFeedbackStudentSummary[];
 }
 export interface LessonFeedbackStudentDetail extends LessonFeedbackStudentSummary {
@@ -134,7 +141,11 @@ export interface LessonFeedbackStudentDetail extends LessonFeedbackStudentSummar
     misuse: string | null;
     reviewAvailable: boolean;
   }>;
-  activityTimeline: Array<{ at: string; type: StudentActivityType; moduleTitle: string }>;
+  activityTimeline: Array<{
+    at: string;
+    type: StudentActivityType;
+    moduleTitle: string;
+  }>;
   aiSuggestion: string;
 }
 /**
@@ -331,6 +342,21 @@ export interface ModuleProgress {
 export interface LiveModuleProgress {
   studentId: string;
   status: ProgressStatus;
+}
+/** Server-derived outcome for one current question. No answer material is exposed. */
+export type QuestionOutcomeStatus =
+  "not_started" | "in_progress" | "passing" | "non_passing";
+export interface LiveQuestionOutcome {
+  questionId: string;
+  attemptCount: number;
+  status: QuestionOutcomeStatus;
+}
+/** The live roster's authoritative, recomputed view of one student. */
+export interface LiveModuleStudentAggregate {
+  studentId: string;
+  /** A module completes only while every current question is passing. */
+  completed: boolean;
+  questions: LiveQuestionOutcome[];
 }
 export interface SectionProgress {
   id: string;
@@ -622,13 +648,12 @@ export interface CreateAttemptRequest {
   questionId: string;
   answer: string;
 }
-/** The caller/sandbox supplies execution results; this API never executes code. */
+/** Saves an ungraded code run. Passing grades are created only by the server's grade endpoint. */
 export interface CreateSubmissionRequest {
   codeExerciseId: string;
   code: string;
   stdout?: string;
   stderr?: string;
-  passed?: boolean | null;
 }
 /** Saves a text/math response or code draft while the student works. */
 export interface SaveStudentWorkRequest {
@@ -668,7 +693,10 @@ export type GetClassroomStudentsResponse = User[];
 export interface GetLiveModuleProgressResponse {
   sessionId: string;
   moduleId: string;
-  progress: LiveModuleProgress[];
+  /** Recomputed from current questions and their latest authoritative outcomes. */
+  progress: LiveModuleStudentAggregate[];
+  /** Monotonic-enough server timestamp for clients to discard older socket payloads. */
+  version: string;
 }
 export type GetStudentProgressResponse = ModuleProgress[];
 export type UpsertProgressRequest = UpsertModuleProgressRequest;
