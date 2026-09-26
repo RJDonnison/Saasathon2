@@ -164,7 +164,8 @@ create table if not exists classroom_events (
   cursor bigint not null, event_type text not null, payload jsonb not null,
   created_at timestamptz not null default now(), primary key (classroom_id, cursor)
 );
-create index if not exists classroom_events_replay_idx on classroom_events (classroom_id, cursor);
+-- (classroom_id, cursor) replay is already served by the primary key.
+drop index if exists classroom_events_replay_idx;
 create index if not exists classroom_events_retention_idx on classroom_events (created_at);
 
 create table if not exists sections (
@@ -944,3 +945,45 @@ begin
   return query select * from modules where id=p_module_id;
 end;
 $$;
+
+-- ============================================================================
+-- Performance indexes. They match the backend's access paths (filter column first, then the ORDER BY
+-- columns) and cover the foreign keys the Supabase performance advisor flagged. Safe to re-run.
+-- ============================================================================
+-- Lesson content tree: parent -> children, already ordered.
+create index if not exists modules_classroom_position_idx on modules (classroom_id, position, id);
+create index if not exists sections_module_position_idx on sections (module_id, position, id);
+create index if not exists section_blocks_section_position_idx on section_blocks (section_id, position, id);
+create index if not exists questions_section_position_idx on questions (section_id, position, id);
+create index if not exists question_options_question_position_idx on question_options (question_id, position, id);
+create index if not exists code_checks_exercise_position_idx on code_checks (code_exercise_id, position, id);
+
+-- Per-student history.
+create index if not exists code_submissions_student_exercise_created_idx on code_submissions (student_id, code_exercise_id, created_at desc);
+create index if not exists code_submissions_exercise_idx on code_submissions (code_exercise_id);
+create index if not exists attempts_student_question_idx on attempts (student_id, question_id);
+create index if not exists attempts_question_idx on attempts (question_id);
+create index if not exists student_work_question_idx on student_work (question_id);
+create index if not exists module_progress_module_idx on module_progress (module_id);
+create index if not exists section_progress_section_idx on section_progress (section_id);
+create index if not exists comments_submission_created_idx on comments (submission_id, created_at);
+create index if not exists comments_author_idx on comments (author_id);
+create index if not exists question_comments_student_idx on question_comments (student_id);
+create index if not exists question_comments_author_idx on question_comments (author_id);
+
+-- Live classroom polling and auth.
+create index if not exists memberships_user_created_idx on memberships (user_id, created_at desc);
+create index if not exists student_activities_classroom_created_idx on student_activities (classroom_id, created_at desc);
+create index if not exists student_activities_module_idx on student_activities (module_id);
+create index if not exists student_activities_section_idx on student_activities (section_id);
+create index if not exists student_activities_question_idx on student_activities (question_id);
+create index if not exists student_activity_state_classroom_idx on student_activity_state (classroom_id);
+create index if not exists student_activity_state_module_idx on student_activity_state (module_id);
+create index if not exists student_activity_state_section_idx on student_activity_state (section_id);
+create index if not exists student_activity_state_question_idx on student_activity_state (question_id);
+create index if not exists lesson_sessions_module_idx on lesson_sessions (module_id);
+create index if not exists lesson_sessions_started_by_idx on lesson_sessions (started_by);
+create index if not exists help_requests_student_idx on help_requests (student_id);
+create index if not exists classroom_announcements_author_idx on classroom_announcements (author_id);
+create index if not exists classroom_invitations_invited_by_idx on classroom_invitations (invited_by);
+create index if not exists classroom_invitations_user_idx on classroom_invitations (user_id) where user_id is not null;

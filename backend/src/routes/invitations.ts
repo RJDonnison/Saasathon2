@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Router } from "express";
+import { invalidateProfile } from "../auth.js";
 import { supabase } from "../supabase.js";
 import { membershipFor } from "../access.js";
 import {
@@ -35,37 +36,24 @@ async function pendingInvitation(email: string, id: string): Promise<InvitationR
 /** GET /api/invitations — pending invitations for the signed-in user's email. */
 invitationsRouter.get("/", async (req, res) => {
   const { email } = req.identity!;
+  // Classroom and inviter names are joined in, so this is one query however many invitations there are.
   const rows = email
     ? (unwrap(
         await supabase
           .from("classroom_invitations")
-          .select("*")
+          .select("*, classrooms(name), inviter:users!classroom_invitations_invited_by_fkey(name)")
           .eq("email", email)
           .eq("status", "pending")
           .order("created_at", { ascending: false }),
-      ) as InvitationRow[])
-    : [];
-  const classrooms = rows.length
-    ? (unwrap(
-        await supabase
-          .from("classrooms")
-          .select("*")
-          .in("id", [...new Set(rows.map((r) => r.classroom_id))]),
-      ) as ClassroomRow[])
-    : [];
-  const teachers = rows.length
-    ? (unwrap(
-        await supabase
-          .from("users")
-          .select("id,name")
-          .in("id", [...new Set(rows.map((r) => r.invited_by))]),
-      ) as Pick<UserRow, "id" | "name">[])
+      ) as unknown as Array<
+        InvitationRow & { classrooms: { name: string } | null; inviter: { name: string } | null }
+      >)
     : [];
   const body: ListMyInvitationsResponse = rows.map((r) => ({
     id: r.id,
     classroomId: r.classroom_id,
-    classroomName: classrooms.find((c) => c.id === r.classroom_id)?.name ?? "A classroom",
-    invitedByName: teachers.find((t) => t.id === r.invited_by)?.name ?? "Your teacher",
+    classroomName: r.classrooms?.name ?? "A classroom",
+    invitedByName: r.inviter?.name ?? "Your teacher",
     createdAt: r.created_at,
   }));
   res.json(body);
@@ -89,9 +77,10 @@ invitationsRouter.post("/:id/accept", async (req, res) => {
       .select("*")
       .single(),
   ) as UserRow;
-  // A fresh timestamp makes this classroom the caller's active one (see findProfile).
-  const membership = unwrap(
-    await supabase
+  // A fresh timestamp makes this classroom the caller's active one (see findProfile). Marking the invitation
+  // accepted doesn't depend on the membership write, so the two go out together.
+  const [membershipResult, updateResult] = await Promise.all([
+    supabase
       .from("memberships")
       .upsert(
         {
@@ -105,13 +94,14 @@ invitationsRouter.post("/:id/accept", async (req, res) => {
       )
       .select("*")
       .single(),
-  ) as MembershipRow;
-  unwrap(
-    await supabase
+    supabase
       .from("classroom_invitations")
       .update({ status: "accepted", user_id: authId, responded_at: new Date().toISOString() })
       .eq("id", invitation.id),
-  );
+  ]);
+  const membership = unwrap(membershipResult) as MembershipRow;
+  unwrap(updateResult);
+  invalidateProfile(authId);
 
   const body: AcceptInvitationResponse = { user: toUser(user, membership) };
   res.json(body);

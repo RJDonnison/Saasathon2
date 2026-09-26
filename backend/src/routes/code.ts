@@ -13,7 +13,6 @@ import { supabase } from "../supabase.js";
 import {
   unwrap,
   type ExerciseRow,
-  type SectionRow,
   type TestRow,
 } from "../rows.js";
 
@@ -77,29 +76,25 @@ async function exerciseInClassroom(
   classroomId: string,
   role: "student" | "teacher",
 ): Promise<ExerciseRow | null> {
-  const exercise = unwrap(
+  // The module id comes along through embedded joins: one query for the exercise instead of three parent lookups.
+  const row = unwrap(
     await supabase
       .from("code_exercises")
-      .select("*")
+      .select("*, questions!inner(sections!inner(module_id))")
       .eq("id", exerciseId)
       .maybeSingle(),
-  ) as ExerciseRow | null;
-  if (!exercise) return null;
-  const question = unwrap(
-    await supabase
-      .from("questions")
-      .select("section_id")
-      .eq("id", exercise.question_id)
-      .maybeSingle(),
-  ) as { section_id: string } | null;
-  if (!question) return null;
-  const section = unwrap(
-    await supabase
-      .from("sections")
-      .select("*")
-      .eq("id", question.section_id)
-      .maybeSingle(),
-  ) as SectionRow | null;
+  ) as unknown as
+    | (ExerciseRow & {
+        questions:
+          | { sections: { module_id: string } | Array<{ module_id: string }> | null }
+          | Array<{ sections: { module_id: string } | Array<{ module_id: string }> | null }>
+          | null;
+      })
+    | null;
+  if (!row) return null;
+  const { questions, ...exercise } = row;
+  const question = Array.isArray(questions) ? questions[0] : questions;
+  const section = Array.isArray(question?.sections) ? question.sections[0] : question?.sections;
   if (!section) return null;
   return (await moduleForUser(section.module_id, classroomId, role))
     ? exercise
