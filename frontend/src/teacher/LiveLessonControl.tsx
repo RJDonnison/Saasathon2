@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { api } from '../api.ts'
 import Button from '../ui/Button.tsx'
 import Dot from '../ui/Dot.tsx'
@@ -34,6 +35,7 @@ export default function LiveLessonControl({
   students: number
   hands: number
 }) {
+  const navigate = useNavigate()
   const [pick, setPick] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -48,6 +50,16 @@ export default function LiveLessonControl({
     } finally {
       setBusy(false)
     }
+  }
+
+  function endLesson() {
+    if (!session) return
+    const sessionId = session.id
+    void run(async () => {
+      const result = await api.endSession(classroomId)
+      navigate(`/teacher/feedback/${encodeURIComponent(sessionId)}`)
+      return result
+    })
   }
 
   const chosen = lessons.some((l) => l.id === pick) ? pick : (lessons[0]?.id ?? '')
@@ -124,7 +136,7 @@ export default function LiveLessonControl({
             </Button>
           </div>
           <div className="flex-1" />
-          <Button variant="peach" disabled={busy} onClick={() => void run(() => api.endSession(classroomId))}>
+          <Button variant="peach" disabled={busy} onClick={endLesson}>
             End lesson
           </Button>
         </div>

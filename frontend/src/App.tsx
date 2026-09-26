@@ -9,6 +9,7 @@ import TeacherLayout from "./teacher/TeacherLayout.tsx";
 import TeacherHome from "./teacher/TeacherHome.tsx";
 import ModuleBuilder from "./teacher/ModuleBuilder.tsx";
 import StudentWorkView from "./teacher/StudentWorkView.tsx";
+import TeacherLessonFeedback from "./teacher/TeacherLessonFeedback.tsx";
 
 export default function App() {
   return (
@@ -41,6 +42,8 @@ export default function App() {
         <Route path="modules/new" element={<ModuleBuilder />} />
         <Route path="modules/:id" element={<ModuleBuilder />} />
         <Route path="student-work/:studentId/:moduleId" element={<StudentWorkView />} />
+        <Route path="feedback/:sessionId" element={<TeacherLessonFeedback />} />
+        <Route path="feedback/:sessionId/students/:studentId" element={<TeacherLessonFeedback />} />
         <Route path="*" element={<Navigate to="/teacher" replace />} />
       </Route>
 
