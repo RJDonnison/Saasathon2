@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { Router, type RequestHandler, type Response } from "express";
 import { moduleForUser, moduleInClassroom } from "../access.js";
 import { requireRole } from "../auth.js";
@@ -33,6 +34,7 @@ import type {
   ModuleBuilderDocument,
 } from "../../../shared/types.js";
 import { supabase } from "../supabase.js";
+import { reviewStudentMessage } from "../ai/review.js";
 import {
   unwrap,
   type ExerciseRow,
@@ -397,7 +399,8 @@ aiRouter.post("/hint", requireRole("student"), rateLimit, async (req, res) => {
   const message = parts.join("\n\n");
 
   await reply(res, async () => {
-    const text = await complete({
+    const [text, review] = await Promise.all([
+      complete({
       system: hintSystemPrompt(context, {
         locate: hasCode,
         exerciseNote: note,
@@ -407,10 +410,38 @@ aiRouter.post("/hint", requireRole("student"), rateLimit, async (req, res) => {
       message,
       maxTokens: hasCode ? 500 : 400, // hints are short by design
       json: hasCode,
-    });
-    return hasCode
+      }),
+      reviewStudentMessage(question.trim()),
+    ]);
+    const answer = hasCode
       ? parseLocated(text, code!.split("\n").length)
       : { reply: text };
+    try {
+      const session = unwrap(await supabase.from("lesson_sessions").select("id").eq("classroom_id", req.user!.classroomId).is("ended_at", null).maybeSingle()) as { id: string } | null;
+      if (session) {
+        unwrap(await supabase.from("lesson_feedback_events").insert({
+          id: randomUUID(),
+          session_id: session.id,
+          classroom_id: req.user!.classroomId,
+          student_id: req.user!.userId,
+          module_id: moduleId,
+          event_type: "ai_hint",
+          payload: {
+            question: question.trim(),
+            reply: answer.reply,
+            safetyFlags: review.safetyFlags,
+            misuse: review.misuse,
+            reviewAvailable: review.reviewAvailable,
+            questionId: questionId ?? null,
+            exerciseId: exerciseId ?? null,
+          },
+        }));
+      }
+    } catch (err) {
+      // The tutor must keep working if an optional reporting write fails.
+      console.warn("[feedback] Could not save AI conversation:", err instanceof Error ? err.message : err);
+    }
+    return answer;
   });
 });
 

@@ -7,13 +7,14 @@ import {
   useSearchParams,
 } from "react-router-dom";
 import { api, ApiClientError } from "../api.ts";
+import { useAuth } from "../auth/useAuth.ts";
 import Button from "../ui/Button.tsx";
 import Card from "../ui/Card.tsx";
-import Eyebrow from "../ui/Eyebrow.tsx";
 import Heading from "../ui/Heading.tsx";
 import { INPUT, TINT } from "../ui/styles.ts";
 import { useDialog } from "../ui/DialogContext.tsx";
 import { onModuleDeleted } from "../socket.ts";
+import AvailabilityCard from "./AvailabilityCard.tsx";
 import CodeTestEditor from "./CodeTestEditor.tsx";
 import TeacherCodeEditor from "./TeacherCodeEditor.tsx";
 import { createBlankModuleDocument } from "./moduleBuilderDocument.ts";
@@ -30,6 +31,7 @@ const RichTextEditor = lazy(() => import("./RichTextEditor.tsx"));
 const id = () => crypto.randomUUID();
 type BuilderItem = ModuleBuilderDocument["sections"][number]["items"][number];
 type BuilderQuestion = Extract<BuilderItem, { type: "question" }>;
+type Notice = { message: string; tone: "success" | "error" };
 
 const questionLabel: Record<QuestionKind, string> = {
   mcq: "Multiple choice",
@@ -166,6 +168,8 @@ export default function ModuleBuilder() {
   const { id: moduleId } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const classPath = `/teacher/class/${user?.classroomId ?? ""}`;
   const [searchParams] = useSearchParams();
   const plannerDocument = (
     location.state as { plannerDocument?: ModuleBuilderDocument } | null
@@ -174,9 +178,10 @@ export default function ModuleBuilder() {
     () => (!moduleId && plannerDocument) || createBlankModuleDocument(),
   );
   const [revision, setRevision] = useState(0);
+  const [availability, setAvailability] = useState<{ opensAt: string | null; closesAt: string | null }>({ opensAt: null, closesAt: null });
   const [loading, setLoading] = useState(Boolean(moduleId));
   const [saving, setSaving] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<Notice | null>(null);
   const [selected, setSelected] = useState<string | undefined>();
   const [idea, setIdea] = useState("");
   const [askingAi, setAskingAi] = useState(false);
@@ -192,13 +197,15 @@ export default function ModuleBuilder() {
         const teacher = module as TeacherModule;
         setDocument(documentFrom(teacher));
         setRevision(teacher.revision);
+        setAvailability({ opensAt: teacher.opensAt, closesAt: teacher.closesAt });
         const questionId = searchParams.get("questionId");
         if (questionId) setSelected(questionId);
       })
       .catch((error) =>
-        setNotice(
-          error instanceof Error ? error.message : "Could not load module",
-        ),
+        setNotice({
+          message: error instanceof Error ? error.message : "Could not load module",
+          tone: "error",
+        }),
       )
       .finally(() => setLoading(false));
   }, [moduleId, searchParams]);
@@ -215,11 +222,11 @@ export default function ModuleBuilder() {
     if (!moduleId) return;
     return onModuleDeleted((event) => {
       if (event.moduleId === moduleId) {
-        setNotice("This module was deleted.");
-        navigate("/teacher", { replace: true });
+        setNotice({ message: "This module was deleted.", tone: "success" });
+        navigate(classPath, { replace: true });
       }
     });
-  }, [moduleId, navigate]);
+  }, [moduleId, navigate, classPath]);
 
   const itemCount = useMemo(
     () =>
@@ -298,24 +305,28 @@ export default function ModuleBuilder() {
       setRevision(result.module.revision);
       if (!moduleId)
         navigate(`/teacher/modules/${result.module.id}`, { replace: true });
-      setNotice(
-        result.module.status === "published"
-          ? "Published changes are live for students."
-          : "Draft saved. Students cannot see it.",
-      );
+      setNotice({
+        message:
+          result.module.status === "published"
+            ? "Published changes are live for students."
+            : "Draft saved. Students cannot see it.",
+        tone: "success",
+      });
       toast(
         result.module.status === "published"
           ? "Module published."
           : "Draft saved.",
       );
     } catch (error) {
-      setNotice(
-        error instanceof ApiClientError && error.status === 409
-          ? "This module changed elsewhere. Reload before saving."
-          : error instanceof Error
-            ? error.message
-            : "Could not save",
-      );
+      setNotice({
+        message:
+          error instanceof ApiClientError && error.status === 409
+            ? "This module changed elsewhere. Reload before saving."
+            : error instanceof Error
+              ? error.message
+              : "Could not save",
+        tone: "error",
+      });
     } finally {
       setSaving(false);
     }
@@ -337,11 +348,12 @@ export default function ModuleBuilder() {
     try {
       await api.deleteModule(moduleId);
       toast("Module deleted.");
-      navigate("/teacher", { replace: true });
+      navigate(classPath, { replace: true });
     } catch (error) {
-      setNotice(
-        error instanceof Error ? error.message : "Could not delete module",
-      );
+      setNotice({
+        message: error instanceof Error ? error.message : "Could not delete module",
+        tone: "error",
+      });
     } finally {
       setSaving(false);
     }
@@ -359,14 +371,17 @@ export default function ModuleBuilder() {
       });
       setSuggestions(result.suggestions);
       if (result.suggestions.length === 0)
-        setNotice(
-          result.warning ??
+        setNotice({
+          message:
+            result.warning ??
             "The assistant could not make a usable suggestion. Please try again.",
-        );
+          tone: "error",
+        });
     } catch (error) {
-      setNotice(
-        error instanceof Error ? error.message : "Could not get suggestions",
-      );
+      setNotice({
+        message: error instanceof Error ? error.message : "Could not get suggestions",
+        tone: "error",
+      });
     } finally {
       setAskingAi(false);
     }
@@ -378,7 +393,10 @@ export default function ModuleBuilder() {
     setDocument(withFreshIds(suggestion.document));
     setSelected(undefined);
     setSuggestions([]);
-    setNotice("AI draft applied. Review it, then save when you are ready.");
+    setNotice({
+      message: "AI draft applied. Review it, then save when you are ready.",
+      tone: "success",
+    });
   }
 
   if (loading) return <p className="m-0 text-muted">Loading module…</p>;
@@ -387,7 +405,6 @@ export default function ModuleBuilder() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex flex-col gap-2">
-          <Eyebrow>Module builder</Eyebrow>
           <Heading as="h1" variant="title">
             Build a lesson
           </Heading>
@@ -401,7 +418,7 @@ export default function ModuleBuilder() {
         <div className="flex flex-wrap items-center gap-2">
           <Link
             className="text-sm! font-semibold! text-muted hover:text-ink"
-            to="/teacher"
+            to={classPath}
           >
             Back to classroom
           </Link>
@@ -446,8 +463,11 @@ export default function ModuleBuilder() {
       </div>
 
       {notice && (
-        <p className={`m-0 rounded-xl px-4 py-3 text-sm ${TINT.mint}`}>
-          {notice}
+        <p
+          className={`m-0 rounded-xl px-4 py-3 text-sm ${notice.tone === "error" ? TINT.peach : TINT.mint}`}
+          role={notice.tone === "error" ? "alert" : "status"}
+        >
+          {notice.message}
         </p>
       )}
 
@@ -455,7 +475,6 @@ export default function ModuleBuilder() {
         <div className="flex min-w-0 flex-col gap-5">
           <Card
             title="Module details"
-            eyebrow="Start here"
             bodyClassName="flex flex-col gap-4 p-5"
           >
             <label className="flex flex-col gap-2 text-sm text-muted">
@@ -481,6 +500,13 @@ export default function ModuleBuilder() {
               />
             </Suspense>
           </Card>
+
+          <AvailabilityCard
+            key={moduleId ?? "new"}
+            moduleId={moduleId}
+            opensAt={availability.opensAt}
+            closesAt={availability.closesAt}
+          />
 
           {document.sections.map((section, sectionIndex) => (
             <SectionEditor
@@ -550,7 +576,6 @@ export default function ModuleBuilder() {
         >
           <Card
             title="Writing assistant"
-            eyebrow="Teacher only"
             className="flex h-full min-h-0 flex-col"
             bodyClassName="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-5"
           >
@@ -581,7 +606,6 @@ export default function ModuleBuilder() {
             >
               {askingAi ? "Thinking…" : "Ask assistant"}
             </Button>
-            {suggestions.length > 0 && <Eyebrow>Assistant response</Eyebrow>}
             {suggestions.map((suggestion) => (
               <div
                 key={suggestion.id}
@@ -649,7 +673,6 @@ function SectionEditor({
   return (
     <Card
       title={`Section ${String(sectionIndex + 1).padStart(2, "0")}`}
-      eyebrow="Lesson flow"
       action={
         sectionCount > 1 ? (
           <Button

@@ -1,11 +1,13 @@
 import type {
   ActivateClassroomResponse,
   GetSessionResponse,
+  GetLiveModuleProgressResponse,
   LessonPhase,
   CreateAttemptRequest,
   CreateAttemptResponse,
   Announcement,
   CreateModuleRequest,
+  UpdateModuleAvailabilityRequest,
   CreateSubmissionRequest,
   CodeSubmission,
   GetTeacherStudentAggregateResponse,
@@ -59,6 +61,8 @@ import type {
   CreateQuestionCommentRequest,
   CreateQuestionCommentResponse,
   ListQuestionCommentsResponse,
+  LessonFeedbackReport,
+  LessonFeedbackStudentDetail,
 } from "../../shared/types";
 import { supabase } from "./supabase.ts";
 
@@ -201,6 +205,10 @@ export const api = {
     post<Module>("/api/modules", body),
   getSession: (classroomId: string) =>
     request<GetSessionResponse>(`/api/classrooms/${classroomId}/session`),
+  getLiveModuleProgress: (classroomId: string) =>
+    request<GetLiveModuleProgressResponse>(
+      `/api/classrooms/${classroomId}/session/progress`,
+    ),
   startSession: (
     classroomId: string,
     moduleId: string,
@@ -222,6 +230,12 @@ export const api = {
     request<GetSessionResponse>(`/api/classrooms/${classroomId}/session`, {
       method: "DELETE",
     }),
+  recordLessonFollow: (sessionId: string, following: boolean) =>
+    post<void>("/api/feedback/follow", { sessionId, following }),
+  getLessonFeedback: (sessionId: string) =>
+    request<LessonFeedbackReport>(`/api/feedback/sessions/${encodeURIComponent(sessionId)}`),
+  getLessonStudentFeedback: (sessionId: string, studentId: string) =>
+    request<LessonFeedbackStudentDetail>(`/api/feedback/sessions/${encodeURIComponent(sessionId)}/students/${encodeURIComponent(studentId)}`),
   createAttempt: (body: CreateAttemptRequest) =>
     post<CreateAttemptResponse>("/api/comments/attempts", body),
   createSubmission: (body: CreateSubmissionRequest) =>
@@ -251,6 +265,8 @@ export const api = {
     }),
   deleteCodeTest: (id: string) =>
     request<void>(`/api/modules/tests/${id}`, { method: "DELETE" }),
+  updateModuleAvailability: (id: string, body: UpdateModuleAvailabilityRequest) =>
+    request<Module>(`/api/modules/${id}/availability`, { method: "PUT", json: body }),
   deleteModule: (id: string) =>
     request<void>(`/api/modules/${id}`, { method: "DELETE" }),
   validateMath: (body: ValidateMathRequest) =>

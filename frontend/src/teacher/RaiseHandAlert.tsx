@@ -23,7 +23,6 @@ export default function RaiseHandAlert({
   return (
     <Card
       title="Raised hands"
-      eyebrow={hands.length ? `${hands.length} waiting` : 'All quiet'}
       icon={<HandIcon className="size-[18px]" />}
       tint="peach"
       bodyClassName={hands.length ? 'p-3' : 'p-5'}

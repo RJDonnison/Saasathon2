@@ -14,9 +14,13 @@ const StudentHome = lazy(() => import("./student/StudentHome.tsx"));
 const StudentClassPage = lazy(() => import("./student/StudentClassPage.tsx"));
 const StudentDashboard = lazy(() => import("./student/StudentDashboard.tsx"));
 const TeacherLayout = lazy(() => import("./teacher/TeacherLayout.tsx"));
-const TeacherHome = lazy(() => import("./teacher/TeacherHome.tsx"));
+const TeacherDashboard = lazy(() => import("./teacher/TeacherDashboard.tsx"));
+const TeacherClass = lazy(() => import("./teacher/TeacherClass.tsx"));
 const ModuleBuilder = lazy(() => import("./teacher/ModuleBuilder.tsx"));
 const StudentWorkView = lazy(() => import("./teacher/StudentWorkView.tsx"));
+const TeacherLessonFeedback = lazy(
+  () => import("./teacher/TeacherLessonFeedback.tsx"),
+);
 
 function RouteLoading() {
   return (
@@ -56,7 +60,7 @@ class LazyRouteErrorBoundary extends Component<
       return (
         <main className="flex min-h-dvh items-center justify-center bg-canvas p-6">
           <div className="flex max-w-sm flex-col items-center gap-3 text-center">
-            <p className="m-0 text-sm text-muted" role="alert">
+            <p className="m-0 text-sm text-peach-ink" role="alert">
               This screen could not load.
             </p>
             <button
@@ -112,12 +116,18 @@ export default function App() {
           </ProtectedRoute>
         }
       >
-        <Route index element={<TeacherHome />} />
+        <Route index element={<TeacherDashboard />} />
+        <Route path="class/:classroomId" element={<TeacherClass />} />
         <Route path="modules/new" element={<ModuleBuilder />} />
         <Route path="modules/:id" element={<ModuleBuilder />} />
         <Route
           path="student-work/:studentId/:moduleId"
           element={<StudentWorkView />}
+        />
+        <Route path="feedback/:sessionId" element={<TeacherLessonFeedback />} />
+        <Route
+          path="feedback/:sessionId/students/:studentId"
+          element={<TeacherLessonFeedback />}
         />
         <Route path="*" element={<Navigate to="/teacher" replace />} />
       </Route>

@@ -39,7 +39,7 @@ export default function LessonPlanner() {
   }
 
   return (
-    <Card title="Plan a lesson" eyebrow="Lesson planner" icon={<SparklesIcon className="size-[18px]" />} tint="lavender" bodyClassName="flex flex-col gap-4 p-5">
+    <Card title="Plan a lesson" icon={<SparklesIcon className="size-[18px]" />} tint="lavender" bodyClassName="flex flex-col gap-4 p-5">
       <form onSubmit={(event) => void draft(event)} className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_11rem_auto] sm:items-end">
         <label className="flex flex-col gap-2 text-[13px] text-muted">
           Topic

@@ -1568,7 +1568,7 @@ body {
   padding: 5px;
 }
 .error-message {
-  color: var(--color-muted);
+  color: var(--color-peach-ink);
   font-size: 13px;
 }
 .landing-footer {

@@ -1,9 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api.ts";
 import { useAuth } from "../auth/useAuth.ts";
 import { useLiveSession } from "../useLiveSession.ts";
-import { emitAcknowledgeHand, onStudentActivityUpdate } from "../socket.ts";
+import {
+  emitAcknowledgeHand,
+  onModuleProgressUpdate,
+  onStudentActivityUpdate,
+} from "../socket.ts";
 import { useClassroomPresence } from "../hooks/useClassroomPresence.ts";
 import { useModuleRefresh } from "../hooks/useModuleRefresh.ts";
 import { useRaisedHands } from "../hooks/useRaisedHands.ts";
@@ -18,15 +22,32 @@ import Card from "../ui/Card.tsx";
 import Heading from "../ui/Heading.tsx";
 import { BookIcon, UsersIcon } from "../ui/icons.tsx";
 import { INPUT, TINT } from "../ui/styles.ts";
-import ClassroomList from "../ui/ClassroomList.tsx";
 import { useDialog } from "../ui/DialogContext.tsx";
 import type {
   Classroom,
   ClassroomInvitation,
   Module,
+  ProgressStatus,
   StudentActivitySnapshot,
   User,
 } from "../../../shared/types";
+
+function shortTime(iso: string) {
+  return new Date(iso).toLocaleString(undefined, {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+function teacherWindowLabel(m: Module) {
+  if (m.opensAt && m.closesAt)
+    return `${shortTime(m.opensAt)} to ${shortTime(m.closesAt)}`;
+  return m.opensAt
+    ? `Opens ${shortTime(m.opensAt)}`
+    : `Closes ${shortTime(m.closesAt!)}`;
+}
 
 const INVITATION_LABEL: Record<ClassroomInvitation["status"], string> = {
   pending: "Invited, waiting for a reply",
@@ -35,16 +56,15 @@ const INVITATION_LABEL: Record<ClassroomInvitation["status"], string> = {
 };
 
 export default function TeacherHome() {
-  const { user, createClassroom: createClassroomFor } = useAuth();
+  const { user } = useAuth();
   const navigate = useNavigate();
-  const { prompt, confirm, toast } = useDialog();
+  const { confirm } = useDialog();
   const { session, setSession } = useLiveSession();
   const [students, setStudents] = useState<User[] | null>(null);
   const [classroom, setClassroom] = useState<Classroom | null>(null);
   const [modules, setModules] = useState<Module[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
   const [invitations, setInvitations] = useState<ClassroomInvitation[]>([]);
   const [inviteText, setInviteText] = useState("");
   const [inviteBusy, setInviteBusy] = useState(false);
@@ -52,6 +72,14 @@ export default function TeacherHome() {
   const [activity, setActivity] = useState<
     Record<string, StudentActivitySnapshot>
   >({});
+  const [liveProgress, setLiveProgress] = useState<
+    Record<string, ProgressStatus>
+  >({});
+  const liveProgressSession = useRef<{
+    classroomId: string;
+    sessionId: string;
+    moduleId: string;
+  } | null>(null);
 
   const classroomId = user?.classroomId;
   const refreshStudentsFromPresence = useCallback(() => {
@@ -75,6 +103,55 @@ export default function TeacherHome() {
       .catch(() => {});
   }, [classroomId]);
   useModuleRefresh(classroomId, refreshModules);
+
+  useEffect(() => {
+    if (!classroomId || session === null) {
+      setLiveProgress({});
+      liveProgressSession.current = null;
+      return;
+    }
+    if (!session) return;
+    const activeSession = session;
+    const previousSession = liveProgressSession.current;
+    if (
+      previousSession &&
+      (previousSession.classroomId !== classroomId ||
+        previousSession.sessionId !== activeSession.id ||
+        previousSession.moduleId !== activeSession.moduleId)
+    )
+      setLiveProgress({});
+    liveProgressSession.current = {
+      classroomId,
+      sessionId: activeSession.id,
+      moduleId: activeSession.moduleId,
+    };
+    let cancelled = false;
+    const load = () => {
+      void api
+        .getLiveModuleProgress(classroomId)
+        .then((snapshot) => {
+          if (
+            cancelled ||
+            snapshot.sessionId !== activeSession.id ||
+            snapshot.moduleId !== activeSession.moduleId
+          )
+            return;
+          setLiveProgress(
+            Object.fromEntries(
+              snapshot.progress.map((item) => [item.studentId, item.status]),
+            ),
+          );
+        })
+        .catch(() => {});
+    };
+    load();
+    // Socket updates keep this prompt; a slow reload recovers from a reconnect or missed event.
+    const interval = window.setInterval(load, 30_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [classroomId, session]);
 
   useEffect(() => {
     if (!user) return;
@@ -172,29 +249,24 @@ export default function TeacherHome() {
       }),
     [user],
   );
-  async function createClassroom() {
-    const name = await prompt({
-      title: "Name your classroom",
-      message: "Choose a name students will recognize.",
-      confirmLabel: "Create classroom",
-    });
-    if (!name?.trim()) return;
-    setCreating(true);
-    try {
-      // The new classroom becomes the active one; the profile change reloads this dashboard for it.
-      setStudents(null);
-      setInvitations([]);
-      await createClassroomFor(name.trim());
-    } catch (e) {
-      toast(
-        e instanceof Error ? e.message : "Could not create classroom",
-        "error",
-      );
-    } finally {
-      setCreating(false);
-    }
-  }
-
+  useEffect(
+    () =>
+      onModuleProgressUpdate((update) => {
+        if (
+          !user ||
+          !session ||
+          update.classroomId !== user.classroomId ||
+          update.moduleId !== session.moduleId ||
+          update.sessionId !== session.id
+        )
+          return;
+        setLiveProgress((current) => ({
+          ...current,
+          [update.progress.studentId]: update.progress.status,
+        }));
+      }),
+    [session, user],
+  );
   async function inviteStudents(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!user) return;
@@ -317,9 +389,9 @@ export default function TeacherHome() {
               : `${studentCount} student${studentCount === 1 ? "" : "s"} in ${classroom?.name ?? "your classroom"}, ${onlineCount} online and ${hands.length} hand${hands.length === 1 ? "" : "s"} raised.`}
           </p>
         </div>
-        <Button disabled={creating} onClick={() => void createClassroom()}>
-          {creating ? "Creating…" : "＋ New classroom"}
-        </Button>
+        <Link to="/teacher">
+          <Button>All classes</Button>
+        </Link>
       </div>
 
       {error && (
@@ -353,12 +425,12 @@ export default function TeacherHome() {
               selectedId={selectedId}
               onSelect={setSelectedId}
               activity={activity}
+              liveProgress={liveProgress}
             />
           </div>
           <div className="order-5 min-w-0">
             <Card
               title="Lessons"
-              eyebrow="Your modules"
               icon={<BookIcon className="size-[18px]" />}
               tint="mint"
               bodyClassName="flex flex-col divide-y divide-border"
@@ -382,7 +454,11 @@ export default function TeacherHome() {
                       {m.title}
                     </strong>
                     <span className="flex-none text-xs! font-normal! text-muted">
-                      {m.status === "draft" ? "Draft" : "Published"}
+                      {m.status === "draft"
+                        ? "Draft"
+                        : m.opensAt || m.closesAt
+                          ? teacherWindowLabel(m)
+                          : "Published · open any time"}
                     </span>
                   </Link>
                 ))
@@ -436,7 +512,6 @@ export default function TeacherHome() {
           <div className="order-6 min-w-0">
             <Card
               title="Invite students"
-              eyebrow="Class invitations"
               icon={<UsersIcon className="size-[18px]" />}
               tint="lavender"
               bodyClassName="flex flex-col gap-4 p-5"
@@ -519,7 +594,6 @@ export default function TeacherHome() {
       </div>
 
       <LessonPlanner />
-      <ClassroomList role="teacher" />
     </div>
   );
 }

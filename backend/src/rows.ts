@@ -61,6 +61,8 @@ export type ModuleRow = {
   position: number;
   status: "draft" | "published";
   revision: number;
+  opens_at: string | null;
+  closes_at: string | null;
 };
 export type SectionRow = {
   id: string;
@@ -177,6 +179,8 @@ export type StudentWorkRow = {
   question_id: string;
   answer: string | null;
   code: string | null;
+  is_correct: boolean | null;
+  checked_at: string | null;
   updated_at: string;
 };
 export type StudentActivityRow = {
@@ -241,6 +245,8 @@ export const toModule = (r: ModuleRow): Module => ({
   position: r.position,
   status: r.status,
   revision: r.revision,
+  opensAt: r.opens_at,
+  closesAt: r.closes_at,
 });
 export const toSection = (r: SectionRow): Section => ({
   id: r.id,
@@ -354,6 +360,8 @@ export const toStudentWork = (r: StudentWorkRow): StudentWork => ({
   questionId: r.question_id,
   answer: r.answer,
   code: r.code,
+  isCorrect: r.is_correct,
+  checkedAt: r.checked_at ? iso(r.checked_at) : null,
   updatedAt: iso(r.updated_at),
 });
 export const toStudentActivity = (r: StudentActivityRow): StudentActivity => ({

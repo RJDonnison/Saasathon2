@@ -3,7 +3,6 @@ import { api } from "../api.ts";
 import { useAuth } from "../auth/useAuth.ts";
 import { onQuestionCommentCreated } from "../socket.ts";
 import Button from "./Button.tsx";
-import Eyebrow from "./Eyebrow.tsx";
 import { INPUT, TINT } from "./styles.ts";
 import type { QuestionComment } from "../../../shared/types";
 
@@ -16,12 +15,12 @@ export default function QuestionConversation({
   /** Required by teacher views; students automatically use their own id. */
   studentId?: string;
 }) {
+  const { user } = useAuth();
   const [open, setOpen] = useState(false);
-  if (!open)
+  if (user?.role === "teacher" && !open)
     return (
       <section className="flex items-center justify-between gap-3 rounded-xl border border-border bg-surface-soft p-4">
-        <div className="flex flex-col gap-1">
-          <Eyebrow>Ask your teacher</Eyebrow>
+        <div>
           <span className="text-sm text-muted">
             Start a private conversation about this question.
           </span>
@@ -77,7 +76,7 @@ function Conversation({
     return () => {
       requestId.current += 1;
     };
-    // The conversation is mounted only after explicit expansion.
+    // Students need to receive a teacher-started conversation immediately.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [questionId, targetStudentId]);
 
@@ -101,7 +100,7 @@ function Conversation({
 
   async function send(event: FormEvent) {
     event.preventDefault();
-    if (!text.trim() || !targetStudentId || sending) return;
+    if (!text.trim() || !targetStudentId || sending || (user?.role === "student" && !startedByTeacher)) return;
     setSending(true);
     setError(null);
     try {
@@ -126,14 +125,17 @@ function Conversation({
     }
   }
 
+  const startedByTeacher = comments.some(
+    (comment) => comment.authorId !== targetStudentId,
+  );
+
+  // Students have no prompt to create a thread. Once a teacher posts, the
+  // socket listener above makes this panel appear without a page refresh.
+  if (user?.role === "student" && !startedByTeacher) return null;
+
   return (
     <section className="flex flex-col gap-3 rounded-xl border border-border bg-surface-soft p-4">
       <div className="flex items-center justify-between gap-3">
-        <Eyebrow>
-          {user?.role === "teacher"
-            ? "Student conversation"
-            : "Ask your teacher"}
-        </Eyebrow>
         <span className="text-xs text-muted">
           {comments.length
             ? `${comments.length} messages`
@@ -158,7 +160,7 @@ function Conversation({
         </div>
       ) : comments.length === 0 ? (
         <p className="m-0 text-sm text-muted">
-          No messages yet. Your teacher will see this conversation privately.
+          Start this private conversation with the student.
         </p>
       ) : (
         <ul
