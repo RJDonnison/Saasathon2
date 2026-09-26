@@ -137,6 +137,10 @@ export interface Module {
   position: number;
   status: ModuleStatus;
   revision: number;
+  /** Students can only open the lesson from this time (ISO), or any time before closesAt when null. */
+  opensAt: string | null;
+  /** Students can no longer open the lesson after this time (ISO), or never when null. */
+  closesAt: string | null;
 }
 export interface Section {
   id: string;
@@ -211,6 +215,8 @@ export interface ExerciseSummary {
 /** A lesson as one student sees it: the module plus their progress and what is in it. */
 export interface LessonSummary extends Omit<Module, "status"> {
   status: ProgressStatus;
+  /** Whether the student can open it right now: inside its time window, or the teacher is running it live. */
+  available: boolean;
   sections: Array<{ id: string; title: string }>;
   exercises: ExerciseSummary[];
 }
@@ -452,6 +458,11 @@ export interface AiModuleSuggestionsRequest {
 }
 export interface AiModuleSuggestionsResponse {
   suggestions: AiModuleSuggestion[];
+}
+/** PUT /api/modules/:id/availability (teacher) — the time window students may open the lesson in; null = unbounded. */
+export interface UpdateModuleAvailabilityRequest {
+  opensAt: string | null;
+  closesAt: string | null;
 }
 export interface UpdateModuleRequest {
   title?: string;

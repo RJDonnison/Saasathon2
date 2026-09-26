@@ -7,6 +7,7 @@ import type {
   CreateAttemptResponse,
   Announcement,
   CreateModuleRequest,
+  UpdateModuleAvailabilityRequest,
   CreateSubmissionRequest,
   CodeSubmission,
   GetTeacherStudentAggregateResponse,
@@ -256,6 +257,8 @@ export const api = {
     }),
   deleteCodeTest: (id: string) =>
     request<void>(`/api/modules/tests/${id}`, { method: "DELETE" }),
+  updateModuleAvailability: (id: string, body: UpdateModuleAvailabilityRequest) =>
+    request<Module>(`/api/modules/${id}/availability`, { method: "PUT", json: body }),
   deleteModule: (id: string) =>
     request<void>(`/api/modules/${id}`, { method: "DELETE" }),
   validateMath: (body: ValidateMathRequest) =>

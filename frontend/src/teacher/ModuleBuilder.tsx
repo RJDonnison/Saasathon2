@@ -14,6 +14,7 @@ import Heading from "../ui/Heading.tsx";
 import { INPUT, TINT } from "../ui/styles.ts";
 import { useDialog } from "../ui/DialogContext.tsx";
 import { onModuleDeleted } from "../socket.ts";
+import AvailabilityCard from "./AvailabilityCard.tsx";
 import CodeTestEditor from "./CodeTestEditor.tsx";
 import TeacherCodeEditor from "./TeacherCodeEditor.tsx";
 import { createBlankModuleDocument } from "./moduleBuilderDocument.ts";
@@ -177,6 +178,7 @@ export default function ModuleBuilder() {
     () => (!moduleId && plannerDocument) || createBlankModuleDocument(),
   );
   const [revision, setRevision] = useState(0);
+  const [availability, setAvailability] = useState<{ opensAt: string | null; closesAt: string | null }>({ opensAt: null, closesAt: null });
   const [loading, setLoading] = useState(Boolean(moduleId));
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
@@ -195,6 +197,7 @@ export default function ModuleBuilder() {
         const teacher = module as TeacherModule;
         setDocument(documentFrom(teacher));
         setRevision(teacher.revision);
+        setAvailability({ opensAt: teacher.opensAt, closesAt: teacher.closesAt });
         const questionId = searchParams.get("questionId");
         if (questionId) setSelected(questionId);
       })
@@ -496,6 +499,13 @@ export default function ModuleBuilder() {
               />
             </Suspense>
           </Card>
+
+          <AvailabilityCard
+            key={moduleId ?? "new"}
+            moduleId={moduleId}
+            opensAt={availability.opensAt}
+            closesAt={availability.closesAt}
+          />
 
           {document.sections.map((section, sectionIndex) => (
             <SectionEditor
