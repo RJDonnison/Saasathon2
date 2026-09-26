@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Router } from "express";
 import type {
   LessonFeedbackReport,
+  LessonFeedbackFlag,
   LessonFeedbackSafetyFlag,
   LessonFeedbackStudentDetail,
   LessonFeedbackStudentSummary,
@@ -54,9 +55,10 @@ type ClassAiSummary = {
 function eventPayload(event: FeedbackEvent): Record<string, unknown> {
   return event.payload && typeof event.payload === "object" ? event.payload : {};
 }
-function flagsFrom(value: unknown): LessonFeedbackSafetyFlag[] {
-  const valid: LessonFeedbackSafetyFlag[] = ["harassment", "violence", "self_harm", "sexual"];
-  return Array.isArray(value) ? value.filter((flag): flag is LessonFeedbackSafetyFlag => valid.includes(flag as LessonFeedbackSafetyFlag)) : [];
+function allFlagsFrom(payload: Record<string, unknown>): LessonFeedbackFlag[] {
+  const valid: LessonFeedbackFlag[] = ["answer_seeking", "harassment", "violence", "self_harm", "sexual", "abusive_language", "cyber_abuse"];
+  const values = [payload.flags, payload.safetyFlags, payload.misuse].flatMap((value) => Array.isArray(value) ? value : []);
+  return [...new Set(values.filter((flag): flag is LessonFeedbackFlag => typeof flag === "string" && valid.includes(flag as LessonFeedbackFlag)))];
 }
 function percent(numerator: number, denominator: number): number {
   return denominator > 0 ? Math.round((numerator / denominator) * 100) : 0;
@@ -131,11 +133,12 @@ function followedSeconds(context: Context, studentId: string): { seconds: number
 
 function safetySummary(context: Context, studentId: string) {
   const logs = context.events.filter((event) => event.event_type === "ai_hint" && event.student_id === studentId).map(eventPayload);
-  const safetyFlags = [...new Set(logs.flatMap((log) => flagsFrom(log.safetyFlags)))];
-  const misuse = [...new Set(logs.flatMap((log) => Array.isArray(log.misuse) ? log.misuse.filter((v): v is string => typeof v === "string") : []))];
-  const urgent = safetyFlags.some((flag) => flag === "violence" || flag === "self_harm" || flag === "sexual");
+  const flags = [...new Set(logs.flatMap(allFlagsFrom))];
+  const safetyFlags = flags.filter((flag): flag is LessonFeedbackSafetyFlag => flag !== "answer_seeking");
+  const misuse = flags.filter((flag) => flag === "answer_seeking");
+  const urgent = safetyFlags.some((flag) => flag !== "harassment");
   const reviewUnavailable = logs.some((log) => log.reviewAvailable === false);
-  return { logs, safetyFlags, misuse, urgent, reviewUnavailable };
+  return { logs, flags, safetyFlags, misuse, urgent, reviewUnavailable };
 }
 
 function studentSummaries(context: Context): LessonFeedbackStudentSummary[] {
@@ -170,9 +173,10 @@ function studentSummaries(context: Context): LessonFeedbackStudentSummary[] {
       taskCount: new Set(studentActivities.filter((a) => a.question_id).map((a) => a.question_id)).size,
       quizCount: studentActivities.filter((a) => a.type === "checking_answer").length,
       safetyFlags: safety.safetyFlags,
+      flags: safety.flags,
       aiSummary: hints.length ? `Used the helper ${hints.length} ${hints.length === 1 ? "time" : "times"}; ${observedProgress === "completed" ? "finished the lesson" : "lesson completion was not recorded"}.` : `${observedProgress === "completed" ? "Finished the lesson" : "No lesson completion was recorded"}. No helper use was recorded.`,
       greenFlag: null,
-      redFlag: safety.urgent ? "Urgent safety content detected in an AI conversation. Review the exact message." : safety.reviewUnavailable ? "The AI safety check was unavailable. Review this conversation manually." : safety.safetyFlags.includes("harassment") ? "Potential harassment content detected. Review the exact message." : safety.misuse.length ? `AI use needs review: ${safety.misuse.join(", ")}.` : null,
+      redFlag: safety.urgent ? "Potentially harmful or unsafe content detected. Review the exact message." : safety.reviewUnavailable ? "The AI safety check was unavailable. Review this conversation manually." : safety.safetyFlags.includes("harassment") ? "Potential harassment content detected. Review the exact message." : safety.misuse.length ? "Possible answer-seeking. Review the conversation." : null,
     };
   });
 }
@@ -299,7 +303,8 @@ feedbackRouter.get("/sessions/:sessionId/students/:studentId", requireRole("teac
   if (!base) return res.status(404).json({ error: "Student not found in this class" });
   const allAiLogs = context.events.filter((e) => e.event_type === "ai_hint" && e.student_id === base.studentId).map((event) => {
     const payload = eventPayload(event);
-    return { askedAt: event.created_at, question: String(payload.question ?? ""), reply: String(payload.reply ?? ""), safetyFlags: flagsFrom(payload.safetyFlags), misuse: Array.isArray(payload.misuse) && payload.misuse.length ? payload.misuse.join(", ") : null, reviewAvailable: payload.reviewAvailable !== false };
+    const flags = allFlagsFrom(payload);
+    return { askedAt: event.created_at, question: String(payload.question ?? ""), reply: String(payload.reply ?? ""), safetyFlags: flags.filter((flag): flag is LessonFeedbackSafetyFlag => flag !== "answer_seeking"), flags, misuse: flags.includes("answer_seeking") ? "answer_seeking" : null, reviewAvailable: payload.reviewAvailable !== false };
   });
   const safety = safetySummary(context, base.studentId);
   const aiEvent = context.events.find((e) => e.event_type === "student_ai_summary" && e.student_id === base.studentId);

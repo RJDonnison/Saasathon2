@@ -392,8 +392,11 @@ aiRouter.post("/hint", requireRole("student"), rateLimit, async (req, res) => {
           payload: {
             question: question.trim(),
             reply: answer.reply,
-            safetyFlags: review.safetyFlags,
-            misuse: review.misuse,
+            flags: review.flags,
+            safetyFlags: review.flags.filter((flag) => flag !== "answer_seeking"),
+            misuse: review.flags.filter(
+              (flag) => flag === "answer_seeking" || flag === "abusive_language",
+            ),
             reviewAvailable: review.reviewAvailable,
             questionId: questionId ?? null,
             exerciseId: exerciseId ?? null,
