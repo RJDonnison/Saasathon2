@@ -23,6 +23,46 @@ const PANES: { id: Pane; label: string }[] = [
   { id: "lesson", label: "Lesson" },
   { id: "helper", label: "Helper" },
 ];
+const LOADING_PULSE =
+  "animate-pulse rounded-lg bg-surface-soft motion-reduce:animate-none";
+
+function LoadingBlock({ className }: { className: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={`block ${LOADING_PULSE} ${className}`}
+    />
+  );
+}
+
+function LessonOverviewSkeleton() {
+  return (
+    <div
+      className="flex flex-col gap-3 rounded-xl bg-surface-soft p-4"
+      aria-busy="true"
+      aria-label="Loading classroom details"
+    >
+      <LoadingBlock className="h-4 w-28" />
+      <LoadingBlock className="h-3 w-full" />
+      <LoadingBlock className="h-3 w-4/5" />
+    </div>
+  );
+}
+
+function HelperSkeleton() {
+  return (
+    <div
+      className="flex flex-col gap-3 p-5"
+      aria-busy="true"
+      aria-label="Loading lesson helper"
+    >
+      <LoadingBlock className="h-5 w-28" />
+      <LoadingBlock className="h-4 w-full" />
+      <LoadingBlock className="h-4 w-5/6" />
+      <LoadingBlock className="h-10 w-full" />
+    </div>
+  );
+}
 
 /** When the tutor points at a line, bring the editor's pane forward (only matters when the panes are tabs). */
 function ShowLessonOnHighlight({ onHighlight }: { onHighlight: () => void }) {
@@ -110,15 +150,26 @@ export default function StudentHome() {
   const currentIndex = modules?.findIndex((m) => m.id === currentId) ?? -1;
   const current = currentIndex >= 0 ? modules![currentIndex] : null;
   const doneCount = modules ? lessonOverview(modules).completedCount : 0;
-  const teacher = classroom?.teacherName ?? "Your teacher";
+  const teacher = classroom?.teacherName ?? "";
+  const classroomLoading = classroom === null;
+  const sessionLoading = session === undefined;
+  const overviewLoading = classroomLoading || sessionLoading || modules === null;
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden">
       <ClassTopBar
         wide
         backTo="/student"
-        title={classroom?.name ?? "Your classroom"}
-        subtitle={teacher}
+        title={
+          classroom ? classroom.name : <LoadingBlock className="h-5 w-40" />
+        }
+        subtitle={
+          classroom ? (
+            classroom.teacherName
+          ) : (
+            <LoadingBlock className="h-3 w-28" />
+          )
+        }
         badge={
           !hasSnapshot ? undefined : (
             <span
@@ -130,7 +181,9 @@ export default function StudentHome() {
           )
         }
         center={
-          session ? (
+          sessionLoading ? (
+            <LoadingBlock className="h-9 w-28" />
+          ) : session ? (
             <div
               className="flex items-center gap-3"
               role="status"
@@ -159,7 +212,7 @@ export default function StudentHome() {
         }
         actions={
           <>
-            <Button size="lg" onClick={imLost}>
+            <Button size="lg" onClick={imLost} disabled={!current}>
               I’m lost
             </Button>
             <RaiseHandButton />
@@ -193,7 +246,9 @@ export default function StudentHome() {
             aria-label="Lessons"
             className={`${pane === "lessons" ? "flex" : "hidden"} relative flex-col gap-6 overflow-y-auto overscroll-contain p-5 lg:flex lg:border-r lg:border-border`}
           >
-            {session && followingNow ? (
+            {overviewLoading ? (
+              <LessonOverviewSkeleton />
+            ) : session && followingNow ? (
               <div
                 className={`flex flex-col gap-1.5 rounded-xl p-4 ${TINT.mint}`}
               >
@@ -230,7 +285,11 @@ export default function StudentHome() {
               </div>
             )}
             <div className="flex flex-col gap-3">
-              <Heading>{session ? "Today’s lesson" : "Lessons"}</Heading>
+              {sessionLoading ? (
+                <LoadingBlock className="h-5 w-24" />
+              ) : (
+                <Heading>{session ? "Today’s lesson" : "Lessons"}</Heading>
+              )}
               {modules === null && !error ? (
                 <div
                   className="flex flex-col gap-2"
@@ -374,7 +433,9 @@ export default function StudentHome() {
               aria-label="Helper"
               className={`${pane === "helper" ? "flex" : "hidden"} relative min-h-0 flex-col overflow-hidden bg-surface lg:flex lg:border-l lg:border-border`}
             >
-              {phase === "work" ? (
+              {classroomLoading || sessionLoading ? (
+                <HelperSkeleton />
+              ) : phase === "work" ? (
                 <AiChatPanel moduleId={current.id} />
               ) : (
                 <div className="flex flex-col gap-2 p-5">
