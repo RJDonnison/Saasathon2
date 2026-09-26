@@ -302,7 +302,7 @@ export type CreateSubmissionResponse = CodeSubmission;
 export type ListSubmissionCommentsResponse = Comment[];
 export type GetTeacherStudentAggregateResponse = TeacherStudentAggregate;
 
-/** POST /api/code/run remains mocked; it never executes supplied code. */
+/** POST /api/code/run executes a supported lesson language in the server-configured Piston sandbox. */
 export interface RunCodeRequest {
   code: string;
   language: string;

@@ -52,12 +52,13 @@ REAL (backed by Supabase / real socket broadcasts):
 - Classroom, module (create/read/update/delete, teacher-only writes), progress and comment endpoints
 - AI (OpenAI): `POST /api/ai/hint` (student "I'm stuck" tutor) and `POST /api/ai/draft` (teacher module
   drafting/planning) — see "AI service" below. Needs `OPENAI_API_KEY`; without it they return 503.
+- `POST /api/code/run` — runs JavaScript, TypeScript and Python in the configured Piston sandbox. It is
+  constrained to a 3-second run, 25,000-character source, and 12 runs/user/minute.
 - Socket.io: presence (`presence_update`), `raise_hand`, `student_status_update`, broadcast to a
   classroom-scoped room (`io.to(classroomId)`). The server trusts the authenticated user (from the Supabase token), not the client payload.
 
 MOCKED — don't "fix" these into real implementations unless explicitly asked; that is follow-up feature work:
 
-- `POST /api/code/run` — returns `"mock output for: " + code` after a fake 300ms delay. Nothing is executed.
 - Most frontend components under `frontend/src/student/` and `frontend/src/teacher/` are placeholders
   with static/mock content. The student's multiple-choice / short-answer questions are local-only (no attempts
   endpoint is wired up).
@@ -111,9 +112,15 @@ order; each section is its Markdown content blocks followed by its questions, so
 work by ordering sections (read -> practice -> read -> practice). Blocks and questions have separate `position`
 sequences, so they can't be mixed *within* a section without a contract change. Each code exercise gets its own
 `CodeEditor`; there is also a free playground at the end. `WorkspaceContext` shares editor text, the active
-editor and the tutor's highlight between the columns. The editor is a textarea over a line-by-line mirror that
-shares its font and line height (so a line can be tinted and scrolled to exactly) — keep those in sync if you
-restyle it.
+editor and the tutor's highlight between the columns. Each editor is Monaco; tutor highlights are Monaco
+whole-line decorations and are revealed in the editor when received. Monaco is lazy-loaded only when a code
+segment is rendered.
+
+## Code execution (Piston)
+
+`backend/src/routes/code.ts` sends code to the Piston instance selected by `PISTON_API_URL` (default:
+`http://localhost:2000/api/v2`). Set `PISTON_AUTH_TOKEN` for a hosted instance that requires bearer auth;
+both values are server-only. The local Piston service normally needs no token.
 
 ## Run commands
 

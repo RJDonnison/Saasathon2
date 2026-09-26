@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import type { OnMount } from '@monaco-editor/react'
 import { api } from '../api.ts'
 import Button from '../ui/Button.tsx'
 import Dot from '../ui/Dot.tsx'
@@ -9,10 +10,11 @@ import { CARD } from '../ui/styles.ts'
 import { useWorkspace, type EditorInfo } from './useWorkspace.ts'
 
 const EXTENSION: Record<string, string> = { javascript: 'js', typescript: 'ts', python: 'py' }
+// Monaco is substantial; lesson pages load it only when a code segment is actually rendered.
+const MonacoEditor = lazy(() => import('@monaco-editor/react'))
 
-// PLACEHOLDER: a plain textarea over a line-by-line mirror. "Run" hits the MOCKED /api/code/run (nothing is
-// actually executed). Both layers share one font, line height and grid cell, so a line the tutor points at can be
-// tinted in the mirror and scrolled to exactly. Its text lives in the workspace so the tutor can read it.
+// Monaco owns the editing experience (syntax highlighting, keyboard navigation and its gutter). Editor text still
+// lives in the workspace so the tutor can inspect it, and Monaco decorations mark the line the tutor points to.
 export default function CodeEditor({
   editor,
   filename,
@@ -30,39 +32,71 @@ export default function CodeEditor({
   prompt?: string
   instructions?: string
 }) {
-  const { codes, setCode, setActive, highlight, clearHighlight, requestHelp } = useWorkspace()
+  const { codes, setCode, setRunError, setActive, highlight, clearHighlight, requestHelp } = useWorkspace()
   const [output, setOutput] = useState<string | null>(null)
   const [failed, setFailed] = useState(false)
   const [running, setRunning] = useState(false)
-  const mirror = useRef<HTMLDivElement>(null)
+  const [mounted, setMounted] = useState(false)
+  const monacoEditor = useRef<Parameters<OnMount>[0] | null>(null)
+  const decorations = useRef<ReturnType<Parameters<OnMount>[0]['createDecorationsCollection']> | null>(null)
 
   const code = codes[editor.key] ?? initialCode
-  const lines = code.split('\n')
   const mine = highlight?.editorKey === editor.key ? highlight : null
 
   // Register the starter code so the tutor can see it before the student has typed anything.
   useEffect(() => {
-    setCode(editor.key, initialCode)
-  }, [editor.key, initialCode, setCode])
+    if (!(editor.key in codes)) setCode(editor.key, initialCode)
+  }, [codes, editor.key, initialCode, setCode])
 
-  // Bring the highlighted line into view: scrolls the editor's own scroller and the page, centred.
-  // Re-runs per request (nonce), so pointing at the same line twice still scrolls.
+  // Bring the highlighted line into view and tint it. Re-runs per request (nonce), so pointing at the
+  // same line twice still scrolls.
   const spotLine = mine?.line
   const spotNonce = mine?.nonce
   useEffect(() => {
-    if (spotLine) mirror.current?.children[spotLine - 1]?.scrollIntoView({ block: 'center', behavior: 'smooth' })
-  }, [spotLine, spotNonce])
+    if (!mounted || !monacoEditor.current || !decorations.current) return
+    if (!mine) {
+      decorations.current.set([])
+      return
+    }
+    decorations.current.set([
+      {
+        range: {
+          startLineNumber: mine.line,
+          startColumn: 1,
+          endLineNumber: mine.endLine,
+          endColumn: 1,
+        },
+        options: { isWholeLine: true, className: 'bg-peach/60' },
+      },
+    ])
+    monacoEditor.current.revealLineInCenter(mine.line)
+    monacoEditor.current.getDomNode()?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  }, [mine, mounted, spotLine, spotNonce])
+
+  const onMount: OnMount = (instance) => {
+    monacoEditor.current = instance
+    decorations.current = instance.createDecorationsCollection()
+    instance.onDidFocusEditorText(() => setActive(editor))
+    setMounted(true)
+  }
 
   async function run() {
     setActive(editor)
     setRunning(true)
     try {
       const res = await api.runCode({ code, language })
-      setFailed(res.exitCode !== 0)
-      setOutput(res.stdout || res.stderr)
+      const failed = res.exitCode !== 0
+      const output =
+        [res.stdout, res.stderr].filter(Boolean).join('\n') ||
+        (failed ? 'Execution failed with no output.' : 'Program finished with no output.')
+      setFailed(failed)
+      setOutput(output)
+      setRunError(editor.key, failed ? output : undefined)
     } catch (err) {
+      const output = err instanceof Error ? err.message : 'Run failed'
       setFailed(true)
-      setOutput(err instanceof Error ? err.message : 'Run failed')
+      setOutput(output)
+      setRunError(editor.key, output)
     } finally {
       setRunning(false)
     }
@@ -111,50 +145,36 @@ export default function CodeEditor({
         </div>
       )}
 
-      {/* One scroller for gutter + code, so line numbers scroll with the text. */}
-      <div className="grid max-h-[26rem] min-h-28 grid-cols-[auto_minmax(0,1fr)] overflow-auto bg-surface py-3 text-[13.5px] leading-6 font-mono">
-        <div aria-hidden="true" className="sticky left-0 z-10 flex flex-col bg-surface-soft text-right text-subtle select-none">
-          {lines.map((_, i) => {
-            const marked = mine && i + 1 >= mine.line && i + 1 <= mine.endLine
-            return (
-              <div key={i} className={`h-6 px-3 ${marked ? 'bg-peach font-medium text-peach-ink' : ''}`}>
-                {i + 1}
-              </div>
-            )
-          })}
-        </div>
-        <div className="grid">
-          <div ref={mirror} aria-hidden="true" className="pointer-events-none col-start-1 row-start-1 min-w-max text-transparent select-none">
-            {lines.map((line, i) => {
-              const marked = mine && i + 1 >= mine.line && i + 1 <= mine.endLine
-              return (
-                <div key={i} className={`h-6 px-4 whitespace-pre ${marked ? 'bg-peach shadow-[inset_3px_0_0_var(--color-coral)]' : ''}`}>
-                  {line || ' '}
-                </div>
-              )
-            })}
-          </div>
-          <label className="sr-only" htmlFor={`editor-${editor.key}`}>
-            Code editor: {editor.label}
-          </label>
-          {/* Font utilities are `!` because app.css sets `textarea { font: inherit }` (see ui/styles.ts). */}
-          <textarea
-            id={`editor-${editor.key}`}
-            className="col-start-1 row-start-1 m-0 block w-full min-w-0 resize-none overflow-hidden border-0 bg-transparent px-4 py-0 text-[13.5px]! leading-6! font-normal! whitespace-pre text-code outline-none font-mono!"
+      <div className="h-[26rem] min-h-28 overflow-hidden bg-surface">
+        <Suspense fallback={<div className="grid h-full place-items-center text-sm text-muted">Loading editor…</div>}>
+          <MonacoEditor
+            height="100%"
+            defaultLanguage={language}
+            language={language}
             value={code}
-            rows={lines.length}
-            wrap="off"
-            onChange={(e) => {
-              setCode(editor.key, e.target.value)
+            theme="vs"
+            onMount={onMount}
+            onChange={(value) => {
+              setCode(editor.key, value ?? '')
+              // A run error only applies to the exact code that produced it.
+              setRunError(editor.key)
               // Line numbers shift as they edit, so an old highlight would point at the wrong place.
               if (mine) clearHighlight()
             }}
-            onFocus={() => setActive(editor)}
-            spellCheck={false}
-            autoCapitalize="off"
-            autoCorrect="off"
+            options={{
+              ariaLabel: `Code editor: ${editor.label}`,
+              automaticLayout: true,
+              fontFamily: 'var(--font-mono)',
+              fontSize: 14,
+              lineHeight: 24,
+              minimap: { enabled: false },
+              padding: { top: 12, bottom: 12 },
+              scrollBeyondLastLine: false,
+              tabSize: 2,
+              wordWrap: 'off',
+            }}
           />
-        </div>
+        </Suspense>
       </div>
 
       <div className="flex items-center justify-between gap-3 border-t border-border bg-surface-soft px-4 py-3">

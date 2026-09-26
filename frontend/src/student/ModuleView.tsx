@@ -51,6 +51,9 @@ function Lesson({ module, index, total }: { module: Module; index: number; total
 
   // Older intros start with a markdown "# Title" line that just repeats the heading.
   const intro = module.content.replace(/^#{1,6}[ \t]+.*\n+/, '').trim()
+  const playgroundLanguage =
+    full?.sections.flatMap((section) => section.questions).find((question) => question.codeExercise)?.codeExercise?.language ?? 'javascript'
+  const playgroundCode = playgroundLanguage === 'python' ? 'print("Hello, Python!")' : 'console.log(1 + 2)'
 
   return (
     <div className="flex flex-col gap-6">
@@ -91,8 +94,8 @@ function Lesson({ module, index, total }: { module: Module; index: number; total
         <CodeEditor
           editor={{ key: 'playground', label: 'the playground' }}
           filename="playground"
-          language="javascript"
-          initialCode="console.log(1 + 2)"
+          language={playgroundLanguage}
+          initialCode={playgroundCode}
           prompt="Playground"
           instructions="Try out anything from this lesson here. It isn’t part of an exercise."
         />

@@ -29,6 +29,9 @@ export interface WorkspaceState {
   /** Current text of every editor that has mounted, by editor key. */
   codes: Record<string, string>
   setCode: (key: string, code: string) => void
+  /** Latest failed run output for each editor. It is cleared when that editor changes or succeeds. */
+  runErrors: Record<string, string>
+  setRunError: (key: string, error?: string) => void
   /** The editor the student last touched; the tutor sees its code. */
   active: EditorInfo | null
   setActive: (editor: EditorInfo) => void

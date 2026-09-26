@@ -8,6 +8,7 @@ import { WorkspaceContext, type CodeHighlight, type EditorInfo, type HelpRequest
  */
 export function WorkspaceProvider({ moduleId, children }: { moduleId: string | null; children: ReactNode }) {
   const [codes, setCodes] = useState<Record<string, string>>({})
+  const [runErrors, setRunErrors] = useState<Record<string, string>>({})
   const [active, setActiveEditor] = useState<EditorInfo | null>(null)
   const [highlight, setHighlight] = useState<CodeHighlight | null>(null)
   const [helpRequest, setHelpRequest] = useState<HelpRequest | null>(null)
@@ -20,9 +21,20 @@ export function WorkspaceProvider({ moduleId, children }: { moduleId: string | n
     setActiveEditor(null)
     setHighlight(null)
     setHelpRequest(null)
+    setRunErrors({})
   }
 
   const setCode = useCallback((key: string, code: string) => setCodes((c) => (c[key] === code ? c : { ...c, [key]: code })), [])
+  const setRunError = useCallback(
+    (key: string, error?: string) =>
+      setRunErrors((errors) => {
+        if (error) return errors[key] === error ? errors : { ...errors, [key]: error }
+        if (!(key in errors)) return errors
+        const { [key]: _, ...remaining } = errors
+        return remaining
+      }),
+    [],
+  )
   // Editors pass a fresh object each render; only swap state when the editor actually changes.
   const setActive = useCallback(
     (editor: EditorInfo) => setActiveEditor((a) => (a?.key === editor.key && a.label === editor.label ? a : editor)),
@@ -39,8 +51,8 @@ export function WorkspaceProvider({ moduleId, children }: { moduleId: string | n
   )
 
   const value = useMemo<WorkspaceState>(
-    () => ({ codes, setCode, active, setActive, highlight, showHighlight, clearHighlight, helpRequest, requestHelp }),
-    [codes, setCode, active, setActive, highlight, showHighlight, clearHighlight, helpRequest, requestHelp],
+    () => ({ codes, setCode, runErrors, setRunError, active, setActive, highlight, showHighlight, clearHighlight, helpRequest, requestHelp }),
+    [codes, setCode, runErrors, setRunError, active, setActive, highlight, showHighlight, clearHighlight, helpRequest, requestHelp],
   )
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>
 }

@@ -22,7 +22,7 @@ const FIND_ERROR = 'Something is wrong with my code. Can you tell me where to lo
 // Mount with key={moduleId} so switching modules starts a fresh conversation.
 export default function AiChatPanel({ moduleId }: { moduleId: string }) {
   const { user } = useAuth()
-  const { active, codes, helpRequest, showHighlight } = useWorkspace()
+  const { active, codes, runErrors, helpRequest, showHighlight } = useWorkspace()
   const [question, setQuestion] = useState('')
   const [messages, setMessages] = useState<Msg[]>([])
   const [thinking, setThinking] = useState(false)
@@ -36,18 +36,21 @@ export default function AiChatPanel({ moduleId }: { moduleId: string }) {
   }, [messages, thinking])
 
   // The freshest editor state, read at send time so a queued "find the error" never sends stale code.
-  const latest = useRef({ active, codes, messages, thinking })
+  const latest = useRef({ active, codes, runErrors, messages, thinking })
   useEffect(() => {
-    latest.current = { active, codes, messages, thinking }
+    latest.current = { active, codes, runErrors, messages, thinking }
   })
 
-  async function send(q: string, runError?: string) {
-    const { active, codes, messages, thinking } = latest.current
+  async function send(q: string, requestedError?: string) {
+    const { active, codes, runErrors, messages, thinking } = latest.current
     if (!user || !q || thinking) return
     const history: AiChatMessage[] = messages
       .filter((m) => m.from !== 'error')
       .map((m) => ({ role: m.from === 'me' ? 'user' : 'assistant', text: m.text }))
     const code = active ? codes[active.key] : undefined
+    // Prefer the current editor's stored result; the explicit value keeps the Find the error action
+    // reliable even if it is clicked immediately after a run state update.
+    const runError = active ? runErrors[active.key] ?? requestedError : requestedError
     setQuestion('')
     setMessages((m) => [...m, { from: 'me', text: q }])
     setThinking(true)
