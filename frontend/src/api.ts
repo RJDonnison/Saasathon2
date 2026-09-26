@@ -6,6 +6,7 @@ import type {
   ApiError,
   Comment,
   CreateCommentRequest,
+  GetClassroomResponse,
   GetClassroomStudentsResponse,
   GetModuleResponse,
   JoinRequest,
@@ -56,6 +57,7 @@ export const api = {
   createClassroom: (name: string, roomCode: string) => post<{ id: string; name: string; roomCode: string }>('/api/classrooms', { name, roomCode }),
   me: () => request<MeResponse>('/api/auth/me'),
   getModule: (id: string) => request<GetModuleResponse>(`/api/modules/${id}`),
+  getClassroom: (id: string) => request<GetClassroomResponse>(`/api/classrooms/${id}`),
   listModules: (classroomId: string) => request<ListModulesResponse>(`/api/classrooms/${classroomId}/modules`),
   getStudents: (classroomId: string) =>
     request<GetClassroomStudentsResponse>(`/api/classrooms/${classroomId}/students`),

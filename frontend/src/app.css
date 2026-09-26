@@ -12,6 +12,18 @@
   --color-accent-strong: #91bf70;
   --color-border: #dfe5d8;
   --color-code: #303b31;
+  /* Pastel tints + window dots (values already used by the landing page's icons and code window). */
+  --color-mint: #e1f3d4;
+  --color-mint-ink: #486e31;
+  --color-peach: #f8e1d7;
+  --color-peach-ink: #965642;
+  --color-lavender: #ece6f8;
+  --color-lavender-ink: #675487;
+  --color-coral: #e99888;
+  --color-amber: #e8c878;
+  --color-leaf: #8bc678;
+  --font-display: 'Space Grotesk', sans-serif;
+  --font-mono: 'DM Mono', ui-monospace, monospace;
 }
 
 :root{font-family:'DM Sans',sans-serif;color:#f4f1e8;background:#111411;font-synthesis:none;text-rendering:optimizeLegibility;-webkit-font-smoothing:antialiased;--ink:#f4f1e8;--muted:#a9aaa0;--mint:#baf77b;--dark:#111411}
