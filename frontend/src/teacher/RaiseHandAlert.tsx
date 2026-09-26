@@ -1,24 +1,20 @@
 import Avatar from '../ui/Avatar.tsx'
 import Button from '../ui/Button.tsx'
 import Card from '../ui/Card.tsx'
-import { CheckIcon, HandIcon, XIcon } from '../ui/icons.tsx'
+import { CheckIcon, HandIcon } from '../ui/icons.tsx'
 import { FOCUS_RING, TINT } from '../ui/styles.ts'
+import type { RaisedHand } from '../../../shared/events'
 
-export interface RaisedHand {
-  studentId: string
-  at: number
-}
-
-// Live raised hands (the raise_hand socket listener lives in TeacherHome).
+// Live, server-owned raised hands (the listener lives in TeacherHome).
 export default function RaiseHandAlert({
   hands,
   nameOf,
-  onDismiss,
+  onHelp,
   onSelect,
 }: {
   hands: RaisedHand[]
   nameOf: (studentId: string) => string
-  onDismiss: (studentId: string) => void
+  onHelp: (studentId: string) => void
   onSelect: (studentId: string) => void
 }) {
   return (
@@ -48,12 +44,12 @@ export default function RaiseHandAlert({
                     {/* Font utilities are `!` because of app.css's `button { font: inherit }` (see ui/styles.ts). */}
                     <span className="block truncate text-sm! font-semibold!">{name}</span>
                     <span className="block text-xs! font-normal! text-muted">
-                      needs a hand · {new Date(h.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                      needs a hand · {new Date(h.raisedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
                     </span>
                   </span>
                 </button>
-                <Button size="icon-sm" onClick={() => onDismiss(h.studentId)} aria-label={`Dismiss ${name}'s raised hand`}>
-                  <XIcon className="size-3.5" />
+                <Button size="sm" variant="primary" onClick={() => onHelp(h.studentId)}>
+                  Help
                 </Button>
               </li>
             )
