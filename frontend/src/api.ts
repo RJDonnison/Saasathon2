@@ -90,9 +90,11 @@ async function request<T>(
   const { json, ...requestInit } = init;
   const headers = new Headers(requestInit.headers);
   // The Supabase access token (auto-refreshed by supabase-js) authenticates every API call.
-  const { data } = await supabase.auth.getSession();
-  const token = data.session?.access_token;
-  if (token) headers.set("Authorization", `Bearer ${token}`);
+  if (!headers.has("Authorization")) {
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (token) headers.set("Authorization", `Bearer ${token}`);
+  }
   if (json !== undefined) headers.set("Content-Type", "application/json");
 
   const res = await fetch(`${apiOrigin}${path}`, {
@@ -116,7 +118,12 @@ type GetOptions = Pick<RequestInit, "signal">;
 export const api = {
   createClassroom: (name: string) =>
     post<CreateClassroomResponse>("/api/classrooms", { name }),
-  me: () => request<MeResponse>("/api/auth/me"),
+  me: (accessToken?: string) =>
+    request<MeResponse>("/api/auth/me", {
+      headers: accessToken
+        ? { Authorization: `Bearer ${accessToken}` }
+        : undefined,
+    }),
   getModule: (id: string, options?: GetOptions) =>
     request<GetModuleResponse>(`/api/modules/${id}`, options),
   getClassroom: (id: string, options?: GetOptions) =>
@@ -295,13 +302,20 @@ export const api = {
     post<AiDraftResponse>("/api/ai/draft", body),
   aiLessonPlan: (body: AiLessonPlanRequest) =>
     post<AiLessonPlanResponse>("/api/ai/lesson-plan", body),
-  listTeacherLessonPlans: () => request<TeacherLessonPlan[]>("/api/lesson-plans"),
+  listTeacherLessonPlans: () =>
+    request<TeacherLessonPlan[]>("/api/lesson-plans"),
   createTeacherLessonPlan: (body: SaveTeacherLessonPlanRequest) =>
     post<TeacherLessonPlan>("/api/lesson-plans", body),
   updateTeacherLessonPlan: (id: string, body: SaveTeacherLessonPlanRequest) =>
-    request<TeacherLessonPlan>(`/api/lesson-plans/${encodeURIComponent(id)}`, { method: "PUT", json: body }),
+    request<TeacherLessonPlan>(`/api/lesson-plans/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      json: body,
+    }),
   linkTeacherLessonPlanModule: (id: string, moduleId: string) =>
-    post<{ moduleId: string }>(`/api/lesson-plans/${encodeURIComponent(id)}/module`, { moduleId }),
+    post<{ moduleId: string }>(
+      `/api/lesson-plans/${encodeURIComponent(id)}/module`,
+      { moduleId },
+    ),
   aiCodeTestCandidates: (body: AiCodeTestCandidatesRequest) =>
     post<AiCodeTestCandidatesResponse>("/api/ai/code-test-candidates", body),
   createBuilderModule: (document: ModuleBuilderDocument) =>

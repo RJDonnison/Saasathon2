@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/useAuth.ts";
 import InvitationList from "../student/InvitationList.tsx";
+import ProfileRecovery from "../auth/ProfileRecovery.tsx";
 import type { Role } from "../../../shared/types";
 
 function Arrow() {
@@ -19,8 +20,15 @@ function Arrow() {
 }
 
 export default function JoinPage() {
-  const { session, user, loading, signInWithGoogle, createClassroom, signOut } =
-    useAuth();
+  const {
+    session,
+    user,
+    loading,
+    profileResolution,
+    signInWithGoogle,
+    createClassroom,
+    signOut,
+  } = useAuth();
   const navigate = useNavigate();
   const [classroomName, setClassroomName] = useState("");
   const [role, setRole] = useState<Role>("student");
@@ -35,6 +43,7 @@ export default function JoinPage() {
       </main>
     );
   if (user) return <Navigate to={`/${user.role}`} replace />;
+  if (profileResolution === "profile-error") return <ProfileRecovery />;
 
   async function onGoogle() {
     setError(null);

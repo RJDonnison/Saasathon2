@@ -1,14 +1,21 @@
-import type { ReactNode } from 'react'
-import { Navigate } from 'react-router-dom'
-import { useAuth } from './useAuth.ts'
-import type { Role } from '../../../shared/types'
+import type { ReactNode } from "react";
+import { Navigate } from "react-router-dom";
+import { useAuth } from "./useAuth.ts";
+import type { Role } from "../../../shared/types";
+import ProfileRecovery from "./ProfileRecovery.tsx";
 
 /**
  * Requires an authenticated user with the given role.
  * No user -> "/". Wrong role -> that user's own base route (e.g. a student hitting /teacher -> /student).
  */
-export default function ProtectedRoute({ role, children }: { role: Role; children: ReactNode }) {
-  const { user, loading } = useAuth()
+export default function ProtectedRoute({
+  role,
+  children,
+}: {
+  role: Role;
+  children: ReactNode;
+}) {
+  const { user, loading, profileResolution } = useAuth();
   if (loading) {
     // Mirrors the landing page's loading screen (same tokens, built from utilities).
     return (
@@ -16,9 +23,10 @@ export default function ProtectedRoute({ role, children }: { role: Role; childre
         <img className="size-[46px] object-contain" src="/favicon.svg" alt="" />
         Getting your workspace ready…
       </main>
-    )
+    );
   }
-  if (!user) return <Navigate to="/" replace />
-  if (user.role !== role) return <Navigate to={`/${user.role}`} replace />
-  return <>{children}</>
+  if (profileResolution === "profile-error") return <ProfileRecovery />;
+  if (!user) return <Navigate to="/" replace />;
+  if (user.role !== role) return <Navigate to={`/${user.role}`} replace />;
+  return <>{children}</>;
 }
