@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { Router, type RequestHandler, type Response } from "express";
 import { moduleForUser, moduleInClassroom } from "../access.js";
 import { requireRole } from "../auth.js";
@@ -9,6 +10,7 @@ import {
 } from "../openai.js";
 import {
   builderSystemPrompt,
+  builderFallbackSystemPrompt,
   draftSystemPrompt,
   hintSystemPrompt,
   studentModuleContext,
@@ -30,8 +32,10 @@ import type {
   AiModuleSuggestionsRequest,
   AiModuleSuggestionsResponse,
   AiModuleSuggestion,
+  ModuleBuilderDocument,
 } from "../../../shared/types.js";
 import { supabase } from "../supabase.js";
+import { reviewStudentMessage } from "../ai/review.js";
 import {
   unwrap,
   type ExerciseRow,
@@ -273,7 +277,13 @@ function builderSuggestion(
   sourceStatus: "draft" | "published",
 ): AiModuleSuggestion | null {
   try {
-    const value: unknown = JSON.parse(raw);
+    // JSON mode should make this unnecessary, but a few compatible providers still add a
+    // sentence or a Markdown fence. Recover the enclosing object before rejecting a useful draft.
+    const start = raw.indexOf("{");
+    const end = raw.lastIndexOf("}");
+    const value: unknown = JSON.parse(
+      start >= 0 && end > start ? raw.slice(start, end + 1) : raw,
+    );
     if (!value || typeof value !== "object") return null;
     const { label, reply, document } = value as Record<string, unknown>;
     if (
@@ -300,6 +310,51 @@ function builderSuggestion(
   } catch {
     return null;
   }
+}
+
+/**
+ * A malformed model response should not make the lesson planner feel randomly broken. Re-ask once
+ * with the rejected response and the same complete source document. Nothing is persisted here.
+ */
+async function builderSuggestionWithRepair(
+  document: ModuleBuilderDocument,
+  selectedItemId: string | null,
+  request: string,
+): Promise<AiModuleSuggestion | null> {
+  const system = builderSystemPrompt(document, selectedItemId);
+  const first = await complete({
+    system,
+    history: [],
+    message: request,
+    maxTokens: 6000,
+    json: true,
+  });
+  const suggestion = builderSuggestion(first, document.status);
+  if (suggestion) return suggestion;
+
+  const repaired = await complete({
+    system,
+    history: [],
+    message: `Your previous response could not be used by the module builder. Return a corrected JSON object now. If you can provide a complete valid builder document, do so. Otherwise set "document" to null and put a useful, clearly structured draft or plan in "reply". Do not explain the correction or wrap the JSON in Markdown.\n\nTeacher request:\n${request}\n\nPrevious response:\n${first.slice(0, 18_000)}`,
+    maxTokens: 6000,
+    json: true,
+  });
+  const repairedSuggestion = builderSuggestion(repaired, document.status);
+  if (repairedSuggestion) return repairedSuggestion;
+
+  // Strict document JSON is convenient for one-click application, but it must not make a
+  // perfectly reasonable teacher request look like an AI outage. Fall back to readable material.
+  const fallback = await complete({
+    system: builderFallbackSystemPrompt(document, selectedItemId),
+    history: [],
+    message: request,
+    maxTokens: 1300,
+  });
+  return {
+    id: "ai-builder",
+    label: "Lesson planning draft",
+    reply: fallback.trim().slice(0, 4000),
+  };
 }
 
 aiRouter.post("/hint", requireRole("student"), rateLimit, async (req, res) => {
@@ -360,7 +415,8 @@ aiRouter.post("/hint", requireRole("student"), rateLimit, async (req, res) => {
   const message = parts.join("\n\n");
 
   await reply(res, async () => {
-    const text = await complete({
+    const [text, review] = await Promise.all([
+      complete({
       system: hintSystemPrompt(context, {
         locate: hasCode,
         exerciseNote: note,
@@ -370,10 +426,41 @@ aiRouter.post("/hint", requireRole("student"), rateLimit, async (req, res) => {
       message,
       maxTokens: hasCode ? 500 : 400, // hints are short by design
       json: hasCode,
-    });
-    return hasCode
+      }),
+      reviewStudentMessage(question.trim()),
+    ]);
+    const answer = hasCode
       ? parseLocated(text, code!.split("\n").length)
       : { reply: text };
+    try {
+      const session = unwrap(await supabase.from("lesson_sessions").select("id").eq("classroom_id", req.user!.classroomId).is("ended_at", null).maybeSingle()) as { id: string } | null;
+      if (session) {
+        unwrap(await supabase.from("lesson_feedback_events").insert({
+          id: randomUUID(),
+          session_id: session.id,
+          classroom_id: req.user!.classroomId,
+          student_id: req.user!.userId,
+          module_id: moduleId,
+          event_type: "ai_hint",
+          payload: {
+            question: question.trim(),
+            reply: answer.reply,
+            flags: review.flags,
+            safetyFlags: review.flags.filter((flag) => flag !== "answer_seeking"),
+            misuse: review.flags.filter(
+              (flag) => flag === "answer_seeking" || flag === "abusive_language",
+            ),
+            reviewAvailable: review.reviewAvailable,
+            questionId: questionId ?? null,
+            exerciseId: exerciseId ?? null,
+          },
+        }));
+      }
+    } catch (err) {
+      // The tutor must keep working if an optional reporting write fails.
+      console.warn("[feedback] Could not save AI conversation:", err instanceof Error ? err.message : err);
+    }
+    return answer;
   });
 });
 
@@ -532,15 +619,20 @@ aiRouter.post(
         .json({ error: "A valid module document and a request are required" });
     if (!isAiConfigured()) return notConfigured(res);
     await reply(res, async () => {
-      const raw = await complete({
-        system: builderSystemPrompt(document, selectedItemId ?? null),
-        history: [],
-        message: request.trim(),
-        maxTokens: 4000,
-        json: true,
-      });
-      const suggestion = builderSuggestion(raw, document.status);
-      return { suggestions: suggestion ? [suggestion] : [] };
+      const suggestion = await builderSuggestionWithRepair(
+        document,
+        selectedItemId ?? null,
+        request.trim(),
+      );
+      return {
+        suggestions: suggestion ? [suggestion] : [],
+        ...(suggestion
+          ? {}
+          : {
+              warning:
+                "The assistant did not return a complete lesson document. Please try a more specific topic.",
+            }),
+      } satisfies AiModuleSuggestionsResponse;
     });
   },
 );

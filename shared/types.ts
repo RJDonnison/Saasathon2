@@ -78,6 +78,64 @@ export interface LessonSession {
   phase: LessonPhase;
   startedAt: string;
 }
+
+export type LessonFeedbackFlag =
+  | "answer_seeking"
+  | "harassment"
+  | "violence"
+  | "self_harm"
+  | "sexual"
+  | "abusive_language"
+  | "cyber_abuse";
+export type LessonFeedbackSafetyFlag = Exclude<LessonFeedbackFlag, "answer_seeking">;
+export interface LessonFeedbackStudentSummary {
+  studentId: string;
+  studentName: string;
+  progress: ProgressStatus;
+  finishedAt: string | null;
+  activeMinutes: number;
+  aiHintCount: number;
+  trackedActionCount: number;
+  aiUsePercent: number;
+  usedHelper: boolean;
+  followedPercent: number;
+  detachCount: number;
+  taskCount: number;
+  quizCount: number;
+  safetyFlags: LessonFeedbackSafetyFlag[];
+  flags: LessonFeedbackFlag[];
+  aiSummary: string;
+  greenFlag: string | null;
+  redFlag: string | null;
+}
+export interface LessonFeedbackReport {
+  session: LessonSession & { endedAt: string; durationMinutes: number };
+  classroomName: string;
+  studentCount: number;
+  helperUsePercent: number;
+  independentCount: number;
+  followedPercent: number;
+  averageFinishMinutes: number | null;
+  averageQuizMinutes: number | null;
+  completedCount: number;
+  aiSummary: string;
+  strengths: string[];
+  attentionSuggestions: Array<{ studentId: string; studentName: string; reason: string }>;
+  students: LessonFeedbackStudentSummary[];
+}
+export interface LessonFeedbackStudentDetail extends LessonFeedbackStudentSummary {
+  aiLogs: Array<{
+    askedAt: string;
+    question: string;
+    reply: string;
+    safetyFlags: LessonFeedbackSafetyFlag[];
+    flags: LessonFeedbackFlag[];
+    misuse: string | null;
+    reviewAvailable: boolean;
+  }>;
+  activityTimeline: Array<{ at: string; type: StudentActivityType; moduleTitle: string }>;
+  aiSuggestion: string;
+}
 /**
  * GET /api/classrooms/:id/session (any member) — the live lesson, or null.
  * POST (teacher) `{ moduleId, phase? }` starts one (409 if already live; phase defaults to teach).
@@ -219,6 +277,10 @@ export interface LessonSummary extends Omit<Module, "status"> {
   available: boolean;
   sections: Array<{ id: string; title: string }>;
   exercises: ExerciseSummary[];
+  /** All student-visible questions in this lesson, including non-code questions. */
+  questionCount: number;
+  /** Questions with saved work, an answer attempt, or a code submission from this student. */
+  startedQuestionCount: number;
 }
 /** GET /api/classrooms/:id/lessons (student) — every lesson in order, with the caller's progress. */
 export type ListLessonSummariesResponse = LessonSummary[];
@@ -441,7 +503,7 @@ export interface SaveModuleBuilderResponse {
 /**
  * A teacher-only builder suggestion. `document` is a complete, reviewable replacement for the
  * in-progress builder document, so it can add reading blocks and questions as well as edit text.
- * It is omitted when the assistant is only giving advice.
+ * It is omitted when the assistant is giving advice or can only provide a planning draft.
  */
 export interface AiModuleSuggestion {
   id: string;
@@ -458,6 +520,8 @@ export interface AiModuleSuggestionsRequest {
 }
 export interface AiModuleSuggestionsResponse {
   suggestions: AiModuleSuggestion[];
+  /** Present when the assistant could not produce a reviewable builder document. */
+  warning?: string;
 }
 /** PUT /api/modules/:id/availability (teacher) — whether students can open the lesson any time or only while it is live. */
 export interface UpdateModuleAvailabilityRequest {

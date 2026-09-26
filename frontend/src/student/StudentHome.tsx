@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useAuth } from "../auth/useAuth.ts";
+import { api } from "../api.ts";
 import { useClassroomPresence } from "../hooks/useClassroomPresence.ts";
 import { useLiveSession } from "../useLiveSession.ts";
 import ModuleView from "./ModuleView.tsx";
@@ -130,6 +131,16 @@ export default function StudentHome() {
     if (currentId && currentStatus === "not_started")
       setStatus(currentId, "in_progress");
   }, [currentId, currentStatus, setStatus]);
+
+  // Authenticated heartbeats let the lesson report estimate how long the learner followed the teacher.
+  useEffect(() => {
+    if (!session || !user) return;
+    const send = () =>
+      void api.recordLessonFollow(session.id, followingNow).catch(() => {});
+    send();
+    const interval = window.setInterval(send, 15_000);
+    return () => window.clearInterval(interval);
+  }, [session?.id, followingNow, user?.id]);
 
   // Keep the active lesson visible in the list (matters when it scrolls or wraps on phones).
   useEffect(() => {
@@ -465,7 +476,11 @@ export default function StudentHome() {
               {classroomLoading || sessionLoading ? (
                 <HelperSkeleton />
               ) : phase === "work" ? (
-                <AiChatPanel moduleId={current.id} />
+                <AiChatPanel
+                  key={`${session?.id ?? "self-paced"}:${current.id}`}
+                  moduleId={current.id}
+                  sessionId={session?.id ?? null}
+                />
               ) : (
                 <div className="flex flex-col gap-2 p-5">
                   <Heading>Helper paused</Heading>

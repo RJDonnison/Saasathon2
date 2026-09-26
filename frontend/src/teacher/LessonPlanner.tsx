@@ -14,20 +14,27 @@ export default function LessonPlanner() {
   const [level, setLevel] = useState("beginner");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [draftPreview, setDraftPreview] = useState<{ label: string; reply: string } | null>(null);
 
   async function draft(event: FormEvent) {
     event.preventDefault();
     if (!topic.trim()) return;
     setBusy(true);
     setError(null);
+    setDraftPreview(null);
     try {
-      const { suggestions } = await api.aiModuleSuggestions({
+      const { suggestions, warning } = await api.aiModuleSuggestions({
         document: createBlankModuleDocument(),
-        request: `Create a complete lesson on "${topic.trim()}" for ${level} students in a coding classroom. Include learning goals in the introduction, a short reading, a few practice exercises, and a quick check for understanding. Fill in the complete module document so the teacher can review and edit it.`,
+        request: `Create a complete ${level} coding lesson on "${topic.trim()}". Return a reviewable module-builder document, not an outline. Use 2-4 ordered sections, learning goals in the introduction, a concise explanatory Markdown block in every section, and at least 3 student questions. Include an MCQ and short-answer check; include one small code exercise with starter code and 2-4 automated tests when the topic can be practised in code. Keep the lesson practical and suitable for one class period.`,
       });
-      const document = suggestions[0]?.document;
+      const suggestion = suggestions[0];
+      const document = suggestion?.document;
       if (!document) {
-        setError("The assistant could not make a usable lesson draft. Please try again.");
+        if (suggestion) {
+          setDraftPreview({ label: suggestion.label, reply: suggestion.reply });
+        } else {
+          setError(warning ?? "The assistant could not make a usable lesson draft. Please try again.");
+        }
         return;
       }
       navigate("/teacher/modules/new", { state: { plannerDocument: document } });
@@ -56,6 +63,13 @@ export default function LessonPlanner() {
         <Button type="submit" variant="primary" disabled={busy || !topic.trim()} className="h-10">{busy ? "Creating…" : "Create lesson"}</Button>
       </form>
       {error && <p role="alert" className={`m-0 rounded-xl px-4 py-3 text-sm ${TINT.peach}`}>{error}</p>}
+      {draftPreview && (
+        <div className="flex flex-col gap-2 rounded-xl border border-border bg-surface-soft p-4">
+          <p className="m-0 font-medium text-ink">{draftPreview.label}</p>
+          <p className="m-0 whitespace-pre-wrap text-sm text-muted">{draftPreview.reply}</p>
+          <p className="m-0 text-xs text-muted">This is a planning draft, not a ready-to-save lesson. You can use it as a guide while building the lesson.</p>
+        </div>
+      )}
     </Card>
   );
 }
