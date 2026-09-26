@@ -21,8 +21,8 @@ export default function ClassTopBar({
 }: {
   backTo: string
   backLabel?: string
-  title: string
-  subtitle?: string
+  title: ReactNode
+  subtitle?: ReactNode
   badge?: ReactNode
   center?: ReactNode
   actions?: ReactNode
