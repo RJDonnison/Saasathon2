@@ -183,7 +183,7 @@ export interface TeacherStudentAggregate {
  * The user's name comes from their Google profile. Their User.id is their Supabase auth user id.
  */
 export interface JoinRequest {
-  roomCode: string;
+  roomCode?: string;
   role: Role;
 }
 export interface JoinResponse {

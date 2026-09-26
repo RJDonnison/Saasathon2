@@ -8,28 +8,28 @@ import { CARD, TINT } from '../ui/styles.ts'
 import { demoLessonLog } from './studentDemoData.ts'
 import type { Classroom, Module } from '../../../shared/types'
 
-export default function StudentClassPage() {
+export default function StudentClassPage({ demoPreview = false }: { demoPreview?: boolean }) {
   const { classroomId = '' } = useParams()
   const { user } = useAuth()
   const [classroom, setClassroom] = useState<Classroom | null>(null)
   const [modules, setModules] = useState<Module[]>([])
   useEffect(() => {
-    if (!user) return
+    if (!user || demoPreview) return
     let active = true
     void Promise.all([api.getClassroom(user.classroomId), api.listModules(user.classroomId)])
       .then(([room, list]) => { if (active) { setClassroom(room); setModules(list) } })
       .catch((error) => console.warn('Could not load class overview:', error))
     return () => { active = false }
-  }, [user])
+  }, [user, demoPreview])
 
   const title = classroom?.name ?? 'Digital Technologies'
-  const classPath = `/student/class/${classroomId || user?.classroomId || 'demo'}`
+  const classPath = demoPreview ? '/student-demo/class/classroom-demo' : `/student/class/${classroomId || user?.classroomId || 'demo'}`
   const currentModule = modules[0]
 
   return (
     <div className="mx-auto max-w-[1020px]">
       <header className="mb-6 flex items-center gap-4 border-b border-border pb-4">
-        <Link to="/student"><Button>‹ &nbsp; Home</Button></Link>
+        <Link to={demoPreview ? '/student-demo' : '/student'}><Button>‹ &nbsp; Home</Button></Link>
         <div className="min-w-0"><Heading>{title}</Heading><p className="mb-0! mt-1! text-xs! text-muted">Ms Patel, room D2</p></div>
       </header>
       <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1.7fr)_minmax(290px,.95fr)]">
@@ -62,7 +62,7 @@ export default function StudentClassPage() {
           <section className={`${CARD} p-5`}><Heading>Next lesson</Heading><h3 className="mb-1! mt-3! font-display! text-[16px]! font-semibold!">Thursday, Period 3</h3><p className="mb-0! text-xs! text-muted">Room D2</p><p className="mb-3! mt-3! text-[14px]!">Loops practice, pages 201 to 203</p><div className="rounded-xl bg-surface-soft p-3"><strong className="text-xs">From Ms Patel</strong><p className="mb-0! mt-1! text-[13px]!">Skip page 201 before class so we can start straight away.</p></div></section>
           <section className={`${CARD} p-5`}><Heading>Check yourself</Heading><p className="mb-3! mt-3! text-[14px]!">One question on Tuesday’s lesson. No helper, about 3 minutes.</p><details><summary className="inline-flex h-9 cursor-pointer list-none items-center rounded-[9px] border border-border bg-surface px-3 text-[13px] font-semibold hover:bg-surface-soft">Start check</summary><div className="mt-4 border-t border-border pt-3"><p className="text-[13px]">What number does <code className="rounded bg-surface-soft px-1">range(3)</code> start counting from?</p><div className="flex gap-2"><button className="rounded-lg border border-border px-3 py-2 text-xs hover:bg-surface-soft">1</button><button className="rounded-lg border border-border px-3 py-2 text-xs hover:bg-surface-soft">0</button><button className="rounded-lg border border-border px-3 py-2 text-xs hover:bg-surface-soft">3</button></div><p className="mb-0! mt-2! text-xs! text-muted">Try it in your own words, then check your notes.</p></div></details><p className="mb-0! mt-3! text-xs! text-muted">Last check, while loops: correct on your own.</p></section>
           <section className={`${CARD} p-5`}><Heading>Marks and submissions</Heading><p className="mb-0! mt-3! text-[13px]!">These stay in your school’s learning platform.</p></section>
-          <p className="mb-0! text-xs! text-muted">Lesson log and schedule details are demo records until class planning data is connected.</p>
+          <p className="mb-0! text-xs! text-muted">Demo preview: lesson log and schedule are sample records, and actions won’t notify a teacher.</p>
         </aside>
       </div>
     </div>

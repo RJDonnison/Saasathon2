@@ -38,16 +38,18 @@ first**; never fork or redeclare these types locally in frontend or backend.
   `supabase.auth.getUser(token)` (`backend/src/auth.ts`, briefly cached).
 - Two levels of access: `requireIdentity` = valid Google session (used by `/api/auth/join` and
   `/api/auth/me`); `requireMember` = identity that has also been assigned to a classroom (everything else).
-- Teachers bootstrap through `POST /api/auth/join`, which upserts their global `users` row and creates a teacher
-  membership. Students are assigned by school email from the teacher roster; `/api/auth/me` matches the Google
-  email, upserts the user row, and creates the student membership. The browser retries `/api/auth/me` while a
-  signed-in identity has no membership yet. Role and classroom come from the most recently joined membership.
+- Teachers and students sign in with Google and are routed to their role's home. On first sign-in, teachers get a
+  private classroom with a generated join code; students without a roster assignment enter the seeded starter
+  classroom. Teachers can add students by school email, and `/api/auth/me` moves matching students into that
+  teacher's classroom. `POST /api/auth/join` also accepts an explicit classroom code when switching classrooms.
+  The browser retries `/api/auth/me` while a signed-in identity has no membership yet. Role and classroom come from
+  the most recently joined membership.
 - Sign-out is `supabase.auth.signOut()`.
 
 ## Current stub status
 
 REAL (backed by Supabase / real socket broadcasts):
-- `POST /api/auth/join`, `GET /api/auth/me` (Supabase Auth + Google)
+- `POST /api/auth/join` (Google identity + selected role; optional classroom code), `GET /api/auth/me` (Supabase Auth + Google)
 - Classroom, module (create/read/update/delete, teacher-only writes), progress and comment endpoints
 - AI (OpenAI): `POST /api/ai/hint` (student "I'm stuck" tutor) and `POST /api/ai/draft` (teacher module
   drafting/planning) — see "AI service" below. Needs `OPENAI_API_KEY`; without it they return 503.

@@ -8,12 +8,12 @@ import type { Role } from '../../../shared/types'
  * No user -> "/". Wrong role -> that user's own base route (e.g. a student hitting /teacher -> /student).
  */
 export default function ProtectedRoute({ role, children }: { role: Role; children: ReactNode }) {
-  const { user, loading } = useAuth()
-  if (loading) {
+  const { session, user, loading, joiningClassroom } = useAuth()
+  if (loading || (session && joiningClassroom)) {
     // Mirrors the landing page's loading screen (same tokens, built from utilities).
     return (
       <main className="grid min-h-screen place-content-center justify-items-center gap-4 bg-canvas font-mono text-xs text-ink">
-        <span className="grid size-[46px] place-items-center rounded-xl bg-accent text-base text-ink">{`{ }`}</span>
+        <img src="/favicon.svg" alt="" className="size-[46px] rounded-xl" />
         Getting your workspace ready…
       </main>
     )

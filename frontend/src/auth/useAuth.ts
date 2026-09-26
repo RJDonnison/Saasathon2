@@ -9,6 +9,8 @@ export interface AuthState {
   user: User | null
   /** true until the session and (if signed in) the classroom profile have been resolved */
   loading: boolean
+  /** true while a new classroom membership is being saved after sign-in */
+  joiningClassroom: boolean
   signInWithGoogle: () => Promise<void>
   joinClassroom: (req: JoinRequest) => Promise<User>
   signOut: () => Promise<void>

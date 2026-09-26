@@ -8,23 +8,23 @@ import { CARD, TINT } from '../ui/styles.ts'
 import { demoCourses, demoDueItems, demoNotices, demoTimetable, demoWeek } from './studentDemoData.ts'
 import type { Classroom, Module } from '../../../shared/types'
 
-export default function StudentDashboard() {
+export default function StudentDashboard({ demoPreview = false }: { demoPreview?: boolean }) {
   const { user } = useAuth()
   const [classroom, setClassroom] = useState<Classroom | null>(null)
   const [modules, setModules] = useState<Module[]>([])
   const [showWeek, setShowWeek] = useState(false)
   const [showAllDue, setShowAllDue] = useState(false)
   useEffect(() => {
-    if (!user) return
+    if (!user || demoPreview) return
     let active = true
     void Promise.all([api.getClassroom(user.classroomId), api.listModules(user.classroomId)])
       .then(([room, lessonList]) => { if (active) { setClassroom(room); setModules(lessonList) } })
       .catch((error) => console.warn('Could not load current classroom:', error))
     return () => { active = false }
-  }, [user])
+  }, [user, demoPreview])
 
-  const firstName = user?.name.trim().split(/\s+/)[0] || 'there'
-  const classPath = `/student/class/${user?.classroomId ?? 'demo'}`
+  const firstName = demoPreview ? 'Sam' : user?.name.trim().split(/\s+/)[0] || 'there'
+  const classPath = demoPreview ? '/student-demo/class/classroom-demo' : `/student/class/${user?.classroomId ?? 'demo'}`
   const liveTitle = classroom?.name ?? 'Digital Technologies'
   const courses = demoCourses.map((course, index) => index === 0 && classroom ? { ...course, name: classroom.name } : course)
 
@@ -83,7 +83,7 @@ export default function StudentDashboard() {
             <span className="hidden text-[13px] sm:block">{index === 0 && modules.length ? `${modules[0].title} (today)` : course.last}</span><span className="hidden text-[13px] sm:block">{course.next}</span><span className="hidden text-[13px] font-semibold sm:block">{course.due}</span><span className="text-xl sm:hidden">›</span>
           </Link>)}
         </div>
-        <p className="mb-0! mt-3! text-xs! text-muted">School timetable and due work shown as demo data. Your teacher manages your classroom access.</p>
+        <p className="mb-0! mt-3! text-xs! text-muted">{demoPreview ? 'Demo preview: sample timetable, assignments and class activity.' : 'School timetable and due work shown as demo data. Your teacher manages your classroom access.'}</p>
       </section>
     </div>
   )

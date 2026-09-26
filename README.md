@@ -95,7 +95,8 @@ membership for subsequent requests.
 
 ### Auth and classroom reads
 
-- `POST /api/auth/join` — `{ roomCode, role }`; creates or updates the caller's classroom membership.
+- `POST /api/auth/join` — `{ roomCode?, role }`; without a code, first-time teachers get a private classroom and
+  first-time students join the starter classroom. An explicit code switches the caller to that classroom.
 - `GET /api/auth/me`
 - `POST /api/classrooms` (teacher) — `{ name, roomCode }`; adds the caller as its teacher.
 - `GET /api/classrooms/:id`, `GET /api/classrooms/:id/modules` (members)

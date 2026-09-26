@@ -1,105 +1,110 @@
-import { useState, type FormEvent } from 'react'
-import { Navigate, useNavigate } from 'react-router-dom'
-import { useAuth } from '../auth/useAuth.ts'
+import { useEffect, useState } from 'react'
+import { Navigate } from 'react-router-dom'
 import type { Role } from '../../../shared/types'
+import { useAuth } from '../auth/useAuth.ts'
+import Button from '../ui/Button.tsx'
+import Heading from '../ui/Heading.tsx'
+import { CARD } from '../ui/styles.ts'
 
-function Arrow() {
-  return <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4 10h12m-5-5 5 5-5 5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" /></svg>
+const LOGIN_ROLE_KEY = 'loop-login-role'
+
+function savedRole(): Role {
+  return window.sessionStorage.getItem(LOGIN_ROLE_KEY) === 'teacher' ? 'teacher' : 'student'
+}
+
+function Brand() {
+  return (
+    <a href="/" aria-label="Loop home" className="flex items-center gap-2.5 font-display! text-xl! font-bold! tracking-[-0.06em]! text-ink">
+      <img src="/favicon.svg" alt="" className="size-9" />
+      <span>loop<span className="text-accent">.</span></span>
+    </a>
+  )
+}
+
+function RoleMark({ role }: { role: Role }) {
+  return (
+    <span className={`grid size-12 place-items-center rounded-2xl ${role === 'student' ? 'bg-mint text-mint-ink' : 'bg-lavender text-lavender-ink'}`} aria-hidden="true">
+      {role === 'student' ? (
+        <svg viewBox="0 0 24 24" fill="none" className="size-6"><path d="M12 3.5 14 9l5.5 2-5.5 2-2 5.5-2-5.5-5.5-2 5.5-2 2-5.5Z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round"/><path d="m18.5 15 .9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9.9-2.1Z" fill="currentColor"/></svg>
+      ) : (
+        <svg viewBox="0 0 24 24" fill="none" className="size-6"><path d="M4 5.5h6.2c1 0 1.8.8 1.8 1.8v12c0-.9-.8-1.6-1.8-1.6H4v-12.2Zm16 0h-6.2c-1 0-1.8.8-1.8 1.8v12c0-.9.8-1.6 1.8-1.6H20V5.5Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/></svg>
+      )}
+    </span>
+  )
 }
 
 export default function JoinPage() {
   const { session, user, loading, signInWithGoogle, joinClassroom, signOut } = useAuth()
-  const navigate = useNavigate()
-  const [roomCode, setRoomCode] = useState('')
-  const [role, setRole] = useState<Role>('student')
+  const [role, setRole] = useState<Role>(savedRole)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [attempt, setAttempt] = useState(0)
 
-  if (loading) return <main className="landing-loading"><img className="loading-mark" src="/favicon.svg" alt="" /> Getting your workspace ready…</main>
+  useEffect(() => {
+    if (!session || user || loading) return
+    let active = true
+    setBusy(true)
+    setError(null)
+    void joinClassroom({ role })
+      .catch((err) => {
+        if (active) setError(err instanceof Error ? err.message : 'Could not open your classroom')
+      })
+      .finally(() => {
+        if (active) setBusy(false)
+      })
+    return () => { active = false }
+  }, [session, user, loading, role, joinClassroom, attempt])
+
+  if (loading) return <main className="grid min-h-svh place-content-center justify-items-center gap-3 bg-canvas font-mono text-xs text-muted"><img className="size-9" src="/favicon.svg" alt="" />Loading your classroom…</main>
   if (user) return <Navigate to={`/${user.role}`} replace />
 
   async function onGoogle() {
-    setError(null); setBusy(true)
+    setError(null)
+    setBusy(true)
+    window.sessionStorage.setItem(LOGIN_ROLE_KEY, role)
     try { await signInWithGoogle() }
-    catch (err) { setError(err instanceof Error ? err.message : 'Could not start Google sign-in'); setBusy(false) }
-  }
-  async function onJoin(e: FormEvent) {
-    e.preventDefault(); setError(null); setBusy(true)
-    try { const joined = await joinClassroom({ roomCode, role }); navigate(`/${joined.role}`, { replace: true }) }
-    catch (err) { setError(err instanceof Error ? err.message : 'Something went wrong'); setBusy(false) }
+    catch (err) { setError(err instanceof Error ? err.message : 'Could not start sign-in'); setBusy(false) }
   }
 
+  const title = role === 'student' ? 'Student sign in' : 'Teacher sign in'
   return (
-    <main className="landing-shell">
-      <div className="landing-grain" aria-hidden="true" />
-      <nav className="landing-nav">
-        <a className="brand" href="/" aria-label="Loop home"><img className="brand-icon" src="/favicon.svg" alt="" /><span>loop<span className="brand-dot">.</span></span></a>
-        <a className="nav-cta" href="#get-started">Get started <Arrow /></a>
-      </nav>
+    <main className="flex min-h-svh flex-col bg-gradient-to-br from-mint/40 via-canvas to-lavender/40 px-5 text-ink">
+      <header className="mx-auto flex h-16 w-full max-w-[400px] shrink-0 items-center"><Brand /></header>
 
-      <section className="hero">
-        <div className="hero-copy">
-          <div className="eyebrow"><span>The classroom, rewired</span></div>
-          <h1>Big ideas<br />start with <span className="headline-highlight">a line.</span></h1>
-          <p className="hero-description">A creative coding classroom where students make, explore, and learn together.</p>
-          <div className="hero-actions">
-            <a className="button-primary" href="#get-started">Bring your class in <Arrow /></a>
-            <span className="action-caption">For students and teachers</span>
+      <div className="flex flex-1 items-center justify-center py-5">
+        <section className={`${CARD} w-full max-w-[400px] overflow-hidden rounded-[24px]!`} aria-label={title}>
+          <div className="h-1.5 bg-gradient-to-r from-accent via-mint to-lavender" />
+          <div className="p-5 sm:p-7">
+            <div className="mb-6 grid grid-cols-2 rounded-xl bg-surface-soft p-1" aria-label="Choose account type">
+              <button type="button" onClick={() => { setRole('student'); window.sessionStorage.setItem(LOGIN_ROLE_KEY, 'student'); setError(null) }} aria-pressed={role === 'student'} className={`h-9 rounded-lg text-[13px]! font-semibold! transition focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent ${role === 'student' ? 'bg-surface text-ink shadow-sm' : 'text-muted hover:text-ink'}`}>Student</button>
+              <button type="button" onClick={() => { setRole('teacher'); window.sessionStorage.setItem(LOGIN_ROLE_KEY, 'teacher'); setError(null) }} aria-pressed={role === 'teacher'} className={`h-9 rounded-lg text-[13px]! font-semibold! transition focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent ${role === 'teacher' ? 'bg-surface text-ink shadow-sm' : 'text-muted hover:text-ink'}`}>Teacher</button>
+            </div>
+
+            <div className="flex flex-col items-center text-center">
+              <RoleMark role={role} />
+              <Heading as="h1" variant="name" className="mt-4!">{session ? (role === 'student' ? 'Opening your class' : 'Setting up your classroom') : title}</Heading>
+              <p className="pt-2 text-sm leading-6 text-muted">{session
+                ? role === 'student' ? 'Getting your student home ready.' : 'Getting your teacher home ready.'
+                : role === 'student' ? 'Pick up where your class left off.' : 'Your classroom is just a sign-in away.'}</p>
+            </div>
+
+            {!session ? <div className="mt-6 grid gap-3">
+              {error && <p role="alert" className="rounded-xl border border-peach bg-peach px-3 py-2 text-sm text-peach-ink">{error}</p>}
+              <Button onClick={onGoogle} disabled={busy} variant="default" size="lg" className="w-full justify-center rounded-xl! shadow-sm">
+                <span className="font-bold! text-muted">G</span>{busy ? 'Opening Google…' : 'Continue with Google'}
+              </Button>
+              {role === 'student' && <p className="pt-1 text-center text-xs leading-5 text-muted">Use your school Google account.</p>}
+            </div> : <div className="mt-6 grid gap-3">
+              {busy && <div role="status" className="flex items-center justify-center gap-2 py-2 text-sm text-muted"><span className="size-4 animate-spin rounded-full border-2 border-border border-t-accent" />{role === 'student' ? 'Opening your class…' : 'Creating your classroom…'}</div>}
+              {error && <p role="alert" className="m-0! rounded-xl border border-peach bg-peach px-3 py-2 text-sm text-peach-ink">{error}</p>}
+              {error && <Button onClick={() => setAttempt((value) => value + 1)} variant="primary" size="lg" className="w-full">Try again</Button>}
+              <Button onClick={() => void signOut()} variant="default" size="sm" className="w-full">Sign out</Button>
+            </div>}
           </div>
-          <div className="hero-social-proof"><div className="avatar-stack"><span>J</span><span>M</span><span>A</span><span>+</span></div><p><strong>Made for the “what if?”</strong><br />moment in every student.</p></div>
-        </div>
+        </section>
+      </div>
 
-        <div className="hero-arrow" aria-hidden="true"><svg viewBox="0 0 120 54" fill="none"><path d="M5 27h96M79 5l22 22-22 22" stroke="currentColor" strokeWidth="7" strokeLinecap="round" strokeLinejoin="round"/></svg></div>
-        <div className="hero-art" aria-label="A preview of students learning to code together">
-          <div className="art-orbit orbit-one"/><div className="art-orbit orbit-two"/>
-          <div className="spark spark-one">✳</div><div className="spark spark-two">✦</div>
-          <div className="code-window">
-            <div className="window-top"><div className="window-lights"><i/><i/><i/></div><span>first_project.js</span><span className="window-live"><i/> JAVASCRIPT</span></div>
-            <div className="code-body"><div className="line-numbers">01<br/>02<br/>03<br/>04<br/>05<br/>06</div><div className="code-lines"><div><span className="code-purple">const</span> <span className="code-yellow">makeItReal</span> = () =&gt; {'{'}</div><div className="indent"><span className="code-purple">const</span> idea = <span className="code-green">"anything"</span>;</div><div className="indent"><span className="code-purple">return</span> <span className="code-blue">idea</span>.<span className="code-pink">create</span>();</div><div>{'};'}</div><div className="code-gap"/><div><span className="code-yellow">makeItReal</span>(); <span className="cursor"/> <span className="code-comment">// ready to explore</span></div></div></div>
-            <div className="window-footer"><span><i className="success-dot"/> Ready to run</span><span>JavaScript <b>⌄</b></span></div>
-          </div>
-          <div className="float-card student-float"><span className="float-avatar avatar-coral">M</span><span><b>Maya just made</b><small>a tiny universe ✨</small></span><span className="float-heart">♥</span></div>
-          <div className="float-card teacher-float"><span className="teacher-check">✓</span><span><b>Room 3 is buzzing</b><small>12 minds at work</small></span><span className="pulse-bars"><i/><i/><i/><i/><i/></span></div>
-        </div>
-      </section>
-
-      <section className="feature-strip" aria-label="Classroom features">
-        <div className="feature-item"><span className="feature-icon mint-icon">⌘</span><span><b>Make, don’t memorize</b><small>Hands-on coding from day one</small></span></div>
-        <div className="feature-item"><span className="feature-icon peach-icon">↗</span><span><b>See every breakthrough</b><small>Teachers stay in the loop</small></span></div>
-        <div className="feature-item"><span className="feature-icon lavender-icon">✳</span><span><b>Find their own way</b><small>Room to explore and experiment</small></span></div>
-        <div className="strip-aside">GOOD THINGS HAPPEN<br/>WHEN WE MAKE THINGS.</div>
-      </section>
-
-      <section className="join-section" id="get-started">
-        <div className="join-copy"><span className="section-kicker">GET STARTED</span><h2>Make room<br/>to <em>create.</em></h2><p>Sign in and join your classroom.</p></div>
-        <div className="join-card">
-          {!session ? <>
-            <span className="card-step">01 <i/> YOUR WORKSPACE</span>
-            <h3>Come on in.</h3><p className="card-description">Sign in with Google to join your classroom and get creating.</p>
-            {error && <p className="form-error">{error}</p>}
-            <button onClick={onGoogle} disabled={busy} className="google-button"><svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 24.5c0-1.4-.1-2.8-.4-4.1H24v7.8h11a9.4 9.4 0 0 1-4.1 6.2v5.1h6.7c3.9-3.6 6-8.8 6-15Z"/><path fill="#34A853" d="M24 44c5.5 0 10.1-1.8 13.5-4.8l-6.7-5.1c-1.8 1.2-4.1 2-6.8 2-5.2 0-9.6-3.5-11.2-8.2H5.9v5.3A20 20 0 0 0 24 44Z"/><path fill="#4A90E2" d="M12.8 27.9a12 12 0 0 1 0-7.8v-5.3H5.9a20 20 0 0 0 0 18.4l6.9-5.3Z"/><path fill="#EA4335" d="M24 11.9c3 0 5.6 1 7.7 3l5.8-5.8C34 5.7 29.5 4 24 4A20 20 0 0 0 5.9 14.8l6.9 5.3c1.6-4.7 6-8.2 11.2-8.2Z"/></svg>{busy ? 'Opening Google…' : 'Continue with Google'}<Arrow /></button>
-            <p className="card-footnote">Students are added by their teacher using a school email address.</p>
-          </> : <>
-            <span className="card-step">02 <i/> YOUR CLASSROOM</span>
-            <p className="card-description">Signed in as <strong>{(session.user.user_metadata?.full_name as string | undefined) ?? session.user.email}</strong>.</p>
-            {role === 'student' ? <>
-              <h3>Your teacher will add you.</h3>
-              <p className="card-description">Ask your teacher to add this school email to their class roster. You’ll get access automatically.</p>
-              <div className="mt-5 flex flex-col items-start gap-3">
-                <button type="button" onClick={() => setRole('teacher')} className="signout-link">Are you a teacher? Set up a classroom</button>
-                <button type="button" onClick={() => void signOut()} className="signout-link">Sign out</button>
-              </div>
-            </> : <>
-              <h3>Teacher access</h3>
-              <form onSubmit={onJoin} className="join-form"><label>CLASSROOM CODE<input value={roomCode} onChange={(e) => setRoomCode(e.target.value)} placeholder="Enter your classroom code" required /></label>{error && <p className="form-error">{error}</p>}<button type="submit" disabled={busy} className="button-primary join-submit">{busy ? 'Joining…' : 'Enter the classroom'}<Arrow /></button></form>
-              <button type="button" onClick={() => setRole('student')} className="signout-link">I’m a student</button>
-              <button type="button" onClick={() => void signOut()} className="signout-link">Sign out</button>
-            </>}
-          </>}
-          <div className="card-bottom"><span><i/> PRIVATE CLASSROOMS</span><span>MADE FOR LEARNING&nbsp; ✳</span></div>
-        </div>
-      </section>
-      <footer className="landing-footer"><a className="brand footer-brand" href="#top"><img className="brand-icon" src="/favicon.svg" alt="" /><span>loop<span className="brand-dot">.</span></span></a><span>Make room for big ideas.</span><span>© 2026 LOOP CLASSROOM</span></footer>
+      <footer className="mx-auto flex h-12 w-full max-w-[400px] shrink-0 items-center justify-between border-t border-ink/10 text-[11px] text-muted"><span>Loop Classroom</span><span>Learn by making <span className="text-accent">✦</span></span></footer>
     </main>
   )
 }

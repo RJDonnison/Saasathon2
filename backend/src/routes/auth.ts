@@ -18,35 +18,66 @@ import type {
 // Both routes need a valid Supabase session but NOT a classroom (that is what /join creates).
 export const authRouter = Router();
 
-/** POST /api/auth/join — teacher bootstrap into a classroom. Students enter via the teacher email roster. */
+/** POST /api/auth/join — resolve a signed-in user's membership, creating a role-appropriate default when needed. */
 authRouter.post("/join", requireIdentity, async (req, res) => {
   const { roomCode, role } = (req.body ?? {}) as Partial<JoinRequest>;
   const cleanCode =
     typeof roomCode === "string" ? roomCode.trim().toUpperCase() : "";
-  if (role !== "teacher") {
-    res.status(403).json({ error: "Students are assigned by their teacher using their school email" });
+  if (role !== "teacher" && role !== "student") {
+    res.status(400).json({ error: "A valid classroom role is required" });
     return;
   }
-  if (!cleanCode) {
-    res
-      .status(400)
-      .json({ error: "A classroom code is required for teacher setup" });
-    return;
-  }
-
-  const classroom = unwrap(
-    await supabase
-      .from("classrooms")
-      .select("*")
-      .eq("room_code", cleanCode)
-      .maybeSingle(),
-  ) as ClassroomRow | null;
-  if (!classroom) {
-    res.status(404).json({ error: "Unknown room code" });
-    return;
-  }
-
   const { authId, name } = req.identity!;
+  let classroom: ClassroomRow | null;
+  if (cleanCode) {
+    classroom = unwrap(
+      await supabase
+        .from("classrooms")
+        .select("*")
+        .eq("room_code", cleanCode)
+        .maybeSingle(),
+    ) as ClassroomRow | null;
+    if (!classroom) {
+      res.status(404).json({ error: "Unknown room code" });
+      return;
+    }
+  } else if (role === "student") {
+    // A new student gets the seeded starter classroom immediately. Teacher roster assignments
+    // can move them into their actual class the next time /me runs.
+    classroom = unwrap(
+      await supabase
+        .from("classrooms")
+        .select("*")
+        .eq("id", "classroom-demo")
+        .maybeSingle(),
+    ) as ClassroomRow | null;
+    if (!classroom) {
+      res.status(503).json({ error: "The starter classroom is unavailable" });
+      return;
+    }
+  } else {
+    // Give each new teacher a private classroom so sign-in can finish without a shared code.
+    const classroomId = `classroom-${authId}`;
+    const prior = unwrap(
+      await supabase
+        .from("classrooms")
+        .select("*")
+        .eq("id", classroomId)
+        .maybeSingle(),
+    ) as ClassroomRow | null;
+    classroom = prior ?? (unwrap(
+      await supabase
+        .from("classrooms")
+        .upsert({
+          id: classroomId,
+          name: `${name}'s Classroom`,
+          room_code: `LOOP${randomUUID().replaceAll("-", "").slice(0, 8).toUpperCase()}`,
+        }, { onConflict: "id" })
+        .select("*")
+        .single(),
+    ) as ClassroomRow);
+  }
+
   const row = unwrap(
     await supabase
       .from("users")

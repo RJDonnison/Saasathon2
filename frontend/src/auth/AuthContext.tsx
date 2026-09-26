@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -15,11 +16,13 @@ import type { JoinRequest, User } from "../../../shared/types";
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [sessionReady, setSessionReady] = useState(false);
+  const [joiningClassroom, setJoiningClassroom] = useState(false);
   // The classroom profile, tagged with the Supabase user it belongs to (null user = not joined yet).
   const [profile, setProfile] = useState<{
     authId: string;
     user: User | null;
   } | null>(null);
+  const profileRevision = useRef(0);
 
   // Track the Supabase session. getSession() also finishes the OAuth redirect (tokens in the URL).
   // Keep the callback synchronous: calling other supabase methods inside it can deadlock.
@@ -46,16 +49,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!sessionReady || !authId) return;
     let cancelled = false;
     let assigned = false;
+    profileRevision.current += 1;
     const loadProfile = () => {
+      const requestRevision = profileRevision.current;
       void api
         .me()
         .then(({ user }) => {
-          if (cancelled) return;
-          assigned = user !== null;
+          if (cancelled || requestRevision !== profileRevision.current) return;
+          // Students start in the shared demo classroom until a teacher roster matches their email.
+          // Keep checking for that assignment so the active membership can move to the real class.
+          assigned = user !== null && !(user.role === "student" && user.classroomId === "classroom-demo");
           setProfile({ authId, user });
         })
         .catch((err) => {
           console.warn("[auth] could not load profile:", err);
+          if (cancelled || requestRevision !== profileRevision.current) return;
           // The backend rejected the session outright (e.g. the account was removed): drop it locally.
           if (err instanceof ApiClientError && err.status === 401)
             void supabase.auth.signOut({ scope: "local" });
@@ -96,9 +104,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const joinClassroom = useCallback(
     async (req: JoinRequest) => {
-      const { user } = await api.join(req);
-      if (authId) setProfile({ authId, user });
-      return user;
+      setJoiningClassroom(true);
+      try {
+        const { user } = await api.join(req);
+        if (authId) {
+          profileRevision.current += 1;
+          setProfile({ authId, user });
+        }
+        return user;
+      } finally {
+        setJoiningClassroom(false);
+      }
     },
     [authId],
   );
@@ -112,11 +128,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       session,
       user,
       loading,
+      joiningClassroom,
       signInWithGoogle,
       joinClassroom,
       signOut,
     }),
-    [session, user, loading, signInWithGoogle, joinClassroom, signOut],
+    [session, user, loading, joiningClassroom, signInWithGoogle, joinClassroom, signOut],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
