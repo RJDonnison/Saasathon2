@@ -57,7 +57,7 @@ class LazyRouteErrorBoundary extends Component<
       return (
         <main className="flex min-h-dvh items-center justify-center bg-canvas p-6">
           <div className="flex max-w-sm flex-col items-center gap-3 text-center">
-            <p className="m-0 text-sm text-muted" role="alert">
+            <p className="m-0 text-sm text-peach-ink" role="alert">
               This screen could not load.
             </p>
             <button

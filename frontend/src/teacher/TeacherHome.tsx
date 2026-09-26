@@ -414,7 +414,6 @@ export default function TeacherHome() {
           <div className="order-5 min-w-0">
             <Card
               title="Lessons"
-              eyebrow="Your modules"
               icon={<BookIcon className="size-[18px]" />}
               tint="mint"
               bodyClassName="flex flex-col divide-y divide-border"
@@ -492,7 +491,6 @@ export default function TeacherHome() {
           <div className="order-6 min-w-0">
             <Card
               title="Invite students"
-              eyebrow="Class invitations"
               icon={<UsersIcon className="size-[18px]" />}
               tint="lavender"
               bodyClassName="flex flex-col gap-4 p-5"
