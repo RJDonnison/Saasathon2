@@ -14,6 +14,7 @@ import { progressRouter } from "./routes/progress.js";
 import { codeRouter } from "./routes/code.js";
 import { aiRouter } from "./routes/ai.js";
 import { mathRouter } from "./routes/math.js";
+import { activityRouter } from "./routes/activity.js";
 import { attachSockets } from "./sockets.js";
 
 const app = express();
@@ -42,6 +43,7 @@ app.use("/api", progressRouter);
 app.use("/api/code", codeRouter);
 app.use("/api/ai", aiRouter);
 app.use("/api/math", mathRouter);
+app.use("/api/activity", activityRouter);
 
 app.use("/api", (_req, res) => {
   res.status(404).json({ error: "Not found" });

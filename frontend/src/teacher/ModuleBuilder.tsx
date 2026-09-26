@@ -1,5 +1,10 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import {
+  Link,
+  useNavigate,
+  useParams,
+  useSearchParams,
+} from "react-router-dom";
 import { api, ApiClientError } from "../api.ts";
 import Button from "../ui/Button.tsx";
 import Card from "../ui/Card.tsx";
@@ -165,6 +170,7 @@ function withFreshIds(document: ModuleBuilderDocument): ModuleBuilderDocument {
 export default function ModuleBuilder() {
   const { id: moduleId } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [document, setDocument] = useState<ModuleBuilderDocument>(blank);
   const [revision, setRevision] = useState(0);
   const [loading, setLoading] = useState(Boolean(moduleId));
@@ -185,6 +191,8 @@ export default function ModuleBuilder() {
         const teacher = module as TeacherModule;
         setDocument(documentFrom(teacher));
         setRevision(teacher.revision);
+        const questionId = searchParams.get("questionId");
+        if (questionId) setSelected(questionId);
       })
       .catch((error) =>
         setNotice(
@@ -192,7 +200,15 @@ export default function ModuleBuilder() {
         ),
       )
       .finally(() => setLoading(false));
-  }, [moduleId]);
+  }, [moduleId, searchParams]);
+
+  useEffect(() => {
+    if (!selected) return;
+    window.document.getElementById(`lesson-item-${selected}`)?.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+    });
+  }, [selected]);
 
   useEffect(() => {
     if (!moduleId) return;
@@ -736,6 +752,7 @@ function ItemEditor({
   const itemName = item.type === "block" ? "Reading" : questionLabel[item.kind];
   return (
     <article
+      id={`lesson-item-${item.id}`}
       className={`flex flex-col gap-4 rounded-xl border p-4 transition ${selected ? "border-accent bg-surface-soft" : "border-border bg-surface"}`}
       onFocus={onSelect}
       onClick={onSelect}

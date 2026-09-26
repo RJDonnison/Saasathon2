@@ -13,11 +13,14 @@ import type {
   Module,
   ModuleProgress,
   Question,
+  QuestionComment,
   QuestionOption,
   Section,
   SectionItem,
   SectionBlock,
   SectionProgress,
+  StudentActivity,
+  StudentWork,
   User,
 } from "../../shared/types.js";
 
@@ -142,6 +145,14 @@ export type CommentRow = {
   line_end: number | null;
   created_at: string;
 };
+export type QuestionCommentRow = {
+  id: string;
+  question_id: string;
+  student_id: string;
+  author_id: string;
+  text: string;
+  created_at: string;
+};
 export type AttemptRow = {
   id: string;
   student_id: string;
@@ -158,6 +169,24 @@ export type CodeSubmissionRow = {
   stdout: string;
   stderr: string;
   passed: boolean | null;
+  created_at: string;
+};
+export type StudentWorkRow = {
+  id: string;
+  student_id: string;
+  question_id: string;
+  answer: string | null;
+  code: string | null;
+  updated_at: string;
+};
+export type StudentActivityRow = {
+  id: string;
+  student_id: string;
+  classroom_id: string;
+  module_id: string;
+  section_id: string | null;
+  question_id: string | null;
+  type: StudentActivity["type"];
   created_at: string;
 };
 
@@ -293,6 +322,14 @@ export const toComment = (r: CommentRow): Comment => ({
   lineEnd: r.line_end,
   createdAt: iso(r.created_at),
 });
+export const toQuestionComment = (r: QuestionCommentRow): QuestionComment => ({
+  id: r.id,
+  questionId: r.question_id,
+  studentId: r.student_id,
+  authorId: r.author_id,
+  text: r.text,
+  createdAt: iso(r.created_at),
+});
 export const toAttempt = (r: AttemptRow): Attempt => ({
   id: r.id,
   studentId: r.student_id,
@@ -309,6 +346,24 @@ export const toSubmission = (r: CodeSubmissionRow): CodeSubmission => ({
   stdout: r.stdout,
   stderr: r.stderr,
   passed: r.passed,
+  createdAt: iso(r.created_at),
+});
+export const toStudentWork = (r: StudentWorkRow): StudentWork => ({
+  id: r.id,
+  studentId: r.student_id,
+  questionId: r.question_id,
+  answer: r.answer,
+  code: r.code,
+  updatedAt: iso(r.updated_at),
+});
+export const toStudentActivity = (r: StudentActivityRow): StudentActivity => ({
+  id: r.id,
+  studentId: r.student_id,
+  classroomId: r.classroom_id,
+  moduleId: r.module_id,
+  sectionId: r.section_id,
+  questionId: r.question_id,
+  type: r.type,
   createdAt: iso(r.created_at),
 });
 export function unwrap<T>(res: { data: T; error: PostgrestError | null }): T {

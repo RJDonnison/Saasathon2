@@ -8,6 +8,7 @@ import InlineText from "../ui/InlineText.tsx";
 import { PlayIcon, SparklesIcon, XIcon } from "../ui/icons.tsx";
 import { CARD } from "../ui/styles.ts";
 import { useWorkspace, type EditorInfo } from "./useWorkspace.ts";
+import { useStudentActivity } from "./useStudentActivity.ts";
 
 const EXTENSION: Record<string, string> = {
   javascript: "js",
@@ -26,6 +27,8 @@ export default function CodeEditor({
   initialCode,
   prompt,
   instructions,
+  moduleId,
+  sectionId,
 }: {
   editor: EditorInfo;
   /** Shown in the window title bar, without extension. */
@@ -35,16 +38,21 @@ export default function CodeEditor({
   /** The task, and any extra detail, shown above the editor. */
   prompt?: string;
   instructions?: string;
+  /** Present for a lesson exercise; omitted by the free playground. */
+  moduleId?: string;
+  sectionId?: string;
 }) {
   const {
     codes,
     setCode,
     setRunError,
     setActive,
+    active,
     highlight,
     clearHighlight,
     requestHelp,
   } = useWorkspace();
+  const { record, saveWork } = useStudentActivity();
   const [output, setOutput] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   const [tested, setTested] = useState(false);
@@ -53,13 +61,50 @@ export default function CodeEditor({
   );
   const [running, setRunning] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [edited, setEdited] = useState(false);
+  const [reportedWriting, setReportedWriting] = useState(false);
   const monacoEditor = useRef<Parameters<OnMount>[0] | null>(null);
+  const latestCode = useRef("");
   const decorations = useRef<ReturnType<
     Parameters<OnMount>[0]["createDecorationsCollection"]
   > | null>(null);
 
   const code = codes[editor.key] ?? initialCode;
   const mine = highlight?.editorKey === editor.key ? highlight : null;
+  const isOpen = active?.key === editor.key;
+
+  useEffect(() => {
+    latestCode.current = code;
+  }, [code]);
+
+  useEffect(() => {
+    if (!edited || !moduleId || !sectionId || !editor.questionId) return;
+    const saveLatest = () =>
+      saveWork({
+        moduleId,
+        sectionId,
+        questionId: editor.questionId!,
+        kind: "code",
+        value: latestCode.current,
+      });
+    // A throttle (rather than a debounced save) keeps the teacher's live view moving while the student types.
+    saveLatest();
+    const timer = window.setInterval(saveLatest, 2_500);
+    return () => {
+      window.clearInterval(timer);
+      saveLatest();
+    };
+  }, [edited, editor.questionId, moduleId, saveWork, sectionId]);
+
+  function report(type: "writing_code" | "running_code" | "checking_code") {
+    if (!moduleId || !sectionId || !editor.questionId) return;
+    record({ moduleId, sectionId, questionId: editor.questionId, type });
+  }
+  function startWriting() {
+    if (reportedWriting) return;
+    setReportedWriting(true);
+    report("writing_code");
+  }
 
   // Register the starter code so the tutor can see it before the student has typed anything.
   useEffect(() => {
@@ -86,8 +131,8 @@ export default function CodeEditor({
         },
         options: {
           isWholeLine: true,
-          className: "bg-amber/40",
-          linesDecorationsClassName: "bg-amber",
+          className: "bg-peach/40",
+          linesDecorationsClassName: "bg-peach",
         },
       },
     ]);
@@ -96,7 +141,9 @@ export default function CodeEditor({
     const timer = window.setTimeout(() => {
       instance.layout();
       instance.revealLineInCenter(mine.line);
-      instance.getDomNode()?.scrollIntoView({ block: "center", behavior: "smooth" });
+      instance
+        .getDomNode()
+        ?.scrollIntoView({ block: "center", behavior: "smooth" });
     }, 60);
     return () => window.clearTimeout(timer);
   }, [mine, mounted, spotLine, spotNonce]);
@@ -104,12 +151,16 @@ export default function CodeEditor({
   const onMount: OnMount = (instance) => {
     monacoEditor.current = instance;
     decorations.current = instance.createDecorationsCollection();
-    instance.onDidFocusEditorText(() => setActive(editor));
+    instance.onDidFocusEditorText(() => {
+      setActive(editor);
+      startWriting();
+    });
     setMounted(true);
   };
 
   async function runTests() {
     setActive(editor);
+    report("checking_code");
     setRunning(true);
     setTested(true);
     try {
@@ -141,11 +192,13 @@ export default function CodeEditor({
       setRunError(editor.key, message);
     } finally {
       setRunning(false);
+      setReportedWriting(false);
     }
   }
 
   async function runCode() {
     setActive(editor);
+    report("running_code");
     setRunning(true);
     setTested(false);
     setTestResults(null);
@@ -184,6 +237,7 @@ export default function CodeEditor({
       setRunError(editor.key, output);
     } finally {
       setRunning(false);
+      setReportedWriting(false);
     }
   }
 
@@ -213,27 +267,41 @@ export default function CodeEditor({
             {filename}.{EXTENSION[language] ?? "txt"}
           </span>
           <div className="flex flex-wrap items-center justify-end gap-2">
-            <Button
-              size="sm"
-              onClick={() =>
-                requestHelp(editor, failed ? (output ?? undefined) : undefined)
-              }
-            >
-              <SparklesIcon className="size-3.5" />
-              Find the error
-            </Button>
-            <Button
-              variant={editor.exerciseId ? "default" : "primary"}
-              onClick={runCode}
-              disabled={running}
-            >
-              <PlayIcon className="size-3.5" />
-              {running && !tested ? "Running…" : "Run"}
-            </Button>
-            {editor.exerciseId && (
-              <Button variant="primary" onClick={runTests} disabled={running}>
-                <PlayIcon className="size-3.5" />
-                {running && tested ? "Checking…" : "Check"}
+            {isOpen ? (
+              <>
+                <Button
+                  size="sm"
+                  onClick={() =>
+                    requestHelp(
+                      editor,
+                      failed ? (output ?? undefined) : undefined,
+                    )
+                  }
+                >
+                  <SparklesIcon className="size-3.5" /> Find the error
+                </Button>
+                <Button
+                  variant={editor.exerciseId ? "default" : "primary"}
+                  onClick={runCode}
+                  disabled={running}
+                >
+                  <PlayIcon className="size-3.5" />{" "}
+                  {running && !tested ? "Running…" : "Run"}
+                </Button>
+                {editor.exerciseId && (
+                  <Button
+                    variant="primary"
+                    onClick={runTests}
+                    disabled={running}
+                  >
+                    <PlayIcon className="size-3.5" />{" "}
+                    {running && tested ? "Checking…" : "Check"}
+                  </Button>
+                )}
+              </>
+            ) : (
+              <Button variant="primary" onClick={() => setActive(editor)}>
+                Open editor
               </Button>
             )}
           </div>
@@ -263,51 +331,59 @@ export default function CodeEditor({
           </div>
         )}
 
-        <div className="h-[22rem] min-h-28 overflow-hidden bg-surface">
-          <Suspense
-            fallback={
-              <div className="grid h-full place-items-center text-sm text-muted">
-                Loading editor…
-              </div>
-            }
-          >
-            <MonacoEditor
-              height="100%"
-              defaultLanguage={language}
-              language={language}
-              value={code}
-              theme="vs"
-              onMount={onMount}
-              onChange={(value) => {
-                setCode(editor.key, value ?? "");
-                setTested(false);
-                setTestResults(null);
-                // A run error only applies to the exact code that produced it.
-                setRunError(editor.key);
-                // Line numbers shift as they edit, so an old highlight would point at the wrong place.
-                if (mine) clearHighlight();
-              }}
-              options={{
-                ariaLabel: `Code editor: ${editor.label}`,
-                automaticLayout: true,
-                // The card and editor wrapper are overflow-hidden, which clips suggestion/hover widgets that extend past
-                // the editor. Fixed positioning lets them render above the prompt, eyebrow and header instead.
-                fixedOverflowWidgets: true,
-                fontFamily: "var(--font-mono)",
-                fontSize: 14,
-                lineHeight: 24,
-                minimap: { enabled: false },
-                padding: { top: 12, bottom: 12 },
-                scrollBeyondLastLine: false,
-                // Only consume the wheel while the editor can still scroll in that direction; at its top/bottom (or when
-                // the code fits) the event falls through to the page, like any nested scroller.
-                scrollbar: { alwaysConsumeMouseWheel: false },
-                tabSize: 2,
-                wordWrap: "off",
-              }}
-            />
-          </Suspense>
-        </div>
+        {isOpen ? (
+          <div className="h-[22rem] min-h-28 overflow-hidden bg-surface">
+            <Suspense
+              fallback={
+                <div className="grid h-full place-items-center text-sm text-muted">
+                  Loading editor…
+                </div>
+              }
+            >
+              <MonacoEditor
+                height="100%"
+                defaultLanguage={language}
+                language={language}
+                value={code}
+                theme="vs"
+                onMount={onMount}
+                onChange={(value) => {
+                  setCode(editor.key, value ?? "");
+                  setEdited(true);
+                  startWriting();
+                  setTested(false);
+                  setTestResults(null);
+                  // A run error only applies to the exact code that produced it.
+                  setRunError(editor.key);
+                  // Line numbers shift as they edit, so an old highlight would point at the wrong place.
+                  if (mine) clearHighlight();
+                }}
+                options={{
+                  ariaLabel: `Code editor: ${editor.label}`,
+                  automaticLayout: true,
+                  // The card and editor wrapper are overflow-hidden, which clips suggestion/hover widgets that extend past
+                  // the editor. Fixed positioning lets them render above the prompt, eyebrow and header instead.
+                  fixedOverflowWidgets: true,
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 14,
+                  lineHeight: 24,
+                  minimap: { enabled: false },
+                  padding: { top: 12, bottom: 12 },
+                  scrollBeyondLastLine: false,
+                  // Only consume the wheel while the editor can still scroll in that direction; at its top/bottom (or when
+                  // the code fits) the event falls through to the page, like any nested scroller.
+                  scrollbar: { alwaysConsumeMouseWheel: false },
+                  tabSize: 2,
+                  wordWrap: "off",
+                }}
+              />
+            </Suspense>
+          </div>
+        ) : (
+          <div className="flex min-h-28 items-center justify-center bg-surface px-4 py-8 text-center text-sm text-muted">
+            Open this editor to write, run, or check your code.
+          </div>
+        )}
 
         {testResults && (
           <div
@@ -321,7 +397,9 @@ export default function CodeEditor({
                   key={result.name}
                   className="flex items-center justify-between gap-3 rounded-xl border border-border bg-surface-soft px-3 py-2 text-sm"
                 >
-                  <span className="min-w-0 truncate text-ink">{result.name}</span>
+                  <span className="min-w-0 truncate text-ink">
+                    {result.name}
+                  </span>
                   <span
                     className={`flex-none rounded-full px-2 py-1 text-xs font-semibold ${result.passed ? "bg-mint text-mint-ink" : "border border-peach-ink/35 bg-peach text-ink"}`}
                   >

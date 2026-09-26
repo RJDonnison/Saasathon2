@@ -283,6 +283,40 @@ export interface CodeSubmission {
   passed: boolean | null;
   createdAt: string;
 }
+/** A student's latest saved draft for a question. Code and text answers share one row because a question has one kind. */
+export interface StudentWork {
+  id: string;
+  studentId: string;
+  questionId: string;
+  answer: string | null;
+  code: string | null;
+  updatedAt: string;
+}
+export type StudentActivityType =
+  | "viewing_lesson"
+  | "answering_question"
+  | "checking_answer"
+  | "writing_code"
+  | "running_code"
+  | "checking_code";
+/** A meaningful, timestamped learning action shown in the teacher dashboard. */
+export interface StudentActivity {
+  id: string;
+  studentId: string;
+  classroomId: string;
+  moduleId: string;
+  sectionId: string | null;
+  questionId: string | null;
+  type: StudentActivityType;
+  createdAt: string;
+}
+/** The teacher's live view of one student, including a short persisted activity trail. */
+export interface StudentActivitySnapshot {
+  studentId: string;
+  active: StudentActivity | null;
+  recent: StudentActivity[];
+  work: StudentWork[];
+}
 export interface Comment {
   id: string;
   submissionId: string;
@@ -292,6 +326,16 @@ export interface Comment {
   lineEnd: number | null;
   createdAt: string;
 }
+/** A persisted conversation attached directly to a lesson question, visible to that student and their teachers. */
+export interface QuestionComment {
+  id: string;
+  questionId: string;
+  /** The learner whose question conversation this belongs to. */
+  studentId: string;
+  authorId: string;
+  text: string;
+  createdAt: string;
+}
 export interface TeacherStudentAggregate {
   studentId: string;
   moduleProgress: ModuleProgress[];
@@ -299,6 +343,7 @@ export interface TeacherStudentAggregate {
   attempts: Attempt[];
   submissions: CodeSubmission[];
   comments: Comment[];
+  work: StudentWork[];
 }
 
 // ---------- REST contracts ----------
@@ -499,11 +544,31 @@ export interface CreateSubmissionRequest {
   stderr?: string;
   passed?: boolean | null;
 }
+/** Saves a text/math response or code draft while the student works. */
+export interface SaveStudentWorkRequest {
+  moduleId: string;
+  sectionId: string;
+  questionId: string;
+  kind: "answer" | "code";
+  value: string;
+}
+/** Records a meaningful learning action and updates the student's current location. */
+export interface RecordStudentActivityRequest {
+  moduleId: string;
+  sectionId?: string;
+  questionId?: string;
+  type: StudentActivityType;
+}
 export interface CreateCommentRequest {
   submissionId: string;
   text: string;
   lineStart?: number | null;
   lineEnd?: number | null;
+}
+export interface CreateQuestionCommentRequest {
+  text: string;
+  /** Teachers select the learner; students are always forced to their own id server-side. */
+  studentId?: string;
 }
 
 export type GetModuleResponse = StudentModule | TeacherModule;
@@ -514,10 +579,14 @@ export type GetStudentProgressResponse = ModuleProgress[];
 export type UpsertProgressRequest = UpsertModuleProgressRequest;
 export type UpsertProgressResponse = ModuleProgress;
 export type CreateCommentResponse = Comment;
+export type ListQuestionCommentsResponse = QuestionComment[];
+export type CreateQuestionCommentResponse = QuestionComment;
 export type CreateAttemptResponse = Attempt;
 export type CreateSubmissionResponse = CodeSubmission;
 export type ListSubmissionCommentsResponse = Comment[];
 export type GetTeacherStudentAggregateResponse = TeacherStudentAggregate;
+export type GetClassroomStudentActivityResponse = StudentActivitySnapshot[];
+export type GetStudentWorkResponse = StudentWork[];
 
 /** POST /api/code/run executes a supported lesson language in the server-configured Piston sandbox. */
 export interface RunCodeRequest {
