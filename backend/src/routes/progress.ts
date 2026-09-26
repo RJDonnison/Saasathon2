@@ -6,6 +6,7 @@ import {
   studentInClassroom,
 } from "../access.js";
 import { supabase } from "../supabase.js";
+import { emitModuleProgressUpdate } from "../sockets.js";
 import {
   toModuleProgress,
   toSectionProgress,
@@ -109,7 +110,24 @@ progressRouter.put("/progress", async (req, res) => {
       .select("*")
       .single(),
   ) as ModuleProgressRow;
-  res.json(toModuleProgress(row));
+  const progress = toModuleProgress(row);
+  const liveSession = unwrap(
+    await supabase
+      .from("lesson_sessions")
+      .select("id,module_id")
+      .eq("classroom_id", req.user!.classroomId)
+      .is("ended_at", null)
+      .maybeSingle(),
+  ) as { id: string; module_id: string } | null;
+  emitModuleProgressUpdate({
+    type: "module_progress_update",
+    classroomId: req.user!.classroomId,
+    moduleId: progress.moduleId,
+    sessionId:
+      liveSession?.module_id === progress.moduleId ? liveSession.id : null,
+    progress,
+  });
+  res.json(progress);
 });
 progressRouter.put("/section-progress", async (req, res) => {
   const b = (req.body ?? {}) as Partial<UpsertSectionProgressRequest>;
