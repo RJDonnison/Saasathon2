@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { api } from "../api.ts";
 import { useAuth } from "../auth/useAuth.ts";
 import { onPresenceUpdate, onRaiseHand } from "../socket.ts";
@@ -178,6 +179,38 @@ export default function TeacherHome() {
           {creating ? "Creating…" : "＋ Create classroom"}
         </Button>
       </div>
+
+      <Card
+        title="Modules"
+        eyebrow="Curriculum"
+        bodyClassName="flex flex-col gap-3 p-5"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="m-0 text-sm text-muted">
+            Create drafts privately, then publish changes live.
+          </p>
+          <Link
+            className="rounded-xl bg-accent px-3 py-2 text-sm! font-semibold! text-white"
+            to="/teacher/modules/new"
+          >
+            + New module
+          </Link>
+        </div>
+        <div className="flex flex-col gap-2">
+          {modules.map((module) => (
+            <Link
+              key={module.id}
+              className="flex items-center justify-between rounded-xl border border-border px-3 py-2 text-sm! font-semibold! text-ink hover:bg-surface-soft"
+              to={`/teacher/modules/${module.id}`}
+            >
+              <span>{module.title}</span>
+              <span className="text-xs! font-normal! text-muted">
+                {module.status === "draft" ? "Draft" : "Published"}
+              </span>
+            </Link>
+          ))}
+        </div>
+      </Card>
 
       {error && (
         <p className={`m-0 rounded-xl px-4 py-3 text-sm ${TINT.peach}`}>

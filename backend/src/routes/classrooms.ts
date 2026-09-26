@@ -93,6 +93,10 @@ classroomsRouter.get(
         .from("memberships")
         .select("*")
         .eq("classroom_id", req.params.id)
+        .eq(
+          req.user!.role === "student" ? "status" : "classroom_id",
+          req.user!.role === "student" ? "published" : req.params.id,
+        )
         .eq("role", "student"),
     ) as MembershipRow[];
     const ids = memberships.map((m) => m.user_id);

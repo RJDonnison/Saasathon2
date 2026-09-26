@@ -26,6 +26,9 @@ import type {
   AiCodeTestCandidatesResponse,
   StudentModule,
   TeacherModule,
+  AiModuleSuggestionsRequest,
+  AiModuleSuggestionsResponse,
+  AiModuleSuggestion,
 } from "../../../shared/types.js";
 import { supabase } from "../supabase.js";
 import { unwrap, type ExerciseRow, type ModuleRow } from "../rows.js";
@@ -135,6 +138,18 @@ function exerciseNote(
   return null;
 }
 
+/** The student-selected question, resolved from the student-safe module rather than client-provided text. */
+function questionNote(
+  module: StudentModule,
+  questionId: string,
+): string | null {
+  for (const s of module.sections) {
+    const question = s.questions.find((q) => q.id === questionId);
+    if (question) return `Question (${question.kind}): ${question.prompt}`;
+  }
+  return null;
+}
+
 /** Lines shown to the model as "12| code" so it can cite them; the editor uses the same 1-based numbers. */
 const numbered = (code: string) =>
   code
@@ -196,7 +211,10 @@ function parseHistory(raw: unknown): ChatTurn[] | null {
 async function reply(
   res: Response,
   run: () => Promise<
-    AiHintResponse | AiDraftResponse | AiCodeTestCandidatesResponse
+    | AiHintResponse
+    | AiDraftResponse
+    | AiCodeTestCandidatesResponse
+    | AiModuleSuggestionsResponse
   >,
 ): Promise<void> {
   try {
@@ -219,8 +237,23 @@ async function reply(
 const notConfigured = (res: Response) =>
   res.status(503).json({ error: new AiNotConfiguredError().message });
 
+function suggestionPatch(value: unknown): AiModuleSuggestion["patch"] | null {
+  if (!value || typeof value !== "object") return null;
+  const { title, content } = value as Record<string, unknown>;
+  if (title === undefined && content === undefined) return null;
+  if (
+    (title !== undefined && typeof title !== "string") ||
+    (content !== undefined && typeof content !== "string")
+  )
+    return null;
+  return {
+    ...(title !== undefined ? { title } : {}),
+    ...(content !== undefined ? { content } : {}),
+  };
+}
+
 aiRouter.post("/hint", requireRole("student"), rateLimit, async (req, res) => {
-  const { moduleId, studentId, question, code, exerciseId, error } =
+  const { moduleId, studentId, question, code, exerciseId, questionId, error } =
     (req.body ?? {}) as Partial<AiHintRequest>;
   const history = parseHistory(req.body?.history);
   if (
@@ -233,11 +266,12 @@ aiRouter.post("/hint", requireRole("student"), rateLimit, async (req, res) => {
     (code !== undefined &&
       (typeof code !== "string" || code.length > MAX_CODE)) ||
     (exerciseId !== undefined && typeof exerciseId !== "string") ||
+    (questionId !== undefined && typeof questionId !== "string") ||
     (error !== undefined &&
       (typeof error !== "string" || error.length > MAX_RUN_ERROR))
   ) {
     res.status(400).json({
-      error: `moduleId, studentId and a question (max ${MAX_QUESTION} chars) are required; history, code, exerciseId and error must be well-formed`,
+      error: `moduleId, studentId and a question (max ${MAX_QUESTION} chars) are required; history, code, exerciseId, questionId and error must be well-formed`,
     });
     return;
   }
@@ -258,9 +292,14 @@ aiRouter.post("/hint", requireRole("student"), rateLimit, async (req, res) => {
     res.status(404).json({ error: "Exercise not found" });
     return;
   }
+  const selectedQuestion = questionId ? questionNote(module, questionId) : null;
+  if (questionId && !selectedQuestion) {
+    res.status(404).json({ error: "Question not found" });
+    return;
+  }
 
   // With code attached the tutor replies in JSON so it can also point at a line (see LOCATE_RULES).
-  const hasCode = Boolean(code?.trim());
+  const hasCode = Boolean(code?.trim()) && !selectedQuestion;
   const parts = [question.trim()];
   if (error?.trim()) parts.push(`My last run failed with:\n${error.trim()}`);
   if (hasCode) parts.push(`My current code:\n${numbered(code!)}`);
@@ -271,6 +310,7 @@ aiRouter.post("/hint", requireRole("student"), rateLimit, async (req, res) => {
       system: hintSystemPrompt(context, {
         locate: hasCode,
         exerciseNote: note,
+        questionNote: selectedQuestion,
       }),
       history,
       message,
@@ -385,6 +425,71 @@ aiRouter.post(
             .slice(0, 5)
         : [];
       return { candidates } satisfies AiCodeTestCandidatesResponse;
+    });
+  },
+);
+
+/** Builder suggestions intentionally use only teacher-owned context. They are never available to students. */
+aiRouter.post(
+  "/module-suggestions",
+  requireRole("teacher"),
+  rateLimit,
+  async (req, res) => {
+    const { moduleId, request, itemId } = (req.body ??
+      {}) as Partial<AiModuleSuggestionsRequest>;
+    if (
+      typeof moduleId !== "string" ||
+      typeof request !== "string" ||
+      !request.trim() ||
+      request.length > MAX_DRAFT_REQUEST ||
+      (itemId !== undefined && typeof itemId !== "string")
+    ) {
+      res.status(400).json({ error: "moduleId and a request are required" });
+      return;
+    }
+    if (!isAiConfigured()) return notConfigured(res);
+    const row = await moduleInClassroom(moduleId, req.user!.classroomId);
+    if (!row) {
+      res.status(404).json({ error: "Module not found" });
+      return;
+    }
+    const module = (await aggregate(row, true)) as TeacherModule;
+    await reply(res, async () => {
+      const raw = await complete({
+        system: `${draftSystemPrompt(teacherModuleContext(module), null)}\nReturn JSON only: {"suggestions":[{"id":"short-id","label":"short label","patch":{"title":"optional title","content":"optional intro"}}]}. Give up to three safe, small editorial suggestions. ${itemId ? `The selected item id is ${itemId}; put its replacement in patch only when it can be represented as a module title/content change.` : ""}`,
+        history: [],
+        message: request.trim(),
+        maxTokens: 900,
+        json: true,
+      });
+      try {
+        const parsed: unknown = JSON.parse(raw);
+        if (
+          parsed &&
+          typeof parsed === "object" &&
+          Array.isArray((parsed as AiModuleSuggestionsResponse).suggestions)
+        ) {
+          return {
+            suggestions: (parsed as AiModuleSuggestionsResponse).suggestions
+              .flatMap((suggestion) => {
+                if (
+                  !suggestion ||
+                  typeof suggestion.id !== "string" ||
+                  typeof suggestion.label !== "string"
+                )
+                  return [];
+                const patch = suggestionPatch(suggestion.patch);
+                return patch
+                  ? [{ id: suggestion.id, label: suggestion.label, patch }]
+                  : [];
+              })
+              .slice(0, 3),
+          };
+        }
+      } catch {
+        /* generic fallback below */
+      }
+      return { suggestions: [] };
     });
   },
 );
