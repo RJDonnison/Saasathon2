@@ -11,7 +11,8 @@ import { useAuth } from "../auth/useAuth.ts";
 import Button from "../ui/Button.tsx";
 import Card from "../ui/Card.tsx";
 import Heading from "../ui/Heading.tsx";
-import { INPUT, TINT } from "../ui/styles.ts";
+import { ChevronLeftIcon } from "../ui/icons.tsx";
+import { FOCUS_RING, INPUT, TINT } from "../ui/styles.ts";
 import { useDialog } from "../ui/DialogContext.tsx";
 import { onModuleDeleted } from "../socket.ts";
 import AvailabilityCard from "./AvailabilityCard.tsx";
@@ -194,6 +195,7 @@ export default function ModuleBuilder() {
       : null,
   );
   const [selected, setSelected] = useState<string | undefined>();
+  const [assistantOpen, setAssistantOpen] = useState(false);
   const { confirm, toast } = useDialog();
 
   useEffect(() => {
@@ -210,7 +212,8 @@ export default function ModuleBuilder() {
       })
       .catch((error) =>
         setNotice({
-          message: error instanceof Error ? error.message : "Could not load module",
+          message:
+            error instanceof Error ? error.message : "Could not load module",
           tone: "error",
         }),
       )
@@ -365,7 +368,8 @@ export default function ModuleBuilder() {
       navigate(classPath, { replace: true });
     } catch (error) {
       setNotice({
-        message: error instanceof Error ? error.message : "Could not delete module",
+        message:
+          error instanceof Error ? error.message : "Could not delete module",
         tone: "error",
       });
     } finally {
@@ -379,6 +383,13 @@ export default function ModuleBuilder() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex flex-col gap-2">
+          <Link
+            className={`inline-flex h-9 self-start items-center gap-1.5 rounded-[9px] border border-border bg-surface pr-3 pl-2 text-[13px]! font-semibold! text-ink hover:bg-surface-soft ${FOCUS_RING}`}
+            to={classPath}
+          >
+            <ChevronLeftIcon className="size-4" />
+            Back to classroom
+          </Link>
           <Heading as="h1" variant="title">
             {routeState?.fromLessonPlan ? "Review student module" : "Build a lesson"}
           </Heading>
@@ -392,40 +403,23 @@ export default function ModuleBuilder() {
               : "Published"}
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Link
-            className="text-sm! font-semibold! text-muted hover:text-ink"
-            to={classPath}
-          >
-            Back to classroom
-          </Link>
-          <Button
-            variant="default"
-            disabled={saving}
-            onClick={() => void save()}
-          >
-            {saving
-              ? "Saving…"
-              : document.status === "published"
-                ? "Save published"
-                : "Save draft"}
-          </Button>
-          {moduleId && (
+        <div className="flex flex-wrap items-center justify-end gap-2 lg:gap-5">
+          {document.status === "draft" && (
             <Button
               variant="default"
               disabled={saving}
-              onClick={() => void removeModule()}
+              onClick={() => void save()}
             >
-              Delete module
+              {saving ? "Saving…" : "Save draft"}
             </Button>
           )}
           {document.status === "published" ? (
             <Button
-              variant="default"
+              variant="primary"
               disabled={saving}
-              onClick={() => void save("draft")}
+              onClick={() => void save()}
             >
-              Unpublish
+              {saving ? "Saving…" : "Save published changes"}
             </Button>
           ) : (
             <Button
@@ -435,6 +429,34 @@ export default function ModuleBuilder() {
             >
               Publish
             </Button>
+          )}
+          {(moduleId || document.status === "published") && (
+            <details className="relative">
+              <summary className="cursor-pointer list-none rounded-[9px] border border-border bg-surface px-3 py-2 text-sm! font-semibold! text-muted transition hover:border-accent/60 hover:text-ink [&::-webkit-details-marker]:hidden">
+                More actions
+              </summary>
+              <div className="absolute right-0 z-10 mt-2 flex w-52 flex-col gap-2 rounded-xl border border-border bg-surface p-3 shadow-lg">
+                {document.status === "published" && (
+                  <Button
+                    size="sm"
+                    disabled={saving}
+                    onClick={() => void save("draft")}
+                  >
+                    Unpublish to draft
+                  </Button>
+                )}
+                {moduleId && (
+                  <Button
+                    size="sm"
+                    variant="peach"
+                    disabled={saving}
+                    onClick={() => void removeModule()}
+                  >
+                    Delete module
+                  </Button>
+                )}
+              </div>
+            </details>
           )}
         </div>
       </div>
@@ -450,10 +472,7 @@ export default function ModuleBuilder() {
 
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <div className="flex min-w-0 flex-col gap-5">
-          <Card
-            title="Module details"
-            bodyClassName="flex flex-col gap-4 p-5"
-          >
+          <Card title="Module details" bodyClassName="flex flex-col gap-4 p-5">
             <label className="flex flex-col gap-2 text-sm text-muted">
               Module title
               <input
@@ -546,26 +565,44 @@ export default function ModuleBuilder() {
           </Button>
         </div>
 
-        <aside
-          aria-label="Writing assistant"
-          className="min-w-0 lg:sticky lg:top-24 lg:h-[calc(100dvh-7rem)]"
-        >
-          <WritingAssistant
-            document={document}
-            selectedItemId={selected}
-            onApply={(suggestion) => {
-              setDocument(withFreshIds(suggestion));
-              setSelected(undefined);
-              setNotice({
-                message: "AI draft applied. Review it, then save when you are ready.",
-                tone: "success",
-              });
-            }}
-            onUndo={(previous) => {
-              setDocument(previous);
-              setSelected(undefined);
-            }}
-          />
+        <aside aria-label="Writing assistant" className="min-w-0">
+          <div className="lg:hidden">
+            <Button
+              className="w-full justify-between"
+              onClick={() => setAssistantOpen((open) => !open)}
+              aria-expanded={assistantOpen}
+              aria-controls="builder-writing-assistant"
+            >
+              Plan with AI
+              <span aria-hidden="true">{assistantOpen ? "−" : "+"}</span>
+            </Button>
+          </div>
+          <div
+            id="builder-writing-assistant"
+            className={`${assistantOpen ? "mt-4 block" : "hidden"} lg:mt-0 lg:block lg:sticky lg:top-24 lg:h-[calc(100dvh-7rem)]`}
+          >
+            <WritingAssistant
+              document={document}
+              selectedItemId={selected}
+              onApply={(suggestion) => {
+                setDocument(withFreshIds(suggestion));
+                setSelected(undefined);
+                setNotice({
+                  message:
+                    "AI draft applied locally. Review it, then save when you are ready.",
+                  tone: "success",
+                });
+              }}
+              onUndo={(previous) => {
+                setDocument(previous);
+                setSelected(undefined);
+                setNotice({
+                  message: "AI draft change undone locally.",
+                  tone: "success",
+                });
+              }}
+            />
+          </div>
         </aside>
       </div>
     </div>
@@ -586,28 +623,43 @@ function WritingAssistant({
 }) {
   const [idea, setIdea] = useState("");
   const [askingAi, setAskingAi] = useState(false);
-  const [suggestions, setSuggestions] = useState<AiModuleSuggestion[]>([]);
+  const [result, setResult] = useState<AiModuleSuggestion | null>(null);
   const [undo, setUndo] = useState<ModuleBuilderDocument | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const presets = selectedItemId
+    ? [
+        "Make this clearer for beginners.",
+        "Add a quick check for understanding.",
+        "Suggest a practical code exercise.",
+      ]
+    : [
+        "Create a complete 20-minute beginner lesson.",
+        "Add practice questions and an exit check.",
+        "Make this lesson more hands-on.",
+      ];
 
   async function askAi() {
     if (!idea.trim() || askingAi) return;
     setAskingAi(true);
     setError(null);
+    setResult(null);
     try {
       const result = await api.aiModuleSuggestions({
         request: idea,
         document,
         selectedItemId,
       });
-      setSuggestions(result.suggestions);
-      if (result.suggestions.length === 0)
+      const suggestion = result.suggestions[0] ?? null;
+      setResult(suggestion);
+      if (!suggestion)
         setError(
           result.warning ??
             "The assistant could not make a usable suggestion. Please try again.",
         );
     } catch (error) {
-      setError(error instanceof Error ? error.message : "Could not get suggestions");
+      setError(
+        error instanceof Error ? error.message : "Could not get suggestions",
+      );
     } finally {
       setAskingAi(false);
     }
@@ -617,7 +669,7 @@ function WritingAssistant({
     if (!suggestion.document) return;
     setUndo(document);
     onApply(suggestion.document);
-    setSuggestions([]);
+    setResult(null);
   }
 
   return (
@@ -626,10 +678,30 @@ function WritingAssistant({
       className="flex h-full min-h-0 flex-col"
       bodyClassName="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-5"
     >
-      <div className={`rounded-xl px-3 py-2.5 text-xs leading-relaxed ${TINT.lavender}`}>
-        {selectedItemId
-          ? "Your suggestion will use the selected lesson item as context."
-          : "Ask for a full lesson, reading, questions, exercises, or teaching advice."}
+      <div className="flex flex-col gap-2 rounded-xl border border-border bg-surface-soft p-3">
+        <span className="text-xs font-semibold text-muted">
+          AI DRAFT WORKSPACE
+        </span>
+        <p className="m-0 text-xs leading-relaxed text-muted">
+          {selectedItemId
+            ? "Context: the selected lesson item and the full in-memory module draft."
+            : "Context: the full in-memory module draft."}
+        </p>
+        <p className="m-0 text-xs leading-relaxed text-muted">
+          Nothing is saved or published when you ask the assistant.
+        </p>
+      </div>
+      <div className="flex flex-col gap-2">
+        <span className="text-xs font-semibold text-muted">
+          PROMPT STARTERS
+        </span>
+        <div className="flex flex-wrap gap-2">
+          {presets.map((preset) => (
+            <Button key={preset} size="sm" onClick={() => setIdea(preset)}>
+              {preset}
+            </Button>
+          ))}
+        </div>
       </div>
       <label className="flex flex-col gap-2 text-sm text-muted">
         What would you like help with?
@@ -649,34 +721,66 @@ function WritingAssistant({
         disabled={askingAi || !idea.trim()}
         onClick={() => void askAi()}
       >
-        {askingAi ? "Thinking…" : "Ask assistant"}
+        {askingAi ? "Drafting…" : "Generate one draft"}
       </Button>
-      {error && <p className={`m-0 rounded-xl px-3 py-2 text-sm ${TINT.peach}`} role="alert">{error}</p>}
-      {suggestions.map((suggestion) => (
-        <div
-          key={suggestion.id}
-          className="flex flex-col gap-3 rounded-xl border border-border bg-surface-soft p-3 text-sm"
+      {error && (
+        <p
+          className={`m-0 rounded-xl px-3 py-2 text-sm ${TINT.peach}`}
+          role="alert"
         >
-          <span className="font-medium text-ink">{suggestion.label}</span>
-          <p className="m-0 whitespace-pre-wrap text-muted">{suggestion.reply}</p>
-          {suggestion.document && (
-            <Button size="sm" className="self-start" onClick={() => accept(suggestion)}>
-              Apply to module
-            </Button>
+          {error}
+        </p>
+      )}
+      {result && (
+        <div className="flex flex-col gap-3 rounded-xl border border-border bg-surface-soft p-3 text-sm">
+          <div className="flex flex-col gap-1">
+            <span className="text-xs font-semibold text-muted">
+              RESULT · REVIEW BEFORE APPLYING
+            </span>
+            <span className="font-medium text-ink">{result.label}</span>
+          </div>
+          <p className="m-0 whitespace-pre-wrap text-muted">{result.reply}</p>
+          {result.document && (
+            <>
+              <p
+                className={`m-0 rounded-lg px-3 py-2 text-xs leading-relaxed ${TINT.peach}`}
+              >
+                Applying replaces the full in-memory lesson draft. It does not
+                save or publish; review the replacement and save explicitly.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant="primary"
+                  onClick={() => accept(result)}
+                >
+                  Apply replacement draft
+                </Button>
+                <Button size="sm" onClick={() => setResult(null)}>
+                  Discard result
+                </Button>
+              </div>
+            </>
           )}
         </div>
-      ))}
+      )}
       {undo && (
-        <Button
-          size="sm"
-          className="self-start"
-          onClick={() => {
-            onUndo(undo);
-            setUndo(null);
-          }}
-        >
-          Undo last suggestion
-        </Button>
+        <div className="flex flex-col gap-2 rounded-xl border border-border p-3">
+          <p className="m-0 text-xs text-muted">
+            A local AI replacement is ready to undo. Saved work is unchanged
+            until you save.
+          </p>
+          <Button
+            size="sm"
+            className="self-start"
+            onClick={() => {
+              onUndo(undo);
+              setUndo(null);
+            }}
+          >
+            Undo replacement
+          </Button>
+        </div>
       )}
     </Card>
   );
@@ -707,6 +811,15 @@ function SectionEditor({
   onRemoveItem: (id: string) => void;
   onRemoveSection: () => void;
 }) {
+  const [newItemType, setNewItemType] = useState<"reading" | QuestionKind>(
+    "reading",
+  );
+  const addSelectedItem = () =>
+    onAddItem(
+      newItemType === "reading"
+        ? { id: id(), type: "block", blockType: "markdown", content: "" }
+        : newQuestion(newItemType),
+    );
   return (
     <Card
       title={`Section ${String(sectionIndex + 1).padStart(2, "0")}`}
@@ -714,6 +827,7 @@ function SectionEditor({
         sectionCount > 1 ? (
           <Button
             size="sm"
+            variant="peach"
             onClick={onRemoveSection}
             aria-label={`Delete section ${sectionIndex + 1}`}
           >
@@ -761,33 +875,37 @@ function SectionEditor({
         </div>
       )}
 
-      <div className="flex flex-wrap gap-2 border-t border-border pt-4">
-        <Button
-          size="sm"
-          onClick={() =>
-            onAddItem({
-              id: id(),
-              type: "block",
-              blockType: "markdown",
-              content: "",
-            })
-          }
-        >
-          + Reading
-        </Button>
-        <Button size="sm" onClick={() => onAddItem(newQuestion("mcq"))}>
-          + Multiple choice
-        </Button>
-        <Button size="sm" onClick={() => onAddItem(newQuestion("short"))}>
-          + Short answer
-        </Button>
-        <Button size="sm" onClick={() => onAddItem(newQuestion("code"))}>
-          + Code exercise
-        </Button>
-        <Button size="sm" onClick={() => onAddItem(newQuestion("math"))}>
-          + Math question
-        </Button>
-      </div>
+      <fieldset className="m-0 flex flex-col gap-3 border-0 border-t border-border pt-4 p-0">
+        <div className="flex flex-col gap-1">
+          <legend className="text-sm font-semibold text-ink">
+            Add content
+          </legend>
+          <span className="text-xs text-muted">
+            Choose the next item in this section’s learning flow.
+          </span>
+        </div>
+        <div className="flex flex-wrap items-end gap-2">
+          <label className="flex min-w-52 flex-1 flex-col gap-1.5 text-xs text-muted">
+            Content type
+            <select
+              className={`${INPUT} h-10`}
+              value={newItemType}
+              onChange={(event) =>
+                setNewItemType(event.target.value as "reading" | QuestionKind)
+              }
+            >
+              <option value="reading">Reading / explanation</option>
+              <option value="mcq">Multiple choice question</option>
+              <option value="short">Short-answer question</option>
+              <option value="code">Code exercise</option>
+              <option value="math">Math question</option>
+            </select>
+          </label>
+          <Button variant="primary" onClick={addSelectedItem}>
+            Add item
+          </Button>
+        </div>
+      </fieldset>
     </Card>
   );
 }
@@ -828,7 +946,7 @@ function ItemEditor({
           </span>
           <span className="text-sm font-semibold text-ink">{itemName}</span>
         </div>
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1 rounded-lg border border-border bg-surface-soft p-1">
           <Button
             size="sm"
             disabled={index === 0}
@@ -847,6 +965,7 @@ function ItemEditor({
           </Button>
           <Button
             size="sm"
+            variant="peach"
             onClick={onRemove}
             aria-label={`Delete ${itemName}`}
           >
@@ -1191,6 +1310,11 @@ function CodeExerciseEditor({
       ],
     }));
   };
+  const removeCandidate = (index: number) => {
+    setCandidates((current) =>
+      current.filter((_, currentIndex) => currentIndex !== index),
+    );
+  };
   return (
     <div className="flex flex-col gap-5 border-t border-border pt-4">
       <div className="grid gap-4 sm:grid-cols-[11rem_minmax(0,1fr)]">
@@ -1482,19 +1606,9 @@ function CodeExerciseEditor({
                   }
                   onAdd={() => {
                     addCandidate(candidate);
-                    setCandidates((current) =>
-                      current.filter(
-                        (_, currentIndex) => currentIndex !== index,
-                      ),
-                    );
+                    removeCandidate(index);
                   }}
-                  onDismiss={() =>
-                    setCandidates((current) =>
-                      current.filter(
-                        (_, currentIndex) => currentIndex !== index,
-                      ),
-                    )
-                  }
+                  onDismiss={() => removeCandidate(index)}
                 />
               ))}
             </div>

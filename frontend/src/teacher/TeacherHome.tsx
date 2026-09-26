@@ -5,7 +5,7 @@ import { useAuth } from "../auth/useAuth.ts";
 import { useLiveSession } from "../useLiveSession.ts";
 import {
   emitAcknowledgeHand,
-  onModuleProgressUpdate,
+  onLiveModuleAggregateUpdate,
   onStudentActivityUpdate,
 } from "../socket.ts";
 import { useClassroomPresence } from "../hooks/useClassroomPresence.ts";
@@ -26,7 +26,7 @@ import type {
   Classroom,
   ClassroomInvitation,
   Module,
-  ProgressStatus,
+  LiveModuleStudentAggregate,
   StudentActivitySnapshot,
   User,
 } from "../../../shared/types";
@@ -56,7 +56,7 @@ export default function TeacherHome() {
     Record<string, StudentActivitySnapshot>
   >({});
   const [liveProgress, setLiveProgress] = useState<
-    Record<string, ProgressStatus>
+    Record<string, LiveModuleStudentAggregate>
   >({});
   const liveProgressSession = useRef<{
     classroomId: string;
@@ -121,7 +121,7 @@ export default function TeacherHome() {
             return;
           setLiveProgress(
             Object.fromEntries(
-              snapshot.progress.map((item) => [item.studentId, item.status]),
+              snapshot.progress.map((item) => [item.studentId, item]),
             ),
           );
         })
@@ -134,6 +134,21 @@ export default function TeacherHome() {
       cancelled = true;
       window.clearInterval(interval);
     };
+  }, [classroomId, session]);
+
+  useEffect(() => {
+    if (!classroomId || !session) return;
+    return onLiveModuleAggregateUpdate((update) => {
+      if (
+        update.classroomId !== classroomId ||
+        update.moduleId !== session.moduleId
+      )
+        return;
+      setLiveProgress((current) => ({
+        ...current,
+        [update.studentId]: update.aggregate,
+      }));
+    });
   }, [classroomId, session]);
 
   useEffect(() => {
@@ -231,24 +246,6 @@ export default function TeacherHome() {
         });
       }),
     [user],
-  );
-  useEffect(
-    () =>
-      onModuleProgressUpdate((update) => {
-        if (
-          !user ||
-          !session ||
-          update.classroomId !== user.classroomId ||
-          update.moduleId !== session.moduleId ||
-          update.sessionId !== session.id
-        )
-          return;
-        setLiveProgress((current) => ({
-          ...current,
-          [update.progress.studentId]: update.progress.status,
-        }));
-      }),
-    [session, user],
   );
   async function inviteStudents(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -421,12 +418,24 @@ export default function TeacherHome() {
         />
       )}
 
+      {managing && (
+        <div className="flex flex-col gap-1 border-t border-border pt-6">
+          <Heading as="h2">Lesson management</Heading>
+          <p className="m-0 text-sm text-muted">
+            Build from scratch, edit existing lessons, and manage your class
+            content.
+          </p>
+        </div>
+      )}
+
       {/*
         Two columns on large screens: [students + lessons] | [raised hands, detail, invitations]. The column wrappers
         are `contents` below lg, so on a phone the order is raised hands, students, detail, invitations, lessons: the
         urgent thing (a raised hand) is never buried under a long student list.
       */}
-      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1.7fr)_minmax(290px,.95fr)]">
+      <div
+        className={`grid items-start gap-5 lg:grid-cols-[minmax(0,1.7fr)_minmax(290px,.95fr)] ${managing ? "rounded-2xl border border-border bg-surface-soft p-4 sm:p-5" : ""}`}
+      >
         <div className="contents lg:flex lg:min-w-0 lg:flex-col lg:gap-5">
           <div className={`order-2 min-w-0 ${managing ? "hidden" : ""}`}>
             <ClassroomGrid
@@ -441,6 +450,7 @@ export default function TeacherHome() {
                 const question = questionId ? `?questionId=${encodeURIComponent(questionId)}` : "";
                 navigate(`/teacher/student-work/${encodeURIComponent(studentId)}/${encodeURIComponent(moduleId)}${question}`);
               }}
+              showLiveProgress={!!session}
             />
           </div>
           <div className={`order-5 min-w-0 ${managing ? "" : "hidden"}`}>
@@ -517,6 +527,9 @@ export default function TeacherHome() {
               online={selected ? online.has(selected.id) : false}
               classroomId={user!.classroomId}
               lessons={modules}
+              liveModuleId={session?.moduleId ?? null}
+              activity={selected ? activity[selected.id] : undefined}
+              liveAggregate={selected ? liveProgress[selected.id] : undefined}
             />
           </div>
           <div className={`order-4 min-w-0 ${managing ? "" : "hidden"}`}>
@@ -609,7 +622,6 @@ export default function TeacherHome() {
           </div>
         </div>
       </div>
-
       {managing && (
         <Card title="Plan a lesson" eyebrow={classroom?.name ?? "This classroom"} icon={<BookIcon className="size-[18px]" />} tint="lavender" action={<Button onClick={() => navigate(`/teacher/class/${classroomId}/plan`)}>Open planner</Button>}>
           <p className="m-0 max-w-2xl text-sm text-muted">Draft and save a curriculum-linked lesson, keep a record of what was taught, and prepare a clear handover for a reliever.</p>

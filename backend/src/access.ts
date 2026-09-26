@@ -54,35 +54,62 @@ export async function liveModuleIds(classroomId: string): Promise<Set<string>> {
   return new Set(rows.map((row) => row.module_id));
 }
 
-/** Whether students may open this lesson now: it is open any time, or the teacher is teaching it live. */
-export async function lessonOpenForStudents(module: ModuleRow): Promise<boolean> {
-  if (module.access !== "live") return true;
-  return (await liveModuleIds(module.classroom_id)).has(module.id);
-}
-
-/** Resolves a module visible to this role. Students can never resolve drafts, or a live-only lesson that is not being taught. */
+/**
+ * Resolves a module visible to this role. Students can never resolve drafts, or a live-only lesson that is not being taught.
+ * The module must be in the caller's classroom, so the live-session lookup does not have to wait for the module row.
+ */
 export async function moduleForUser(
   id: string,
   classroomId: string,
   role: "student" | "teacher",
 ): Promise<ModuleRow | null> {
-  const module = await moduleInClassroom(id, classroomId);
-  if (!module) return null;
-  if (role === "teacher") return module;
-  return module.status === "published" && (await lessonOpenForStudents(module))
+  if (role === "teacher") return moduleInClassroom(id, classroomId);
+  const [module, live] = await Promise.all([
+    moduleInClassroom(id, classroomId),
+    liveModuleIds(classroomId),
+  ]);
+  return module && module.status === "published" && lessonOpen(module, live)
     ? module
     : null;
+}
+
+/**
+ * Ids of every module this role can open in a classroom, in two parallel queries however many there are.
+ * Use it instead of calling moduleForUser once per row.
+ */
+export async function visibleModuleIds(
+  classroomId: string,
+  role: "student" | "teacher",
+): Promise<Set<string>> {
+  const [modules, live] = await Promise.all([
+    supabase
+      .from("modules")
+      .select("id,status,access")
+      .eq("classroom_id", classroomId),
+    role === "student" ? liveModuleIds(classroomId) : Promise.resolve(new Set<string>()),
+  ]);
+  const rows = unwrap(modules) as Array<Pick<ModuleRow, "id" | "status" | "access">>;
+  return new Set(
+    rows
+      .filter((row) => role === "teacher" || (row.status === "published" && lessonOpen(row, live)))
+      .map((row) => row.id),
+  );
 }
 
 export async function studentInClassroom(
   id: string,
   classroomId: string,
 ): Promise<UserRow | null> {
-  const membership = await membershipFor(id, classroomId);
-  if (!membership || membership.role !== "student") return null;
-  return unwrap(
-    await supabase.from("users").select("*").eq("id", id).maybeSingle(),
-  ) as UserRow | null;
+  const row = unwrap(
+    await supabase
+      .from("memberships")
+      .select("role, users!inner(*)")
+      .eq("user_id", id)
+      .eq("classroom_id", classroomId)
+      .eq("role", "student")
+      .maybeSingle(),
+  ) as { role: string; users: UserRow } | null;
+  return row?.users ?? null;
 }
 
 export function isStudentOwner(
