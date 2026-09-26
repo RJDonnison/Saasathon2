@@ -6,6 +6,8 @@
 
 create table if not exists classrooms (id text primary key, name text not null, room_code text not null unique);
 create table if not exists users (id text primary key, name text not null, created_at timestamptz not null default now());
+alter table users add column if not exists email text;
+create index if not exists users_email_idx on users (email);
 
 -- Compatibility upgrade from the former users(classroom_id, role) design.
 create table if not exists memberships (
@@ -26,6 +28,18 @@ do $$ begin
 end $$;
 create unique index if not exists memberships_classroom_name_role_key
   on memberships (classroom_id, role, user_id);
+
+-- A teacher-managed email roster. Students are enrolled automatically on their next Google sign-in.
+create table if not exists classroom_assignments (
+  id text primary key,
+  classroom_id text not null references classrooms(id) on delete cascade,
+  email text not null,
+  student_name text,
+  student_id text references users(id) on delete set null,
+  assigned_by text not null references users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  unique (classroom_id, email)
+);
 
 create table if not exists modules (
   id text primary key, classroom_id text not null references classrooms(id) on delete cascade,
@@ -106,6 +120,7 @@ create table if not exists comments (
 
 alter table classrooms enable row level security; alter table users enable row level security;
 alter table memberships enable row level security; alter table modules enable row level security;
+alter table classroom_assignments enable row level security;
 alter table sections enable row level security; alter table section_blocks enable row level security;
 alter table questions enable row level security; alter table question_options enable row level security;
 alter table code_exercises enable row level security; alter table reference_answers enable row level security;

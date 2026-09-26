@@ -19,7 +19,7 @@ import type {
 } from "../../shared/types.js";
 
 export type ClassroomRow = { id: string; name: string; room_code: string };
-export type UserRow = { id: string; name: string };
+export type UserRow = { id: string; name: string; email?: string | null };
 export type MembershipRow = {
   id: string;
   user_id: string;

@@ -23,6 +23,18 @@ export interface Membership {
   role: Role;
   createdAt: string;
 }
+export interface ClassroomAssignment {
+  id: string;
+  classroomId: string;
+  email: string;
+  studentName: string | null;
+  studentId: string | null;
+  status: "pending" | "active";
+  createdAt: string;
+}
+export interface CreateClassroomAssignmentsRequest {
+  students: Array<{ email: string; name?: string }>;
+}
 
 export interface Module {
   id: string;

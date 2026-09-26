@@ -24,6 +24,18 @@ type AppSocket = Socket<
 
 // In-memory presence: classroomId -> studentId -> number of open sockets (handles multiple tabs).
 const online = new Map<string, Map<string, number>>();
+let activeIo: AppServer | null = null;
+
+/** Close live classroom sockets as soon as a teacher removes a student's assignment. */
+export async function disconnectClassroomMember(classroomId: string, userId: string): Promise<void> {
+  if (!activeIo) return;
+  const sockets = await activeIo.in(classroomId).fetchSockets();
+  await Promise.all(
+    sockets
+      .filter((socket) => socket.data.user.userId === userId)
+      .map((socket) => socket.disconnect(true)),
+  );
+}
 
 function onlineStudentIds(classroomId: string): string[] {
   return [...(online.get(classroomId)?.keys() ?? [])];
@@ -41,6 +53,7 @@ export function attachSockets(httpServer: HttpServer): AppServer {
   const io: AppServer = new Server(httpServer, {
     cors: { origin: CLIENT_ORIGIN },
   });
+  activeIo = io;
 
   // Authenticate the handshake with the same Supabase access token used for REST:
   // io(url, { auth: { token } }). The user must also have joined a classroom.

@@ -5,6 +5,8 @@ import type {
   AiHintResponse,
   ApiError,
   Comment,
+  ClassroomAssignment,
+  CreateClassroomAssignmentsRequest,
   CreateCommentRequest,
   GetClassroomResponse,
   GetClassroomStudentsResponse,
@@ -61,6 +63,12 @@ export const api = {
   listModules: (classroomId: string) => request<ListModulesResponse>(`/api/classrooms/${classroomId}/modules`),
   getStudents: (classroomId: string) =>
     request<GetClassroomStudentsResponse>(`/api/classrooms/${classroomId}/students`),
+  getAssignments: (classroomId: string) =>
+    request<ClassroomAssignment[]>(`/api/classrooms/${classroomId}/assignments`),
+  assignStudents: (classroomId: string, body: CreateClassroomAssignmentsRequest) =>
+    post<ClassroomAssignment[]>(`/api/classrooms/${classroomId}/assignments`, body),
+  removeAssignment: (classroomId: string, assignmentId: string) =>
+    request<void>(`/api/classrooms/${classroomId}/assignments/${assignmentId}`, { method: 'DELETE' }),
   createComment: (body: CreateCommentRequest) => post<Comment>('/api/comments', body),
   upsertProgress: (body: UpsertProgressRequest) =>
     request<UpsertProgressResponse>('/api/progress', { method: 'PUT', json: body }),

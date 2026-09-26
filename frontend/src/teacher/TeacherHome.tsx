@@ -12,7 +12,7 @@ import Eyebrow from '../ui/Eyebrow.tsx'
 import Heading from '../ui/Heading.tsx'
 import { HandIcon, PencilIcon, SparklesIcon, UsersIcon } from '../ui/icons.tsx'
 import { CARD, INPUT, TINT, type Tint } from '../ui/styles.ts'
-import type { Classroom, Module, User } from '../../../shared/types'
+import type { Classroom, ClassroomAssignment, Module, User } from '../../../shared/types'
 
 function Stat({ label, value, tint, icon }: { label: string; value: number | string; tint: Tint; icon: React.ReactNode }) {
   return (
@@ -43,6 +43,10 @@ export default function TeacherHome() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [lesson, setLesson] = useState('')
+  const [assignments, setAssignments] = useState<ClassroomAssignment[]>([])
+  const [rosterText, setRosterText] = useState('')
+  const [rosterBusy, setRosterBusy] = useState(false)
+  const [rosterMessage, setRosterMessage] = useState<string | null>(null)
 
   useEffect(() => {
     if (!user) return
@@ -68,8 +72,19 @@ export default function TeacherHome() {
         if (!cancelled) setModules(m)
       })
       .catch(() => {})
+    const loadAssignments = () => {
+      void api
+        .getAssignments(user.classroomId)
+        .then((list) => {
+          if (!cancelled) setAssignments(list)
+        })
+        .catch(() => {})
+    }
+    loadAssignments()
+    const rosterInterval = window.setInterval(loadAssignments, 15000)
     return () => {
       cancelled = true
+      window.clearInterval(rosterInterval)
     }
   }, [user])
 
@@ -78,8 +93,11 @@ export default function TeacherHome() {
       onPresenceUpdate((p) => {
         console.log('[teacher] presence_update', p)
         setOnline(new Set(p.onlineStudentIds))
+        if (user && p.classroomId === user.classroomId) {
+          void api.getStudents(user.classroomId).then(setStudents).catch(() => {})
+        }
       }),
-    [],
+    [user],
   )
 
   // A student raising their hand again just moves them to the top instead of adding a duplicate.
@@ -105,6 +123,45 @@ export default function TeacherHome() {
       window.alert(e instanceof Error ? e.message : 'Could not create classroom')
     } finally {
       setCreating(false)
+    }
+  }
+
+  async function assignStudents(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!user) return
+    const entries = rosterText.split(/[\n;]+/).map((line) => line.trim()).filter(Boolean)
+    const students = entries.map((line) => {
+      const email = line.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0]?.toLowerCase()
+      const name = email ? line.replace(email, '').replace(/^[\s<,]+|[\s>,]+$/g, '').trim() : ''
+      return email ? { email, ...(name ? { name } : {}) } : null
+    })
+    if (students.some((student) => student === null)) {
+      setRosterMessage('Check the list. Add one school email per line, or a name followed by an email.')
+      return
+    }
+    setRosterBusy(true)
+    setRosterMessage(null)
+    try {
+      const created = await api.assignStudents(user.classroomId, { students: students.filter((student): student is NonNullable<typeof student> => student !== null) })
+      setAssignments(await api.getAssignments(user.classroomId))
+      setStudents(await api.getStudents(user.classroomId))
+      setRosterText('')
+      setRosterMessage(`${created.length} student${created.length === 1 ? '' : 's'} added. They will get access automatically when they sign in with this email.`)
+    } catch (err) {
+      setRosterMessage(err instanceof Error ? err.message : 'Could not assign students')
+    } finally {
+      setRosterBusy(false)
+    }
+  }
+
+  async function removeStudent(assignment: ClassroomAssignment) {
+    if (!user || !window.confirm(`Remove ${assignment.studentName || assignment.email} from this classroom?`)) return
+    try {
+      await api.removeAssignment(user.classroomId, assignment.id)
+      setAssignments((current) => current.filter((item) => item.id !== assignment.id))
+      setStudents(await api.getStudents(user.classroomId))
+    } catch (err) {
+      setRosterMessage(err instanceof Error ? err.message : 'Could not remove student')
     }
   }
 
@@ -136,6 +193,49 @@ export default function TeacherHome() {
       </div>
 
       {error && <p className={`m-0 rounded-xl px-4 py-3 text-sm ${TINT.peach}`}>{error}</p>}
+
+      <Card
+        title="Assign students"
+        eyebrow="Class roster"
+        icon={<UsersIcon className="size-[18px]" />}
+        tint="lavender"
+        bodyClassName="flex flex-col gap-4 p-5"
+      >
+        <p className="m-0 text-sm leading-relaxed text-muted">
+          Paste school email addresses, one per line. Students who sign in with a matching Google account are added to this class automatically.
+        </p>
+        <form onSubmit={(event) => void assignStudents(event)} className="flex flex-col gap-3">
+          <textarea
+            className={`${INPUT} min-h-28 resize-y py-3`}
+            value={rosterText}
+            onChange={(event) => setRosterText(event.target.value)}
+            placeholder={'alex@school.edu\nsam@school.edu\nTaylor Lee <taylor@school.edu>'}
+            aria-label="Student school email addresses"
+          />
+          <div className="flex flex-wrap items-center gap-3">
+            <Button type="submit" variant="primary" disabled={rosterBusy || !rosterText.trim()}>
+              {rosterBusy ? 'Adding students…' : 'Add to class'}
+            </Button>
+            {rosterMessage && <span role="status" className="text-sm text-muted">{rosterMessage}</span>}
+          </div>
+        </form>
+        <div className="flex flex-col divide-y divide-border rounded-xl border border-border">
+          {assignments.length === 0 ? (
+            <p className="m-0 px-4 py-3 text-sm text-muted">Your roster is empty. Add students above to give them access.</p>
+          ) : assignments.map((assignment) => (
+            <div key={assignment.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+              <div className="min-w-0">
+                <p className="m-0 truncate text-sm font-medium text-ink">{assignment.studentName || assignment.email}</p>
+                {assignment.studentName && <p className="m-0 truncate text-xs text-muted">{assignment.email}</p>}
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-muted">{assignment.status === 'active' ? 'Access granted' : 'Waiting for sign-in'}</span>
+                <Button size="sm" onClick={() => void removeStudent(assignment)}>Remove</Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
 
       {/*
         Two columns on large screens: [stats + roll call] | [raised hands + detail]. The column wrappers are

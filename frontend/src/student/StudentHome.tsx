@@ -1,25 +1,24 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { api } from '../api.ts'
 import { useAuth } from '../auth/useAuth.ts'
 import ModuleView from './ModuleView.tsx'
 import AiChatPanel from './AiChatPanel.tsx'
 import RaiseHandButton from './RaiseHandButton.tsx'
 import { WorkspaceProvider } from './WorkspaceContext.tsx'
-import Button from '../ui/Button.tsx'
 import Eyebrow from '../ui/Eyebrow.tsx'
 import Heading from '../ui/Heading.tsx'
 import { BookIcon } from '../ui/icons.tsx'
-import { CARD, FOCUS_RING, INPUT, TINT } from '../ui/styles.ts'
+import { CARD, FOCUS_RING, TINT } from '../ui/styles.ts'
 import type { Classroom, Module } from '../../../shared/types'
 
 export default function StudentHome() {
-  const { user, joinClassroom } = useAuth()
+  const { user } = useAuth()
   const [modules, setModules] = useState<Module[] | null>(null)
   const [classroom, setClassroom] = useState<Classroom | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [currentId, setCurrentId] = useState<string | null>(null)
-  const [joinCode, setJoinCode] = useState('')
-  const [joinMessage, setJoinMessage] = useState('')
+  const [phase, setPhase] = useState<'teach' | 'work'>('work')
   const lessonNav = useRef<HTMLElement>(null)
 
   useEffect(() => {
@@ -54,33 +53,21 @@ export default function StudentHome() {
       ?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' })
   }, [currentId, modules])
 
-  async function join(e: FormEvent) {
-    e.preventDefault()
-    try {
-      await joinClassroom({ roomCode: joinCode, role: 'student' })
-      setJoinMessage('You joined the classroom. Refreshing your dashboard…')
-      window.location.assign('/student')
-    } catch (err) {
-      setJoinMessage(err instanceof Error ? err.message : 'Could not join this classroom')
-    }
-  }
-
   const currentIndex = modules?.findIndex((m) => m.id === currentId) ?? -1
   const current = currentIndex >= 0 ? modules![currentIndex] : null
-  const firstName = user?.name.trim().split(/\s+/)[0] ?? ''
-
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div className="flex flex-col gap-3">
-          <Eyebrow>{classroom ? `Your learning space · ${classroom.name}` : 'Your learning space'}</Eyebrow>
-          <Heading as="h1" variant="title">
-            Welcome back, {firstName}.
-          </Heading>
-          <p className="m-0 text-[15px] text-muted">Choose a lesson to see what you’ll learn next.</p>
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border pb-4">
+        <div className="flex min-w-0 items-center gap-4">
+          <Link to={`/student/class/${user?.classroomId ?? ''}`} className="inline-flex h-9 items-center rounded-[9px] border border-border bg-surface px-3 text-[13px] font-semibold hover:bg-surface-soft">‹ &nbsp; Class</Link>
+          <div className="min-w-0"><Heading>{classroom?.name ?? 'Your classroom'}</Heading><p className="mb-0! mt-1! text-xs! text-muted">Ms Patel, room D2</p></div>
+          <span className={`hidden rounded-full px-3 py-1.5 text-xs font-semibold sm:inline-flex ${TINT.mint}`}>● &nbsp; Live, 24 in class</span>
         </div>
-        <div className="flex items-center gap-3 text-sm text-muted">
-          <span>Need help in class?</span>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-1 rounded-xl border border-border bg-surface-soft p-1" aria-label="Lesson phase">
+            <button type="button" aria-pressed={phase === 'teach'} onClick={() => setPhase('teach')} className={`rounded-lg px-3 py-2 text-xs font-semibold ${phase === 'teach' ? 'bg-surface text-ink shadow-sm' : 'text-muted'}`}>Teach</button>
+            <button type="button" aria-pressed={phase === 'work'} onClick={() => setPhase('work')} className={`rounded-lg px-3 py-2 text-xs font-semibold ${phase === 'work' ? 'bg-surface text-ink shadow-sm' : 'text-muted'}`}>Work time</button>
+          </div>
           <RaiseHandButton />
         </div>
       </div>
@@ -137,7 +124,7 @@ export default function StudentHome() {
               </div>
               {current && (
                 <aside aria-label="Tutor" className="min-w-0 lg:sticky lg:top-24 lg:h-[calc(100dvh-7rem)]">
-                  <AiChatPanel key={current.id} moduleId={current.id} />
+                  {phase === 'work' ? <AiChatPanel key={current.id} moduleId={current.id} /> : <div className={`flex min-h-32 flex-col gap-2 p-5 ${CARD}`}><Eyebrow>Teach phase</Eyebrow><Heading>Helper paused</Heading><p className="m-0 text-sm text-muted">Follow along with your teacher. The coding helper is available again during work time.</p></div>}
                 </aside>
               )}
             </div>
@@ -145,26 +132,10 @@ export default function StudentHome() {
         </>
       )}
 
-      <section className={`flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between ${CARD}`}>
-        <div className="flex flex-col gap-2">
-          <Eyebrow>Join a classroom</Eyebrow>
-          <Heading>Have a room code?</Heading>
-          <p className="m-0 text-sm text-muted">Join another class with the code from your teacher.</p>
-        </div>
-        <form onSubmit={join} className="flex flex-wrap items-center gap-2">
-          <input
-            aria-label="Classroom join code"
-            placeholder="Enter room code"
-            value={joinCode}
-            onChange={(e) => setJoinCode(e.target.value)}
-            required
-            className={`${INPUT} h-10 w-52`}
-          />
-          <Button type="submit" variant="primary">
-            Join class
-          </Button>
-          {joinMessage && <small className="basis-full text-xs text-muted">{joinMessage}</small>}
-        </form>
+      <section className={`flex flex-col gap-2 p-5 ${CARD}`}>
+        <Eyebrow>Class access</Eyebrow>
+        <Heading>Your teacher manages your classes</Heading>
+        <p className="m-0 text-sm text-muted">If you need another class, ask your teacher to add your school email. It will appear here automatically.</p>
       </section>
     </div>
   )

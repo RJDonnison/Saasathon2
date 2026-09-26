@@ -3,6 +3,8 @@ import ProtectedRoute from './auth/ProtectedRoute.tsx'
 import JoinPage from './pages/JoinPage.tsx'
 import StudentLayout from './student/StudentLayout.tsx'
 import StudentHome from './student/StudentHome.tsx'
+import StudentClassPage from './student/StudentClassPage.tsx'
+import StudentDashboard from './student/StudentDashboard.tsx'
 import TeacherLayout from './teacher/TeacherLayout.tsx'
 import TeacherHome from './teacher/TeacherHome.tsx'
 
@@ -19,7 +21,9 @@ export default function App() {
           </ProtectedRoute>
         }
       >
-        <Route index element={<StudentHome />} />
+        <Route index element={<StudentDashboard />} />
+        <Route path="class/:classroomId" element={<StudentClassPage />} />
+        <Route path="class/:classroomId/live" element={<StudentHome />} />
         <Route path="*" element={<Navigate to="/student" replace />} />
       </Route>
 

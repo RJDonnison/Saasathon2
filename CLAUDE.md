@@ -37,12 +37,11 @@ first**; never fork or redeclare these types locally in frontend or backend.
   signing/verification or add a login/logout endpoint — the backend validates tokens with
   `supabase.auth.getUser(token)` (`backend/src/auth.ts`, briefly cached).
 - Two levels of access: `requireIdentity` = valid Google session (used by `/api/auth/join` and
-  `/api/auth/me`); `requireMember` = identity that has also joined a classroom (everything else).
-- Signing in is not enough to use the app: the user then enters a **room code + role** on the join page
-  (`POST /api/auth/join`), which upserts their global `users` row (`users.id` = the Supabase auth user id; name
-  from their Google profile) and creates or updates a classroom membership. Role and classroom are read from
-  the most recently joined membership on every request — not from the token.
-  Anyone with a room code can pick the teacher role — by design for now.
+  `/api/auth/me`); `requireMember` = identity that has also been assigned to a classroom (everything else).
+- Teachers bootstrap through `POST /api/auth/join`, which upserts their global `users` row and creates a teacher
+  membership. Students are assigned by school email from the teacher roster; `/api/auth/me` matches the Google
+  email, upserts the user row, and creates the student membership. The browser retries `/api/auth/me` while a
+  signed-in identity has no membership yet. Role and classroom come from the most recently joined membership.
 - Sign-out is `supabase.auth.signOut()`.
 
 ## Current stub status

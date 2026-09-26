@@ -45,20 +45,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!sessionReady || !authId) return;
     let cancelled = false;
-    api
-      .me()
-      .then(({ user }) => {
-        if (!cancelled) setProfile({ authId, user });
-      })
-      .catch((err) => {
-        console.warn("[auth] could not load profile:", err);
-        // The backend rejected the session outright (e.g. the account was removed): drop it locally.
-        if (err instanceof ApiClientError && err.status === 401)
-          void supabase.auth.signOut({ scope: "local" });
-        if (!cancelled) setProfile({ authId, user: null });
-      });
+    let assigned = false;
+    const loadProfile = () => {
+      void api
+        .me()
+        .then(({ user }) => {
+          if (cancelled) return;
+          assigned = user !== null;
+          setProfile({ authId, user });
+        })
+        .catch((err) => {
+          console.warn("[auth] could not load profile:", err);
+          // The backend rejected the session outright (e.g. the account was removed): drop it locally.
+          if (err instanceof ApiClientError && err.status === 401)
+            void supabase.auth.signOut({ scope: "local" });
+          if (!cancelled) setProfile({ authId, user: null });
+        });
+    };
+    loadProfile();
+    // A student may already be signed in when their teacher adds their email. Recheck quietly
+    // until a roster assignment appears so they do not have to enter a code or refresh manually.
+    const interval = window.setInterval(() => {
+      if (!assigned) loadProfile();
+    }, 15000);
     return () => {
       cancelled = true;
+      window.clearInterval(interval);
     };
   }, [sessionReady, authId]);
 

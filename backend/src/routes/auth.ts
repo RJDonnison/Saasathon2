@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Router } from "express";
 import { supabase } from "../supabase.js";
-import { findProfile, requireIdentity } from "../auth.js";
+import { applyClassroomAssignments, findProfile, requireIdentity } from "../auth.js";
 import {
   toUser,
   unwrap,
@@ -18,15 +18,19 @@ import type {
 // Both routes need a valid Supabase session but NOT a classroom (that is what /join creates).
 export const authRouter = Router();
 
-/** POST /api/auth/join — enter a classroom by room code with a chosen role. Re-joining switches classroom/role. */
+/** POST /api/auth/join — teacher bootstrap into a classroom. Students enter via the teacher email roster. */
 authRouter.post("/join", requireIdentity, async (req, res) => {
   const { roomCode, role } = (req.body ?? {}) as Partial<JoinRequest>;
   const cleanCode =
     typeof roomCode === "string" ? roomCode.trim().toUpperCase() : "";
-  if (!cleanCode || (role !== "student" && role !== "teacher")) {
+  if (role !== "teacher") {
+    res.status(403).json({ error: "Students are assigned by their teacher using their school email" });
+    return;
+  }
+  if (!cleanCode) {
     res
       .status(400)
-      .json({ error: "roomCode and role (student|teacher) are required" });
+      .json({ error: "A classroom code is required for teacher setup" });
     return;
   }
 
@@ -46,7 +50,7 @@ authRouter.post("/join", requireIdentity, async (req, res) => {
   const row = unwrap(
     await supabase
       .from("users")
-      .upsert({ id: authId, name }, { onConflict: "id" })
+      .upsert({ id: authId, name, email: req.identity!.email }, { onConflict: "id" })
       .select("*")
       .single(),
   ) as UserRow;
@@ -74,6 +78,7 @@ authRouter.post("/join", requireIdentity, async (req, res) => {
 
 /** GET /api/auth/me — the signed-in user's classroom profile, or null if they haven't joined yet. */
 authRouter.get("/me", requireIdentity, async (req, res) => {
+  await applyClassroomAssignments(req.identity!);
   const body: MeResponse = { user: await findProfile(req.identity!.authId) };
   res.json(body);
 });
