@@ -53,11 +53,11 @@ async function ownedExercise(
     ) as { module_id: string } | null);
   return s && (await moduleForUser(s.module_id, classroomId, role)) ? e : null;
 }
-async function questionInClassroom(
+async function questionModuleForUser(
   questionId: string,
   classroomId: string,
   role: "student" | "teacher",
-): Promise<boolean> {
+): Promise<string | null> {
   const question = unwrap(
     await supabase
       .from("questions")
@@ -65,7 +65,7 @@ async function questionInClassroom(
       .eq("id", questionId)
       .maybeSingle(),
   ) as { section_id: string } | null;
-  if (!question) return false;
+  if (!question) return null;
   const section = unwrap(
     await supabase
       .from("sections")
@@ -73,7 +73,9 @@ async function questionInClassroom(
       .eq("id", question.section_id)
       .maybeSingle(),
   ) as { module_id: string } | null;
-  return !!section && !!(await moduleForUser(section.module_id, classroomId, role));
+  return section && (await moduleForUser(section.module_id, classroomId, role))
+    ? section.module_id
+    : null;
 }
 commentsRouter.post("/attempts", async (req, res) => {
   const b = (req.body ?? {}) as Partial<CreateAttemptRequest>;
@@ -277,7 +279,12 @@ commentsRouter.get("/questions/:id/comments", async (req, res) => {
     !(await studentInClassroom(studentId, req.user!.classroomId))
   )
     return res.status(403).json({ error: "Not allowed to view this conversation" });
-  if (!(await questionInClassroom(questionId, req.user!.classroomId, req.user!.role)))
+  const moduleId = await questionModuleForUser(
+    questionId,
+    req.user!.classroomId,
+    req.user!.role,
+  );
+  if (!moduleId)
     return res.status(404).json({ error: "Question not found" });
   const rows = unwrap(
     await supabase
@@ -304,7 +311,12 @@ commentsRouter.post("/questions/:id/comments", async (req, res) => {
     return res.status(400).json({ error: "A comment must be between 1 and 4,000 characters" });
   if (!studentId || !(await studentInClassroom(studentId, req.user!.classroomId)))
     return res.status(403).json({ error: "Not allowed to comment for this student" });
-  if (!(await questionInClassroom(questionId, req.user!.classroomId, req.user!.role)))
+  const moduleId = await questionModuleForUser(
+    questionId,
+    req.user!.classroomId,
+    req.user!.role,
+  );
+  if (!moduleId)
     return res.status(404).json({ error: "Question not found" });
   if (req.user!.role === "student") {
     const teacherComment = unwrap(
@@ -337,6 +349,7 @@ commentsRouter.post("/questions/:id/comments", async (req, res) => {
   emitQuestionCommentCreated({
     type: "question_comment_created",
     classroomId: req.user!.classroomId,
+    moduleId,
     comment,
   });
   res.status(201).json(comment);

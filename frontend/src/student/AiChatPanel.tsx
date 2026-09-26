@@ -69,7 +69,7 @@ const FIND_ERROR =
   "Something is wrong with my code. Can you tell me where to look?";
 
 // "I'm stuck" chat, scoped to the module and lesson session the student is on. A new session starts clean.
-// Its scoped conversation survives a reload or a temporary change to the teacher's Teach phase.
+// Its scoped conversation survives a reload or a change in the live lesson session.
 // The panel stays mounted across modules, so a reply that arrives after switching lands in the module it was asked in.
 // The server is stateless: we re-send the transcript (minus errors) with every question, plus the code of the
 // editor the student last touched. When the tutor can locate a problem, the editor marks and scrolls to it.

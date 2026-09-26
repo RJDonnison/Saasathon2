@@ -33,6 +33,9 @@ type AppSocket = Socket<
 const online = new Map<string, Map<string, number>>();
 // Unacknowledged hands survive page navigation and reconnects while this server is running.
 const raisedHands = new Map<string, Map<string, number>>();
+// A short server-owned pause after a student lowers their hand prevents rapid raise/lower spam.
+const handRaiseCooldowns = new Map<string, Map<string, number>>();
+const HAND_RAISE_COOLDOWN_MS = 15_000;
 let activeIo: AppServer | null = null;
 
 /** Tell everyone in the classroom the live lesson changed (null = it ended). */
@@ -158,13 +161,50 @@ export function attachSockets(httpServer: HttpServer): AppServer {
       studentId === userId &&
       payloadClassroomId === classroomId;
 
-    socket.on("raise_hand", (payload) => {
-      if (!isValidSender(payload?.studentId, payload?.classroomId)) return;
+    socket.on("raise_hand", (payload, acknowledge) => {
+      if (!isValidSender(payload?.studentId, payload?.classroomId)) {
+        acknowledge?.({ raised: false, cooldownUntil: null });
+        return;
+      }
+
+      const now = Date.now();
       const hands = raisedHands.get(classroomId) ?? new Map<string, number>();
+      const cooldowns = handRaiseCooldowns.get(classroomId);
+      const cooldownUntil = cooldowns?.get(userId) ?? null;
+      if (!hands.has(userId) && cooldownUntil && cooldownUntil > now) {
+        acknowledge?.({ raised: false, cooldownUntil });
+        return;
+      }
+      if (cooldownUntil) {
+        cooldowns?.delete(userId);
+        if (cooldowns?.size === 0) handRaiseCooldowns.delete(classroomId);
+      }
       // Re-raising is idempotent: it keeps the original request time until a teacher helps.
-      if (!hands.has(userId)) hands.set(userId, Date.now());
+      if (!hands.has(userId)) hands.set(userId, now);
       raisedHands.set(classroomId, hands);
       emitRaisedHands(classroomId);
+      acknowledge?.({ raised: true, cooldownUntil: null });
+    });
+
+    socket.on("lower_hand", (payload, acknowledge) => {
+      if (!isValidSender(payload?.studentId, payload?.classroomId)) {
+        acknowledge?.({ lowered: false, cooldownUntil: null });
+        return;
+      }
+
+      const hands = raisedHands.get(classroomId);
+      if (!hands?.delete(userId)) {
+        acknowledge?.({ lowered: false, cooldownUntil: null });
+        return;
+      }
+      if (hands.size === 0) raisedHands.delete(classroomId);
+
+      const cooldownUntil = Date.now() + HAND_RAISE_COOLDOWN_MS;
+      const cooldowns = handRaiseCooldowns.get(classroomId) ?? new Map<string, number>();
+      cooldowns.set(userId, cooldownUntil);
+      handRaiseCooldowns.set(classroomId, cooldowns);
+      emitRaisedHands(classroomId);
+      acknowledge?.({ lowered: true, cooldownUntil });
     });
 
     socket.on("acknowledge_hand", (payload) => {

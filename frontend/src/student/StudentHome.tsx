@@ -6,6 +6,7 @@ import { useClassroomPresence } from "../hooks/useClassroomPresence.ts";
 import { useLiveSession } from "../useLiveSession.ts";
 import ModuleView from "./ModuleView.tsx";
 import AiChatPanel from "./AiChatPanel.tsx";
+import InvitationBell from "./InvitationBell.tsx";
 import RaiseHandButton from "./RaiseHandButton.tsx";
 import { WorkspaceProvider } from "./WorkspaceContext.tsx";
 import Button from "../ui/Button.tsx";
@@ -75,7 +76,7 @@ function ShowLessonOnHighlight({ onHighlight }: { onHighlight: () => void }) {
 }
 
 /**
- * The live lesson: top bar (class, phase, help), then three panes — the lesson list, the work, and the helper.
+ * The live lesson: top bar (class, presence, raise hand), then three panes — the lesson list, the work, and the helper.
  * The page always fits the screen and each pane scrolls on its own. On large screens the panes are columns;
  * below that they are tabs, so nothing stacks into a page-length scroll.
  */
@@ -83,7 +84,9 @@ export default function StudentHome() {
   const { user } = useAuth();
   const { classroom, lessons: modules, error, setStatus } = useClassData();
   const [params] = useSearchParams();
-  const [pickedId, setPickedId] = useState<string | null>(params.get("lesson"));
+  const targetLessonId = params.get("lesson");
+  const [pickedId, setPickedId] = useState<string | null>(targetLessonId);
+  const targetQuestionId = params.get("question");
   const { session } = useLiveSession();
   // While the teacher's lesson is live, students follow it by default; they can wander off and come back.
   const [following, setFollowing] = useState(true);
@@ -95,6 +98,16 @@ export default function StudentHome() {
   const [pane, setPane] = useState<Pane>("lesson");
   const { online, hasSnapshot } = useClassroomPresence(user?.classroomId);
   const lessonNav = useRef<HTMLElement>(null);
+
+  // A teacher's feedback link can arrive while the student is elsewhere in the
+  // live lesson. Open that lesson and its work pane instead of leaving them in
+  // the helper or following another lesson.
+  useEffect(() => {
+    if (!targetQuestionId || !targetLessonId) return;
+    setPickedId(targetLessonId);
+    setPane("lesson");
+    if (session) setFollowing(targetLessonId === session.moduleId);
+  }, [session?.moduleId, targetLessonId, targetQuestionId]);
 
   // The lesson in view: the one the student picked (or linked to), else where they left off, else the first.
   // Lessons outside the teacher's time window can't be opened, so they are never the lesson in view.
@@ -109,7 +122,6 @@ export default function StudentHome() {
     (modules ? (lessonOverview(modules).current ?? openModules?.[0])?.id : null) ??
     null;
   const followingNow = followedId !== null;
-  const phase = followingNow ? session!.phase : "work";
 
   /** Pick a lesson from the list or the Next button. Leaving the teacher's lesson unfollows; returning to it re-follows. */
   function browse(id: string) {
@@ -151,17 +163,6 @@ export default function StudentHome() {
 
   const showLesson = useCallback(() => setPane("lesson"), []);
 
-  function imLost() {
-    // The helper is paused while the teacher is teaching, so asking for help means stepping off their pace.
-    if (followingNow && session!.phase === "teach") setFollowing(false);
-    setPane("helper");
-    // Wait a tick so the helper is mounted if it was paused.
-    window.setTimeout(
-      () => document.getElementById("helper-question")?.focus(),
-      0,
-    );
-  }
-
   const currentIndex = modules?.findIndex((m) => m.id === currentId) ?? -1;
   const current = currentIndex >= 0 ? modules![currentIndex] : null;
   const nextOpen = modules?.slice(currentIndex + 1).find((m) => m.available);
@@ -186,7 +187,7 @@ export default function StudentHome() {
             <LoadingBlock className="h-3 w-28" />
           )
         }
-        badge={
+        center={
           !hasSnapshot ? undefined : (
             <span
               className={`hidden items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold whitespace-nowrap sm:inline-flex ${TINT.mint}`}
@@ -196,44 +197,7 @@ export default function StudentHome() {
             </span>
           )
         }
-        center={
-          sessionLoading ? (
-            <LoadingBlock className="h-9 w-28" />
-          ) : session ? (
-            <div
-              className="flex items-center gap-3"
-              role="status"
-              aria-label="Lesson phase"
-            >
-              <span className="hidden text-[13px] text-muted md:inline">
-                Lesson phase
-              </span>
-              <div className="flex items-center gap-1 rounded-xl border border-border bg-surface-soft p-1">
-                {(["teach", "work"] as const).map((p) => (
-                  <span
-                    key={p}
-                    aria-current={session.phase === p}
-                    className={`rounded-lg px-3.5 py-2 text-[13px] leading-none font-semibold ${session.phase === p ? "bg-surface text-ink shadow-sm" : "text-muted"}`}
-                  >
-                    {p === "teach" ? "Teach" : "Work time"}
-                  </span>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <span className="rounded-full border border-border bg-surface-soft px-3 py-1.5 text-xs font-semibold text-muted">
-              Self-paced
-            </span>
-          )
-        }
-        actions={
-          <>
-            <Button size="lg" onClick={imLost} disabled={!current}>
-              I’m lost
-            </Button>
-            <RaiseHandButton />
-          </>
-        }
+        actions={<RaiseHandButton />}
       />
 
       <WorkspaceProvider moduleId={currentId}>
@@ -427,6 +391,7 @@ export default function StudentHome() {
                 index={Math.max(currentIndex, 0)}
                 total={modules.length}
                 locked={current?.status === "completed"}
+                focusQuestionId={targetQuestionId}
               />
             )}
 
@@ -473,22 +438,14 @@ export default function StudentHome() {
               aria-label="Helper"
               className={`${pane === "helper" ? "flex" : "hidden"} relative min-h-0 flex-col overflow-hidden bg-surface lg:flex lg:border-l lg:border-border`}
             >
-              {classroomLoading || sessionLoading ? (
+              {classroomLoading ? (
                 <HelperSkeleton />
-              ) : phase === "work" ? (
+              ) : (
                 <AiChatPanel
                   key={`${session?.id ?? "self-paced"}:${current.id}`}
                   moduleId={current.id}
                   sessionId={session?.id ?? null}
                 />
-              ) : (
-                <div className="flex flex-col gap-2 p-5">
-                  <Heading>Helper paused</Heading>
-                  <p className="m-0 text-sm text-muted">
-                    Follow along with {teacher}. The coding helper is available
-                    again during work time, or when you step off their pace.
-                  </p>
-                </div>
               )}
             </aside>
           )}
