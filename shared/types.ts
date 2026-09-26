@@ -2,6 +2,7 @@
 export type Role = "student" | "teacher";
 export type ProgressStatus = "not_started" | "in_progress" | "completed";
 export type QuestionKind = "mcq" | "short" | "code" | "math";
+export type ModuleStatus = "draft" | "published";
 
 export interface Classroom {
   id: string;
@@ -30,6 +31,8 @@ export interface Module {
   title: string;
   content: string;
   position: number;
+  status: ModuleStatus;
+  revision: number;
 }
 export interface Section {
   id: string;
@@ -42,6 +45,14 @@ export interface SectionBlock {
   sectionId: string;
   type: string;
   content: unknown;
+  position: number;
+}
+/** The authoritative, mixed ordering for a section. Legacy blocks/questions remain for compatibility. */
+export interface SectionItem {
+  id: string;
+  sectionId: string;
+  itemType: "block" | "question";
+  itemId: string;
   position: number;
 }
 export interface QuestionOption {
@@ -87,6 +98,8 @@ export interface TeacherQuestion extends Question {
   mathExpectedResult: number | null;
   mathTolerance: number | null;
   codeExercise?: CodeExercise & {
+    /** Appended by the server at run time; deliberately absent from student aggregates. */
+    hiddenCode: string;
     referenceAnswers: ReferenceAnswer[];
     checks: CodeCheck[];
   };
@@ -94,6 +107,7 @@ export interface TeacherQuestion extends Question {
 export interface TeacherSection extends Section {
   blocks: SectionBlock[];
   questions: TeacherQuestion[];
+  items: SectionItem[];
 }
 export interface TeacherModule extends Module {
   sections: TeacherSection[];
@@ -105,6 +119,7 @@ export interface StudentQuestion extends Question {
 export interface StudentSection extends Section {
   blocks: SectionBlock[];
   questions: StudentQuestion[];
+  items: SectionItem[];
 }
 export interface StudentModule extends Module {
   sections: StudentSection[];
@@ -194,6 +209,61 @@ export interface CreateModuleRequest {
   content?: string;
   position?: number;
 }
+/** Complete editor document. Save is serialized by `revision`; the server replaces this module only. */
+export interface ModuleBuilderDocument {
+  title: string;
+  content: string;
+  status: ModuleStatus;
+  sections: Array<{
+    id: string;
+    title: string;
+    items: Array<
+      | { id: string; type: "block"; blockType: string; content: unknown }
+      | {
+          id: string;
+          type: "question";
+          prompt: string;
+          kind: QuestionKind;
+          answerKey: string | null;
+          mathExpectedResult?: number | null;
+          mathTolerance?: number | null;
+          options: string[];
+          language?: string;
+          starterCode?: string;
+          instructions?: string;
+          /** Teacher-only test harness appended on the server when this exercise runs. */
+          hiddenCode?: string;
+          referenceAnswers?: Array<{ id: string; title: string; answer: string }>;
+          checks?: Array<{ id: string; name: string; description: string }>;
+        }
+    >;
+  }>;
+}
+export interface SaveModuleBuilderRequest {
+  revision: number;
+  document: ModuleBuilderDocument;
+}
+export interface SaveModuleBuilderResponse {
+  module: TeacherModule;
+}
+/** AI suggestions may edit module-level text only; structural edits stay in the builder. */
+export interface ModuleBuilderSuggestionPatch {
+  title?: string;
+  content?: string;
+}
+export interface AiModuleSuggestion {
+  id: string;
+  label: string;
+  patch: ModuleBuilderSuggestionPatch;
+}
+export interface AiModuleSuggestionsRequest {
+  moduleId: string;
+  request: string;
+  itemId?: string;
+}
+export interface AiModuleSuggestionsResponse {
+  suggestions: AiModuleSuggestion[];
+}
 export interface UpdateModuleRequest {
   title?: string;
   content?: string;
@@ -245,6 +315,7 @@ export interface UpsertCodeExerciseRequest {
   language: string;
   starterCode: string;
   instructions: string;
+  hiddenCode?: string;
 }
 export interface CreateReferenceAnswerRequest {
   title: string;
@@ -313,6 +384,8 @@ export type GetTeacherStudentAggregateResponse = TeacherStudentAggregate;
 export interface RunCodeRequest {
   code: string;
   language: string;
+  /** A lesson exercise whose teacher-only harness is loaded server-side. Omit for the playground. */
+  exerciseId?: string;
 }
 export interface RunCodeResponse {
   stdout: string;

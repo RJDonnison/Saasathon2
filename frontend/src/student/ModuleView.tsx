@@ -4,11 +4,13 @@ import Button from "../ui/Button.tsx";
 import Card from "../ui/Card.tsx";
 import Eyebrow from "../ui/Eyebrow.tsx";
 import Heading from "../ui/Heading.tsx";
+import InlineText from "../ui/InlineText.tsx";
 import MathText from "../ui/MathText.tsx";
 import Markdown from "../ui/Markdown.tsx";
 import { BookIcon, CodeIcon, PencilIcon } from "../ui/icons.tsx";
 import { CARD, INPUT, TINT } from "../ui/styles.ts";
 import CodeEditor from "./CodeEditor.tsx";
+import { onModuleChanged } from "../socket.ts";
 import { useWorkspace } from "./useWorkspace.ts";
 import type {
   Module,
@@ -24,9 +26,7 @@ const blockText = (b: SectionBlock) =>
   typeof b.content === "string" ? b.content : null;
 
 /**
- * One lesson: the intro, then its sections in order. A section is reading (its content blocks) followed by work
- * (its questions and code exercises), so a lesson alternates between the two by how the teacher orders sections,
- * e.g. read -> practice -> read -> practice.
+ * One lesson: the intro, then section items in their teacher-authored mixed order.
  */
 export default function ModuleView({
   module,
@@ -58,6 +58,7 @@ function Lesson({
 }) {
   const [full, setFull] = useState<StudentModule | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [version, setVersion] = useState(0);
   const { setActiveQuestion } = useWorkspace();
 
   useEffect(() => {
@@ -77,7 +78,14 @@ function Lesson({
     return () => {
       cancelled = true;
     };
-  }, [module.id]);
+  }, [module.id, version]);
+  useEffect(
+    () =>
+      onModuleChanged((change) => {
+        if (change.moduleId === module.id) setVersion((value) => value + 1);
+      }),
+    [module.id],
+  );
 
   useEffect(() => {
     const firstMathQuestion = full?.sections
@@ -174,6 +182,27 @@ function SectionView({
 }) {
   const reading = section.blocks.filter((b) => blockText(b)?.trim());
   const work = section.questions;
+  const ordered = section.items
+    .map((item) =>
+      item.itemType === "block"
+        ? {
+            type: "block" as const,
+            value: section.blocks.find((block) => block.id === item.itemId),
+          }
+        : {
+            type: "question" as const,
+            value: section.questions.find(
+              (question) => question.id === item.itemId,
+            ),
+          },
+    )
+    .filter(
+      (
+        item,
+      ): item is
+        | { type: "block"; value: SectionBlock }
+        | { type: "question"; value: StudentQuestion } => Boolean(item.value),
+    );
   const kind =
     reading.length && work.length
       ? "Read & practise"
@@ -202,17 +231,20 @@ function SectionView({
         </div>
       </header>
 
-      {reading.length > 0 && (
-        <article className={`flex flex-col gap-6 p-6 sm:p-7 ${CARD}`}>
-          {reading.map((b) => (
-            <Markdown key={b.id} text={blockText(b)!} />
-          ))}
-        </article>
+      {ordered.map((item) =>
+        item.type === "block" ? (
+          blockText(item.value)?.trim() && (
+            <article
+              key={item.value.id}
+              className={`flex flex-col gap-6 p-6 sm:p-7 ${CARD}`}
+            >
+              <Markdown text={blockText(item.value)!} />
+            </article>
+          )
+        ) : (
+          <QuestionView key={item.value.id} question={item.value} />
+        ),
       )}
-
-      {work.map((question) => (
-        <QuestionView key={question.id} question={question} />
-      ))}
     </section>
   );
 }
@@ -260,7 +292,7 @@ function AnswerQuestion({ question }: { question: StudentQuestion }) {
       bodyClassName="flex flex-col gap-4 p-5"
     >
       <p className="m-0! text-[15px] leading-relaxed text-ink">
-        <MathText text={question.prompt} />
+        <InlineText text={question.prompt} />
       </p>
       {question.kind === "mcq" && question.options.length > 0 ? (
         <fieldset className="m-0 flex flex-col gap-2 border-0 p-0">
@@ -278,7 +310,7 @@ function AnswerQuestion({ question }: { question: StudentQuestion }) {
                 onChange={() => setAnswer(o.id)}
                 className="accent-ink"
               />
-              <MathText text={o.text} />
+              <InlineText text={o.text} />
             </label>
           ))}
         </fieldset>
