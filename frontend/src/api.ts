@@ -84,8 +84,6 @@ async function request<T>(
   path: string,
   init: RequestInit & { json?: unknown } = {},
 ): Promise<T> {
-  if (backendEndpoint.error) throw new Error(backendEndpoint.error);
-
   const { json, ...requestInit } = init;
   const headers = new Headers(requestInit.headers);
   // The Supabase access token (auto-refreshed by supabase-js) authenticates every API call.
@@ -96,7 +94,7 @@ async function request<T>(
   }
   if (json !== undefined) headers.set("Content-Type", "application/json");
 
-  const res = await fetch(`${backendEndpoint.origin}${path}`, {
+  const res = await fetch(`${backendEndpoint}${path}`, {
     ...requestInit,
     headers,
     body: json !== undefined ? JSON.stringify(json) : requestInit.body,
