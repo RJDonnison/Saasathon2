@@ -1,6 +1,13 @@
 // Single source of truth for socket.io event payloads.
 // Plain file (not an npm package) — imported by relative path from backend and frontend.
 
+import type {
+  LessonSession,
+  QuestionComment,
+  StudentActivity,
+  StudentWork,
+} from "./types.js";
+
 export type StudentStatus = "idle" | "working" | "stuck";
 
 export interface RaiseHandPayload {
@@ -34,11 +41,20 @@ export interface StudentStatusUpdatePayload {
   status: StudentStatus;
   moduleId: string;
 }
-
-import type { LessonSession } from './types';
+/** Broadcast when a student changes location, saves work, or takes a meaningful learning action. */
+export interface StudentActivityUpdatePayload {
+  type: "student_activity_update";
+  classroomId: string;
+  studentId: string;
+  active: StudentActivity;
+  /** Present for a meaningful logged action; draft saves only refresh `active`. */
+  activity?: StudentActivity;
+  /** Present when a draft was saved, so the selected teacher view stays in sync. */
+  work?: StudentWork;
+}
 
 export interface SessionUpdatePayload {
-  type: 'session_update';
+  type: "session_update";
   classroomId: string;
   /** The classroom's live lesson after the change; null once it has ended. */
   session: LessonSession | null;
@@ -55,6 +71,12 @@ export interface ModuleChangedPayload {
   moduleId: string;
   revision: number;
 }
+export interface QuestionCommentCreatedPayload {
+  type: "question_comment_created";
+  classroomId: string;
+  comment: QuestionComment;
+}
+
 export interface ModuleDeletedPayload {
   type: "module_deleted";
   classroomId: string;
@@ -67,10 +89,12 @@ export type SocketPayload =
   | AcknowledgeHandPayload
   | RaisedHandsUpdatePayload
   | StudentStatusUpdatePayload
+  | StudentActivityUpdatePayload
   | PresenceUpdatePayload
   | SessionUpdatePayload
   | ModuleChangedPayload
-  | ModuleDeletedPayload;
+  | ModuleDeletedPayload
+  | QuestionCommentCreatedPayload;
 
 /** Events the client emits -> server. */
 export interface ClientToServerEvents {
@@ -83,8 +107,10 @@ export interface ClientToServerEvents {
 export interface ServerToClientEvents {
   raised_hands_update: (payload: RaisedHandsUpdatePayload) => void;
   student_status_update: (payload: StudentStatusUpdatePayload) => void;
+  student_activity_update: (payload: StudentActivityUpdatePayload) => void;
   presence_update: (payload: PresenceUpdatePayload) => void;
   session_update: (payload: SessionUpdatePayload) => void;
   module_changed: (payload: ModuleChangedPayload) => void;
+  question_comment_created: (payload: QuestionCommentCreatedPayload) => void;
   module_deleted: (payload: ModuleDeletedPayload) => void;
 }

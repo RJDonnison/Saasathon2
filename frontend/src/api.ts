@@ -51,6 +51,14 @@ import type {
   ValidateMathResponse,
   UpsertProgressRequest,
   UpsertProgressResponse,
+  GetClassroomStudentActivityResponse,
+  GetStudentWorkResponse,
+  RecordStudentActivityRequest,
+  SaveStudentWorkRequest,
+  StudentActivity,
+  CreateQuestionCommentRequest,
+  CreateQuestionCommentResponse,
+  ListQuestionCommentsResponse,
 } from "../../shared/types";
 import { supabase } from "./supabase.ts";
 
@@ -103,6 +111,30 @@ export const api = {
     request<GetClassroomStudentsResponse>(
       `/api/classrooms/${classroomId}/students`,
     ),
+  getClassroomStudentActivity: (classroomId: string) =>
+    request<GetClassroomStudentActivityResponse>(
+      `/api/activity/classrooms/${classroomId}`,
+    ),
+  getTeacherStudentAggregate: (classroomId: string, studentId: string) =>
+    request<GetTeacherStudentAggregateResponse>(
+      `/api/classrooms/${classroomId}/students/${studentId}/aggregate`,
+    ),
+  getStudentWork: (moduleId: string) =>
+    request<GetStudentWorkResponse>(
+      `/api/activity/work?moduleId=${encodeURIComponent(moduleId)}`,
+    ),
+  saveStudentWork: (body: SaveStudentWorkRequest) =>
+    request(`/api/activity/work`, { method: "PUT", json: body }),
+  recordStudentActivity: (body: RecordStudentActivityRequest) =>
+    post<StudentActivity>("/api/activity", body),
+  createComment: (body: CreateCommentRequest) =>
+    post<Comment>("/api/comments", body),
+  getQuestionComments: (questionId: string, studentId?: string) =>
+    request<ListQuestionCommentsResponse>(
+      `/api/comments/questions/${questionId}/comments${studentId ? `?studentId=${encodeURIComponent(studentId)}` : ""}`,
+    ),
+  createQuestionComment: (questionId: string, body: CreateQuestionCommentRequest) =>
+    post<CreateQuestionCommentResponse>(`/api/comments/questions/${questionId}/comments`, body),
   getInvitations: (classroomId: string) =>
     request<ClassroomInvitation[]>(`/api/classrooms/${classroomId}/invitations`),
   inviteStudents: (classroomId: string, body: CreateClassroomInvitationsRequest) =>
@@ -119,8 +151,6 @@ export const api = {
   postAnnouncement: (classroomId: string, text: string) => post<Announcement>(`/api/classrooms/${classroomId}/announcements`, { text }),
   deleteAnnouncement: (classroomId: string, id: string) =>
     request<void>(`/api/classrooms/${classroomId}/announcements/${id}`, { method: "DELETE" }),
-  getStudentAggregate: (classroomId: string, studentId: string) =>
-    request<GetTeacherStudentAggregateResponse>(`/api/classrooms/${classroomId}/students/${studentId}/aggregate`),
   createModule: (body: CreateModuleRequest) => post<Module>("/api/modules", body),
   getSession: (classroomId: string) => request<GetSessionResponse>(`/api/classrooms/${classroomId}/session`),
   startSession: (classroomId: string, moduleId: string, phase: LessonPhase = "teach") =>
@@ -131,7 +161,6 @@ export const api = {
     request<GetSessionResponse>(`/api/classrooms/${classroomId}/session`, { method: "DELETE" }),
   createAttempt: (body: CreateAttemptRequest) => post<CreateAttemptResponse>("/api/comments/attempts", body),
   createSubmission: (body: CreateSubmissionRequest) => post<CodeSubmission>("/api/comments/submissions", body),
-  createComment: (body: CreateCommentRequest) => post<Comment>("/api/comments", body),
   upsertProgress: (body: UpsertProgressRequest) =>
     request<UpsertProgressResponse>("/api/progress", {
       method: "PUT",
