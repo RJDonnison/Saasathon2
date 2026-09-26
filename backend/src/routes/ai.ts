@@ -1,5 +1,5 @@
 import { Router, type RequestHandler, type Response } from "express";
-import { moduleInClassroom } from "../access.js";
+import { moduleForUser, moduleInClassroom } from "../access.js";
 import { requireRole } from "../auth.js";
 import {
   AiNotConfiguredError,
@@ -301,7 +301,11 @@ aiRouter.post("/hint", requireRole("student"), rateLimit, async (req, res) => {
   }
   if (!isAiConfigured()) return notConfigured(res);
 
-  const row = await moduleInClassroom(moduleId, req.user!.classroomId);
+  const row = await moduleForUser(
+    moduleId,
+    req.user!.classroomId,
+    req.user!.role,
+  );
   if (!row) {
     res.status(404).json({ error: "Module not found" });
     return;

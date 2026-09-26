@@ -2,7 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api.ts";
 import { useAuth } from "../auth/useAuth.ts";
-import { onPresenceUpdate, onRaiseHand } from "../socket.ts";
+import {
+  onModuleChanged,
+  onModuleDeleted,
+  onPresenceUpdate,
+  onRaiseHand,
+} from "../socket.ts";
 import ClassroomGrid from "./ClassroomGrid.tsx";
 import StudentDetailPanel from "./StudentDetailPanel.tsx";
 import RaiseHandAlert, { type RaisedHand } from "./RaiseHandAlert.tsx";
@@ -96,6 +101,22 @@ export default function TeacherHome() {
       .catch(() => {});
     return () => {
       cancelled = true;
+    };
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    const refresh = () => {
+      void api
+        .listModules(user.classroomId)
+        .then(setModules)
+        .catch(() => {});
+    };
+    const changed = onModuleChanged(refresh);
+    const deleted = onModuleDeleted(refresh);
+    return () => {
+      changed();
+      deleted();
     };
   }, [user]);
 

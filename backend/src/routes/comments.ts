@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Router } from "express";
-import { moduleInClassroom } from "../access.js";
+import { moduleForUser } from "../access.js";
 import { supabase } from "../supabase.js";
 import {
   toComment,
@@ -21,6 +21,7 @@ export const commentsRouter = Router();
 async function ownedExercise(
   id: string,
   classroomId: string,
+  role: "student" | "teacher",
 ): Promise<ExerciseRow | null> {
   const e = unwrap(
     await supabase
@@ -46,7 +47,7 @@ async function ownedExercise(
         .eq("id", q.section_id)
         .maybeSingle(),
     ) as { module_id: string } | null);
-  return s && (await moduleInClassroom(s.module_id, classroomId)) ? e : null;
+  return s && (await moduleForUser(s.module_id, classroomId, role)) ? e : null;
 }
 commentsRouter.post("/attempts", async (req, res) => {
   const b = (req.body ?? {}) as Partial<CreateAttemptRequest>;
@@ -77,7 +78,11 @@ commentsRouter.post("/attempts", async (req, res) => {
   if (
     !question ||
     !section ||
-    !(await moduleInClassroom(section.module_id, req.user!.classroomId))
+    !(await moduleForUser(
+      section.module_id,
+      req.user!.classroomId,
+      req.user!.role,
+    ))
   )
     return res.status(404).json({ error: "Question not found" });
   const isCorrect =
@@ -113,7 +118,13 @@ commentsRouter.post("/submissions", async (req, res) => {
       typeof b.passed !== "boolean")
   )
     return res.status(400).json({ error: "Invalid sandbox submission result" });
-  if (!(await ownedExercise(b.codeExerciseId, req.user!.classroomId)))
+  if (
+    !(await ownedExercise(
+      b.codeExerciseId,
+      req.user!.classroomId,
+      req.user!.role,
+    ))
+  )
     return res.status(404).json({ error: "Code exercise not found" });
   const row = unwrap(
     await supabase
@@ -145,6 +156,7 @@ commentsRouter.get("/submissions/:id/comments", async (req, res) => {
     !(await ownedExercise(
       submission.code_exercise_id,
       req.user!.classroomId,
+      req.user!.role,
     )) ||
     (req.user!.role === "student" && submission.student_id !== req.user!.userId)
   )
@@ -184,6 +196,7 @@ commentsRouter.post("/comments", async (req, res) => {
     !(await ownedExercise(
       submission.code_exercise_id,
       req.user!.classroomId,
+      req.user!.role,
     )) ||
     (req.user!.role === "student" && submission.student_id !== req.user!.userId)
   )

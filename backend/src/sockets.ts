@@ -5,6 +5,7 @@ import { CLIENT_ORIGIN } from "./config.js";
 import type {
   ClientToServerEvents,
   ModuleChangedPayload,
+  ModuleDeletedPayload,
   PresenceUpdatePayload,
   ServerToClientEvents,
 } from "../../shared/events.js";
@@ -28,6 +29,9 @@ const online = new Map<string, Map<string, number>>();
 let appIo: AppServer | null = null;
 export function emitModuleChanged(payload: ModuleChangedPayload) {
   appIo?.to(payload.classroomId).emit("module_changed", payload);
+}
+export function emitModuleDeleted(payload: ModuleDeletedPayload) {
+  appIo?.to(payload.classroomId).emit("module_deleted", payload);
 }
 
 function onlineStudentIds(classroomId: string): string[] {
