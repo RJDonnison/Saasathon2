@@ -1,7 +1,7 @@
 # Classroom Coding Platform
 
 A hackathon skeleton for a classroom coding platform: real routing, real (room-code) auth, real sockets,
-and stubbed code execution / AI hints for the team to build on.
+Piston-backed code execution, and AI hints for the team to build on.
 
 ## Architecture
 
@@ -71,9 +71,13 @@ Sign in with Google, then join with `DEMO123` as a student in one browser window
 (use two Google accounts, or a normal window plus a private one) to try the raise-hand flow. Your name comes
 from your Google profile. Alex and Sam are demo rows with no login; they just populate the teacher's grid.
 
-## What's stubbed
+## Code execution
 
-Code execution (`POST /api/code/run`) returns a mock response.
+Code segments use Monaco in the browser and run through the server's Piston sandbox integration. By default the
+backend calls local Piston at `http://localhost:2000/api/v2`. Set `PISTON_API_URL` only to use another Piston
+`/api/v2` endpoint, and set `PISTON_AUTH_TOKEN` if that hosted instance requires a bearer token. The token stays
+server-side. JavaScript, TypeScript and Python lesson segments are supported; runs are limited to three seconds
+and 12 per user per minute.
 
 ## AI
 

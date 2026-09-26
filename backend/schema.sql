@@ -522,3 +522,65 @@ insert into code_checks (id, code_exercise_id, name, description, position) valu
   ('obj-x6-c1', 'obj-x6', 'Two pets', 'totalLegs([{ name: "Rex", legs: 4 }, { name: "Tweety", legs: 2 }]) returns 6', 1),
   ('obj-x6-c2', 'obj-x6', 'No pets', 'totalLegs([]) returns 0', 2)
 on conflict do nothing;
+
+-- ============================================================================
+-- Example curriculum: Python Foundations.
+-- This is a separate introductory module so its exercises run with the Python
+-- interpreter rather than the JavaScript one used by the earlier curriculum.
+-- ============================================================================
+insert into modules (id, classroom_id, title, content, position) values
+  ('module-python-1', 'classroom-demo', 'Python Foundations', 'Python is designed to be readable. In this module you will use variables, strings and functions, then practise making decisions and repeating work with Python.', 7)
+on conflict do nothing;
+
+insert into sections (id, module_id, title, position) values
+  ('py-s1', 'module-python-1', 'Python essentials', 1),
+  ('py-s2', 'module-python-1', 'Practice', 2)
+on conflict do nothing;
+
+insert into section_blocks (id, section_id, type, content, position) values
+  ('py-b1', 'py-s1', 'markdown', '"## Values and output\n\nUse `=` to store a value in a variable. Python does not use `const` or `let`, and indentation matters.\n\n```python\nname = \"Alex\"\nscore = 12\nprint(name)\nprint(score + 3)\n```\n\n`print()` displays a value in the output area. Strings use quotes; numbers do not. You can join strings with `+`, but both sides need to be strings."'::jsonb, 1),
+  ('py-b2', 'py-s1', 'markdown', '"## Functions and decisions\n\nA function is defined with `def`. Its indented body runs when you call the function. Use `return` to send a value back.\n\n```python\ndef greet(name):\n    if name == \"\":\n        return \"Hello!\"\n    return \"Hello, \" + name + \"!\"\n\nprint(greet(\"Sam\"))\n```\n\nPython uses `==` to compare values. A colon starts an indented block after `def`, `if`, `else`, `for` and `while`."'::jsonb, 2),
+  ('py-b3', 'py-s1', 'markdown', '"## Repeating with `for`\n\n`range(start, stop)` produces numbers from `start` up to, but not including, `stop`.\n\n```python\ntotal = 0\nfor number in range(1, 5):\n    total = total + number\n\nprint(total)  # 10\n```\n\nThe loop above visits `1`, `2`, `3` and `4`. The variable `total` is an **accumulator**: it stores the result built up during the loop."'::jsonb, 3)
+on conflict do nothing;
+
+insert into questions (id, section_id, prompt, kind, answer_key, position) values
+  ('py-q1', 'py-s1', 'Which function displays a value in Python?', 'mcq', 'print', 1),
+  ('py-q2', 'py-s1', 'Which operator compares two values for equality in Python?', 'mcq', '==', 2),
+  ('py-q3', 'py-s1', 'What keyword begins a Python function definition?', 'short', 'def', 3),
+  ('py-q4', 'py-s2', 'Write a function `double(number)` that returns the number multiplied by 2.', 'code', null, 1),
+  ('py-q5', 'py-s2', 'Write a function `is_even(number)` that returns `True` for even numbers and `False` for odd numbers.', 'code', null, 2),
+  ('py-q6', 'py-s2', 'Write a function `sum_to(limit)` that adds every whole number from 1 through `limit`.', 'code', null, 3)
+on conflict do nothing;
+
+insert into question_options (id, question_id, text, position) values
+  ('py-q1-o1', 'py-q1', 'show()', 1),
+  ('py-q1-o2', 'py-q1', 'print', 2),
+  ('py-q1-o3', 'py-q1', 'console.log', 3),
+  ('py-q1-o4', 'py-q1', 'display', 4),
+  ('py-q2-o1', 'py-q2', '=', 1),
+  ('py-q2-o2', 'py-q2', '===', 2),
+  ('py-q2-o3', 'py-q2', '==', 3),
+  ('py-q2-o4', 'py-q2', '!=', 4)
+on conflict do nothing;
+
+insert into code_exercises (id, question_id, language, starter_code, instructions) values
+  ('py-x4', 'py-q4', 'python', 'def double(number):\n    # Write your code here\n    pass', 'Return the argument multiplied by 2. Return the value instead of printing it.'),
+  ('py-x5', 'py-q5', 'python', 'def is_even(number):\n    # Write your code here\n    pass', 'Use the remainder operator `%`. An even number leaves a remainder of 0 when divided by 2.'),
+  ('py-x6', 'py-q6', 'python', 'def sum_to(limit):\n    total = 0\n    # Write your code here\n    return total', 'Use `range` and an accumulator. For example, `sum_to(4)` should return 10.')
+on conflict do nothing;
+
+insert into reference_answers (id, code_exercise_id, title, answer, position) values
+  ('py-x4-r1', 'py-x4', 'Direct return', 'def double(number):\n    return number * 2', 1),
+  ('py-x5-r1', 'py-x5', 'Remainder comparison', 'def is_even(number):\n    return number % 2 == 0', 1),
+  ('py-x6-r1', 'py-x6', 'for loop and accumulator', 'def sum_to(limit):\n    total = 0\n    for number in range(1, limit + 1):\n        total = total + number\n    return total', 1)
+on conflict do nothing;
+
+insert into code_checks (id, code_exercise_id, name, description, position) values
+  ('py-x4-c1', 'py-x4', 'Doubles a positive number', 'double(4) returns 8', 1),
+  ('py-x4-c2', 'py-x4', 'Handles zero', 'double(0) returns 0', 2),
+  ('py-x5-c1', 'py-x5', 'Even number', 'is_even(4) returns True', 1),
+  ('py-x5-c2', 'py-x5', 'Odd number', 'is_even(7) returns False', 2),
+  ('py-x6-c1', 'py-x6', 'Small limit', 'sum_to(4) returns 10', 1),
+  ('py-x6-c2', 'py-x6', 'One', 'sum_to(1) returns 1', 2),
+  ('py-x6-c3', 'py-x6', 'Zero', 'sum_to(0) returns 0', 3)
+on conflict do nothing;
