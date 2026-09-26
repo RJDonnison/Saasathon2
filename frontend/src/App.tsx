@@ -14,7 +14,8 @@ const StudentHome = lazy(() => import("./student/StudentHome.tsx"));
 const StudentClassPage = lazy(() => import("./student/StudentClassPage.tsx"));
 const StudentDashboard = lazy(() => import("./student/StudentDashboard.tsx"));
 const TeacherLayout = lazy(() => import("./teacher/TeacherLayout.tsx"));
-const TeacherHome = lazy(() => import("./teacher/TeacherHome.tsx"));
+const TeacherDashboard = lazy(() => import("./teacher/TeacherDashboard.tsx"));
+const TeacherClass = lazy(() => import("./teacher/TeacherClass.tsx"));
 const ModuleBuilder = lazy(() => import("./teacher/ModuleBuilder.tsx"));
 const StudentWorkView = lazy(() => import("./teacher/StudentWorkView.tsx"));
 
@@ -112,7 +113,8 @@ export default function App() {
           </ProtectedRoute>
         }
       >
-        <Route index element={<TeacherHome />} />
+        <Route index element={<TeacherDashboard />} />
+        <Route path="class/:classroomId" element={<TeacherClass />} />
         <Route path="modules/new" element={<ModuleBuilder />} />
         <Route path="modules/:id" element={<ModuleBuilder />} />
         <Route
