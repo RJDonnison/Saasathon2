@@ -1,7 +1,7 @@
 // Single source of truth for entities and REST contracts.
 export type Role = "student" | "teacher";
 export type ProgressStatus = "not_started" | "in_progress" | "completed";
-export type QuestionKind = "mcq" | "short" | "code";
+export type QuestionKind = "mcq" | "short" | "code" | "math";
 export type ModuleStatus = "draft" | "published";
 
 export interface Classroom {
@@ -94,6 +94,9 @@ export interface CodeCheck {
 /** Teacher aggregate. Includes answer keys, reference answers and checks. */
 export interface TeacherQuestion extends Question {
   answerKey: string | null;
+  /** Teacher-only target values; student aggregates deliberately omit both fields. */
+  mathExpectedResult: number | null;
+  mathTolerance: number | null;
   codeExercise?: CodeExercise & {
     /** Appended by the server at run time; deliberately absent from student aggregates. */
     hiddenCode: string;
@@ -222,6 +225,8 @@ export interface ModuleBuilderDocument {
           prompt: string;
           kind: QuestionKind;
           answerKey: string | null;
+          mathExpectedResult?: number | null;
+          mathTolerance?: number | null;
           options: string[];
           language?: string;
           starterCode?: string;
@@ -286,12 +291,16 @@ export interface CreateQuestionRequest {
   prompt: string;
   kind: QuestionKind;
   answerKey?: string | null;
+  mathExpectedResult?: number | null;
+  mathTolerance?: number | null;
   position?: number;
 }
 export interface UpdateQuestionRequest {
   prompt?: string;
   kind?: QuestionKind;
   answerKey?: string | null;
+  mathExpectedResult?: number | null;
+  mathTolerance?: number | null;
   position?: number;
 }
 export interface CreateOptionRequest {
@@ -383,6 +392,15 @@ export interface RunCodeResponse {
   stderr: string;
   exitCode: number;
 }
+/** POST /api/math/validate. The expected result and tolerance are never returned. */
+export interface ValidateMathRequest {
+  questionId: string;
+  expression: string;
+}
+export interface ValidateMathResponse {
+  value: number;
+  isCorrect: boolean;
+}
 /** One turn of an AI conversation. The AI endpoints are stateless: the client re-sends the transcript each call. */
 export interface AiChatMessage {
   role: "user" | "assistant";
@@ -408,6 +426,8 @@ export interface AiHintRequest {
   code?: string;
   /** The code exercise `code` belongs to (must be in `moduleId`); lets the tutor see the task they are on. */
   exerciseId?: string;
+  /** The math question the student is viewing; the server resolves its prompt from `moduleId`. */
+  questionId?: string;
   /** Output (stderr / message) from the student's last failed run of `code`. */
   error?: string;
 }

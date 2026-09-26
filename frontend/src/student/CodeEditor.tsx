@@ -109,11 +109,6 @@ export default function CodeEditor({
   return (
     <section className={`overflow-hidden ${CARD}`}>
       <div className="flex h-11 items-center justify-between border-b border-border bg-surface-soft px-4">
-        <div className="flex items-center gap-1.5" aria-hidden="true">
-          <i className="size-2.5 rounded-full bg-coral" />
-          <i className="size-2.5 rounded-full bg-amber" />
-          <i className="size-2.5 rounded-full bg-leaf" />
-        </div>
         <span className="text-[11px] font-medium tracking-wide text-muted font-mono">
           {filename}.{EXTENSION[language] ?? 'txt'}
         </span>
@@ -168,12 +163,18 @@ export default function CodeEditor({
             options={{
               ariaLabel: `Code editor: ${editor.label}`,
               automaticLayout: true,
+              // The card and editor wrapper are overflow-hidden, which clips suggestion/hover widgets that extend past
+              // the editor. Fixed positioning lets them render above the prompt, eyebrow and header instead.
+              fixedOverflowWidgets: true,
               fontFamily: 'var(--font-mono)',
               fontSize: 14,
               lineHeight: 24,
               minimap: { enabled: false },
               padding: { top: 12, bottom: 12 },
               scrollBeyondLastLine: false,
+              // Only consume the wheel while the editor can still scroll in that direction; at its top/bottom (or when
+              // the code fits) the event falls through to the page, like any nested scroller.
+              scrollbar: { alwaysConsumeMouseWheel: false },
               tabSize: 2,
               wordWrap: 'off',
             }}

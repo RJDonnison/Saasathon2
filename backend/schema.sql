@@ -60,8 +60,8 @@ create table if not exists section_blocks (
 );
 create table if not exists questions (
   id text primary key, section_id text not null references sections(id) on delete cascade,
-  prompt text not null, kind text not null check (kind in ('mcq','short','code')),
-  answer_key text, position integer not null default 0
+  prompt text not null, kind text not null check (kind in ('mcq','short','code','math')),
+  answer_key text, math_expected_result double precision, math_tolerance double precision, position integer not null default 0
 );
 -- This is the canonical sequence used by new module-builder reads. It allows blocks and
 -- questions to be truly interleaved while leaving the old per-table positions compatible.
@@ -115,6 +115,21 @@ select 'legacy-question-' || q.id, q.section_id, 'question', q.id,
        coalesce((select max(position) + 1 from section_items i where i.section_id=q.section_id), 0) +
        row_number() over (partition by q.section_id order by q.position, q.id) - 1
 from questions q on conflict (section_id, item_type, item_id) do nothing;
+-- Upgrade the original kind check and add the math configuration constraints.
+alter table questions drop constraint if exists questions_kind_check;
+alter table questions add column if not exists math_expected_result double precision;
+alter table questions add column if not exists math_tolerance double precision;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'questions_kind_check') then
+    alter table questions add constraint questions_kind_check check (kind in ('mcq','short','code','math'));
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'questions_math_configuration_check') then
+    alter table questions add constraint questions_math_configuration_check check (
+      (kind = 'math' and math_expected_result is not null and math_tolerance is not null and math_tolerance >= 0)
+      or (kind <> 'math' and math_expected_result is null and math_tolerance is null)
+    );
+  end if;
+end $$;
 create table if not exists question_options (
   id text primary key, question_id text not null references questions(id) on delete cascade,
   text text not null, position integer not null default 0
@@ -207,6 +222,34 @@ insert into comments values ('comment-1','submission-1','teacher-1','Nice use of
 -- Example curriculum: Introduction to JavaScript (modules 2-6; module-1 is above).
 -- Safe to reapply: every row is "on conflict do nothing", so teacher edits are never overwritten.
 -- ============================================================================
+-- Math MVP: a re-runnable authored lesson with inline and display LaTex.
+insert into modules (id, classroom_id, title, content, position) values
+  ('module-7', 'classroom-demo', 'Math expressions', 'Use arithmetic expressions to calculate a value.', 7)
+on conflict do nothing;
+insert into sections (id, module_id, title, position) values
+  ('math-s1', 'module-7', 'Order of operations', 1)
+on conflict do nothing;
+insert into section_blocks (id, section_id, type, content, position) values
+  ('math-b1', 'math-s1', 'markdown', '"Use parentheses to group an expression. For example, $2(3 + 4)$ means multiply 2 by the grouped result.\n\n$$\n2 \times (3 + 4) = 14\n$$"'::jsonb, 1)
+on conflict do nothing;
+insert into questions (id, section_id, prompt, kind, answer_key, math_expected_result, math_tolerance, position) values
+  ('math-q1', 'math-s1', 'Evaluate $2 \times (3 + 4)$.', 'math', null, 14, 1e-9, 1)
+on conflict do nothing;
+insert into sections (id, module_id, title, position) values
+  ('math-s2', 'module-7', 'What parentheses change', 2),
+  ('math-s3', 'module-7', 'Your challenge', 3)
+on conflict do nothing;
+insert into section_blocks (id, section_id, type, content, position) values
+  ('math-b2', 'math-s2', 'markdown', '"## Work from left to right\n\nMultiplication and division happen before addition and subtraction. Parentheses tell us to do the grouped part first.\n\n- $5 \times 4 + 2 = 22$ because $5 \times 4$ happens first.\n- $5 \times (4 + 2) = 30$ because the parentheses happen first."'::jsonb, 1),
+  ('math-b3', 'math-s3', 'markdown', '"Take your time. Use parentheses to keep the steps clear."'::jsonb, 1)
+on conflict do nothing;
+insert into questions (id, section_id, prompt, kind, answer_key, math_expected_result, math_tolerance, position) values
+  ('math-q2', 'math-s1', 'Evaluate $18 \div (3 + 3)$.', 'math', null, 3, 1e-9, 2),
+  ('math-q3', 'math-s2', 'Evaluate $5 \times 4 + 2$.', 'math', null, 22, 1e-9, 1),
+  ('math-q4', 'math-s2', 'Evaluate $5 \times (4 + 2)$.', 'math', null, 30, 1e-9, 2),
+  ('math-q5', 'math-s3', 'Evaluate $(24 \div 6) \times (7 - 2)$.', 'math', null, 20, 1e-9, 1)
+on conflict do nothing;
+
 insert into modules (id, classroom_id, title, content, position) values
   ('module-2', 'classroom-demo', 'Functions', 'Functions let you name a piece of code so you can reuse it. In this module you will write functions that take inputs (parameters) and give back a result (a return value).', 2),
   ('module-3', 'classroom-demo', 'Making Decisions', 'Programs need to make choices. You will use comparisons and if / else statements to run different code in different situations.', 3),

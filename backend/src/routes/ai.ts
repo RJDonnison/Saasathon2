@@ -102,6 +102,18 @@ function exerciseNote(
   return null;
 }
 
+/** The student-selected question, resolved from the student-safe module rather than client-provided text. */
+function questionNote(
+  module: StudentModule,
+  questionId: string,
+): string | null {
+  for (const s of module.sections) {
+    const question = s.questions.find((q) => q.id === questionId);
+    if (question) return `Question (${question.kind}): ${question.prompt}`;
+  }
+  return null;
+}
+
 /** Lines shown to the model as "12| code" so it can cite them; the editor uses the same 1-based numbers. */
 const numbered = (code: string) =>
   code
@@ -202,7 +214,7 @@ function suggestionPatch(value: unknown): AiModuleSuggestion["patch"] | null {
 }
 
 aiRouter.post("/hint", requireRole("student"), rateLimit, async (req, res) => {
-  const { moduleId, studentId, question, code, exerciseId, error } =
+  const { moduleId, studentId, question, code, exerciseId, questionId, error } =
     (req.body ?? {}) as Partial<AiHintRequest>;
   const history = parseHistory(req.body?.history);
   if (
@@ -215,11 +227,12 @@ aiRouter.post("/hint", requireRole("student"), rateLimit, async (req, res) => {
     (code !== undefined &&
       (typeof code !== "string" || code.length > MAX_CODE)) ||
     (exerciseId !== undefined && typeof exerciseId !== "string") ||
+    (questionId !== undefined && typeof questionId !== "string") ||
     (error !== undefined &&
       (typeof error !== "string" || error.length > MAX_RUN_ERROR))
   ) {
     res.status(400).json({
-      error: `moduleId, studentId and a question (max ${MAX_QUESTION} chars) are required; history, code, exerciseId and error must be well-formed`,
+      error: `moduleId, studentId and a question (max ${MAX_QUESTION} chars) are required; history, code, exerciseId, questionId and error must be well-formed`,
     });
     return;
   }
@@ -240,9 +253,14 @@ aiRouter.post("/hint", requireRole("student"), rateLimit, async (req, res) => {
     res.status(404).json({ error: "Exercise not found" });
     return;
   }
+  const selectedQuestion = questionId ? questionNote(module, questionId) : null;
+  if (questionId && !selectedQuestion) {
+    res.status(404).json({ error: "Question not found" });
+    return;
+  }
 
   // With code attached the tutor replies in JSON so it can also point at a line (see LOCATE_RULES).
-  const hasCode = Boolean(code?.trim());
+  const hasCode = Boolean(code?.trim()) && !selectedQuestion;
   const parts = [question.trim()];
   if (error?.trim()) parts.push(`My last run failed with:\n${error.trim()}`);
   if (hasCode) parts.push(`My current code:\n${numbered(code!)}`);
@@ -253,6 +271,7 @@ aiRouter.post("/hint", requireRole("student"), rateLimit, async (req, res) => {
       system: hintSystemPrompt(context, {
         locate: hasCode,
         exerciseNote: note,
+        questionNote: selectedQuestion,
       }),
       history,
       message,

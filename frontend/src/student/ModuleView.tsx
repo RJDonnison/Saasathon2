@@ -1,14 +1,17 @@
 import { useEffect, useState } from "react";
 import { api } from "../api.ts";
+import Button from "../ui/Button.tsx";
 import Card from "../ui/Card.tsx";
 import Eyebrow from "../ui/Eyebrow.tsx";
 import Heading from "../ui/Heading.tsx";
 import InlineText from "../ui/InlineText.tsx";
+import MathText from "../ui/MathText.tsx";
 import Markdown from "../ui/Markdown.tsx";
 import { BookIcon, CodeIcon, PencilIcon } from "../ui/icons.tsx";
 import { CARD, INPUT, TINT } from "../ui/styles.ts";
 import CodeEditor from "./CodeEditor.tsx";
 import { onModuleChanged } from "../socket.ts";
+import { useWorkspace } from "./useWorkspace.ts";
 import type {
   Module,
   SectionBlock,
@@ -16,6 +19,7 @@ import type {
   StudentQuestion,
   StudentSection,
 } from "../../../shared/types";
+import { ArithmeticError, parseArithmetic } from "../../../math/arithmetic";
 
 /** Only Markdown text blocks are authored today; a bare string of any other type is shown as text too. */
 const blockText = (b: SectionBlock) =>
@@ -55,6 +59,7 @@ function Lesson({
   const [full, setFull] = useState<StudentModule | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [version, setVersion] = useState(0);
+  const { setActiveQuestion } = useWorkspace();
 
   useEffect(() => {
     let cancelled = false;
@@ -81,6 +86,13 @@ function Lesson({
       }),
     [module.id],
   );
+
+  useEffect(() => {
+    const firstMathQuestion = full?.sections
+      .flatMap((section) => section.questions)
+      .find((question) => question.kind === "math");
+    if (firstMathQuestion) setActiveQuestion(firstMathQuestion.id);
+  }, [full, setActiveQuestion]);
 
   // Older intros start with a markdown "# Title" line that just repeats the heading.
   const intro = module.content.replace(/^#{1,6}[ \t]+.*\n+/, "").trim();
@@ -118,7 +130,7 @@ function Lesson({
           </div>
           {intro && (
             <p className="m-0 max-w-2xl text-[15px] leading-relaxed whitespace-pre-line text-muted">
-              <InlineText text={intro} />
+              <MathText text={intro} />
             </p>
           )}
         </div>
@@ -145,7 +157,9 @@ function Lesson({
         <SectionView key={section.id} section={section} index={i} />
       ))}
 
-      {full && (
+      {full?.sections.some((section) =>
+        section.questions.some((question) => question.kind === "code"),
+      ) && (
         <CodeEditor
           editor={{ key: "playground", label: "the playground" }}
           filename="playground"
@@ -227,14 +241,19 @@ function SectionView({
               <Markdown text={blockText(item.value)!} />
             </article>
           )
-        ) : item.value.kind === "code" && item.value.codeExercise ? (
-          <CodeQuestion key={item.value.id} question={item.value} />
         ) : (
-          <AnswerQuestion key={item.value.id} question={item.value} />
+          <QuestionView key={item.value.id} question={item.value} />
         ),
       )}
     </section>
   );
+}
+
+function QuestionView({ question }: { question: StudentQuestion }) {
+  if (question.kind === "code" && question.codeExercise)
+    return <CodeQuestion question={question} />;
+  if (question.kind === "math") return <MathQuestion question={question} />;
+  return <AnswerQuestion question={question} />;
 }
 
 /** "Write a function `double(n)` that returns…" -> a short, plain-text name for the exercise. */
@@ -272,7 +291,7 @@ function AnswerQuestion({ question }: { question: StudentQuestion }) {
       tint="peach"
       bodyClassName="flex flex-col gap-4 p-5"
     >
-      <p className="m-0 text-[15px] leading-relaxed text-ink">
+      <p className="m-0! text-[15px] leading-relaxed text-ink">
         <InlineText text={question.prompt} />
       </p>
       {question.kind === "mcq" && question.options.length > 0 ? (
@@ -313,6 +332,96 @@ function AnswerQuestion({ question }: { question: StudentQuestion }) {
         <CodeIcon className="size-3.5" />
         Answers aren’t submitted or checked yet.
       </p>
+    </Card>
+  );
+}
+
+function MathQuestion({ question }: { question: StudentQuestion }) {
+  const { setActiveQuestion } = useWorkspace();
+  const [answer, setAnswer] = useState("");
+  const [syntaxError, setSyntaxError] = useState<string | null>(null);
+  const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
+  const [checking, setChecking] = useState(false);
+
+  const changeAnswer = (next: string) => {
+    setActiveQuestion(question.id);
+    setAnswer(next);
+    setIsCorrect(null);
+    setSyntaxError(null);
+  };
+
+  const checkAnswer = async () => {
+    setActiveQuestion(question.id);
+    if (!answer.trim()) {
+      setSyntaxError("Enter an answer before checking it.");
+      return;
+    }
+    try {
+      parseArithmetic(answer);
+      setSyntaxError(null);
+      setChecking(true);
+      const result = await api.validateMath({
+        questionId: question.id,
+        expression: answer,
+      });
+      setIsCorrect(result.isCorrect);
+    } catch (error) {
+      setSyntaxError(
+        error instanceof ArithmeticError
+          ? "Use numbers and +, -, *, /, ^, or parentheses."
+          : "Could not check that answer. Try again.",
+      );
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  return (
+    <Card
+      title="Math question"
+      eyebrow="Solve it"
+      icon={<PencilIcon className="size-[18px]" />}
+      tint="peach"
+      bodyClassName="flex flex-col gap-4 p-5"
+    >
+      <p className="m-0 text-[15px] leading-relaxed text-ink">
+        <MathText text={question.prompt} />
+      </p>
+      <label className="sr-only" htmlFor={`answer-${question.id}`}>
+        Your answer
+      </label>
+      <input
+        id={`answer-${question.id}`}
+        className={`${INPUT} h-10 w-full font-mono`}
+        value={answer}
+        onFocus={() => setActiveQuestion(question.id)}
+        onChange={(event) => changeAnswer(event.target.value)}
+        placeholder="Enter your answer"
+      />
+      <div className="flex flex-wrap items-center gap-3">
+        <Button
+          variant="primary"
+          disabled={checking}
+          onClick={() => void checkAnswer()}
+        >
+          {checking ? "Checking..." : "Check answer"}
+        </Button>
+        <p className="m-0 text-xs text-muted">
+          You can use an arithmetic expression, too.
+        </p>
+      </div>
+      {syntaxError && (
+        <p className="m-0! text-xs text-peach-ink">{syntaxError}</p>
+      )}
+      {isCorrect !== null && (
+        <p
+          className={`m-0! text-sm font-semibold! ${isCorrect ? "text-mint-ink" : "text-peach-ink"}`}
+        >
+          {isCorrect
+            ? "Correct! Nice work."
+            : "Not quite. Check your calculation and try again."}
+        </p>
+      )}
     </Card>
   );
 }

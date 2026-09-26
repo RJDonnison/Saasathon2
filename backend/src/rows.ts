@@ -63,6 +63,8 @@ export type QuestionRow = {
   prompt: string;
   kind: Question["kind"];
   answer_key: string | null;
+  math_expected_result: number | null;
+  math_tolerance: number | null;
   position: number;
 };
 export type OptionRow = {

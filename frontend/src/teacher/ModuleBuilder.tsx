@@ -28,6 +28,7 @@ const questionLabel: Record<QuestionKind, string> = {
   mcq: "Multiple choice",
   short: "Short answer",
   code: "Code exercise",
+  math: "Math question",
 };
 
 function newQuestion(kind: QuestionKind): BuilderQuestion {
@@ -38,6 +39,9 @@ function newQuestion(kind: QuestionKind): BuilderQuestion {
     kind,
     answerKey: null,
     options: kind === "mcq" ? ["", ""] : [],
+    ...(kind === "math"
+      ? { mathExpectedResult: 0, mathTolerance: 0 }
+      : {}),
     ...(kind === "code"
       ? {
           language: "javascript",
@@ -84,6 +88,8 @@ function documentFrom(module: TeacherModule): ModuleBuilderDocument {
               prompt: question.prompt,
               kind: question.kind,
               answerKey: question.answerKey,
+              mathExpectedResult: question.mathExpectedResult,
+              mathTolerance: question.mathTolerance,
               options: question.options.map((option) => option.text),
               language: question.codeExercise?.language,
               starterCode: question.codeExercise?.starterCode,
@@ -561,6 +567,9 @@ function SectionEditor({
         <Button size="sm" onClick={() => onAddItem(newQuestion("code"))}>
           + Code exercise
         </Button>
+        <Button size="sm" onClick={() => onAddItem(newQuestion("math"))}>
+          + Math question
+        </Button>
       </div>
     </Card>
   );
@@ -721,6 +730,9 @@ function QuestionEditor({
       {item.kind === "code" && (
         <CodeExerciseEditor item={item} update={updateQuestion} />
       )}
+      {item.kind === "math" && (
+        <MathQuestionEditor item={item} update={updateQuestion} />
+      )}
     </div>
   );
 }
@@ -736,6 +748,50 @@ function changeQuestionKind(
     prompt: question.prompt,
     answerKey: kind === "short" ? question.answerKey : null,
   };
+}
+
+function MathQuestionEditor({
+  item,
+  update,
+}: {
+  item: BuilderQuestion;
+  update: (patch: (question: BuilderQuestion) => BuilderQuestion) => void;
+}) {
+  const updateNumber = (
+    key: "mathExpectedResult" | "mathTolerance",
+    value: string,
+  ) => {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return;
+    update((question) => ({ ...question, [key]: number }));
+  };
+
+  return (
+    <div className="grid gap-4 sm:grid-cols-2">
+      <label className="flex flex-col gap-2 text-sm text-muted">
+        Expected result (teacher only)
+        <input
+          className={`${INPUT} h-10`}
+          type="number"
+          value={item.mathExpectedResult ?? 0}
+          onChange={(event) =>
+            updateNumber("mathExpectedResult", event.target.value)
+          }
+        />
+      </label>
+      <label className="flex flex-col gap-2 text-sm text-muted">
+        Tolerance
+        <input
+          className={`${INPUT} h-10`}
+          type="number"
+          min="0"
+          step="any"
+          value={item.mathTolerance ?? 0}
+          onChange={(event) => updateNumber("mathTolerance", event.target.value)}
+        />
+      </label>
+    </div>
+  );
 }
 
 function MultipleChoiceEditor({
