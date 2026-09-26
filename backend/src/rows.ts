@@ -4,6 +4,7 @@ import type {
   Classroom,
   CodeCheck,
   CodeExercise,
+  CodeTest,
   CodeSubmission,
   Comment,
   Membership,
@@ -79,7 +80,16 @@ export type ExerciseRow = {
   language: string;
   starter_code: string;
   instructions: string;
+  function_name: string;
   hidden_code: string;
+};
+export type TestRow = {
+  id: string;
+  code_exercise_id: string;
+  name: string;
+  args: unknown;
+  expected: unknown;
+  position: number;
 };
 export type ReferenceRow = {
   id: string;
@@ -206,6 +216,15 @@ export const toExercise = (r: ExerciseRow): CodeExercise => ({
   language: r.language,
   starterCode: r.starter_code,
   instructions: r.instructions,
+  functionName: r.function_name,
+});
+export const toTest = (r: TestRow): CodeTest => ({
+  id: r.id,
+  codeExerciseId: r.code_exercise_id,
+  name: r.name,
+  args: r.args as unknown[],
+  expected: r.expected,
+  position: r.position,
 });
 export const toReference = (r: ReferenceRow): ReferenceAnswer => ({
   id: r.id,

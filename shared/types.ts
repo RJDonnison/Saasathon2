@@ -75,6 +75,17 @@ export interface CodeExercise {
   language: string;
   starterCode: string;
   instructions: string;
+  /** The synchronous named function automated checks invoke. */
+  functionName: string;
+}
+/** Teacher-only structured, JSON-safe automated case. Never included in StudentModule. */
+export interface CodeTest {
+  id: string;
+  codeExerciseId: string;
+  name: string;
+  args: unknown[];
+  expected: unknown;
+  position: number;
 }
 export interface ReferenceAnswer {
   id: string;
@@ -102,6 +113,7 @@ export interface TeacherQuestion extends Question {
     hiddenCode: string;
     referenceAnswers: ReferenceAnswer[];
     checks: CodeCheck[];
+    tests: CodeTest[];
   };
 }
 export interface TeacherSection extends Section {
@@ -231,9 +243,15 @@ export interface ModuleBuilderDocument {
           language?: string;
           starterCode?: string;
           instructions?: string;
+          /** Named function used by teacher-configured automated checks. */
+          functionName?: string;
           /** Teacher-only test harness appended on the server when this exercise runs. */
           hiddenCode?: string;
-          referenceAnswers?: Array<{ id: string; title: string; answer: string }>;
+          referenceAnswers?: Array<{
+            id: string;
+            title: string;
+            answer: string;
+          }>;
           checks?: Array<{ id: string; name: string; description: string }>;
         }
     >;
@@ -318,7 +336,23 @@ export interface UpsertCodeExerciseRequest {
   language: string;
   starterCode: string;
   instructions: string;
+  functionName: string;
   hiddenCode?: string;
+}
+export interface UpdateCodeExerciseRequest {
+  functionName: string;
+}
+export interface CreateCodeTestRequest {
+  name: string;
+  args: unknown[];
+  expected: unknown;
+  position?: number;
+}
+export interface UpdateCodeTestRequest {
+  name?: string;
+  args?: unknown[];
+  expected?: unknown;
+  position?: number;
 }
 export interface CreateReferenceAnswerRequest {
   title: string;
@@ -395,6 +429,22 @@ export interface RunCodeResponse {
   stderr: string;
   exitCode: number;
 }
+/** POST /api/code/grade; inputs and expected values are intentionally never returned. */
+export interface GradeCodeExerciseRequest {
+  exerciseId: string;
+  code: string;
+}
+export interface GradeCodeExerciseResponse {
+  passed: boolean;
+  /** Named check outcomes, without test inputs, expected values, or diagnostics. */
+  results?: GradeCodeTestResult[];
+  /** A generic configuration or execution message, never test implementation detail. */
+  error?: string;
+}
+export interface GradeCodeTestResult {
+  name: string;
+  passed: boolean;
+}
 /** POST /api/math/validate. The expected result and tolerance are never returned. */
 export interface ValidateMathRequest {
   questionId: string;
@@ -460,6 +510,19 @@ export interface AiDraftRequest {
 }
 export interface AiDraftResponse {
   reply: string;
+}
+/** POST /api/ai/code-test-candidates (teacher only). Candidates are editable and not persisted. */
+export interface AiCodeTestCandidatesRequest {
+  exerciseId: string;
+  request: string;
+}
+export interface AiCodeTestCandidate {
+  functionName: string;
+  args: unknown[];
+  expected: unknown;
+}
+export interface AiCodeTestCandidatesResponse {
+  candidates: AiCodeTestCandidate[];
 }
 export interface ApiError {
   error: string;

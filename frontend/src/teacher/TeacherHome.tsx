@@ -14,6 +14,8 @@ import Heading from "../ui/Heading.tsx";
 import { HandIcon, PencilIcon, SparklesIcon, UsersIcon } from "../ui/icons.tsx";
 import { CARD, INPUT, TINT, type Tint } from "../ui/styles.ts";
 import type { Classroom, Module, User } from "../../../shared/types";
+import CodeTestPanel from "./CodeTestPanel.tsx";
+import AnswerKeyPanel from "./AnswerKeyPanel.tsx";
 
 function Stat({
   label,
@@ -273,6 +275,8 @@ export default function TeacherHome() {
       </div>
 
       <div className="grid items-start gap-6 lg:grid-cols-2">
+        <CodeTestPanel modules={modules} />
+        <AnswerKeyPanel modules={modules} />
         <Card
           title="Plan a lesson"
           eyebrow="Lesson planner"

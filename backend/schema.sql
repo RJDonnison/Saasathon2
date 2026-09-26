@@ -137,8 +137,15 @@ create table if not exists question_options (
 create table if not exists code_exercises (
   id text primary key, question_id text not null unique references questions(id) on delete cascade,
   language text not null, starter_code text not null default '', instructions text not null default '',
-  hidden_code text not null default ''
+  function_name text not null default '', hidden_code text not null default ''
 );
+alter table code_exercises add column if not exists function_name text not null default '';
+create table if not exists code_tests (
+  id text primary key, code_exercise_id text not null references code_exercises(id) on delete cascade,
+  name text not null default 'Untitled check', args jsonb not null, expected jsonb not null, position integer not null default 0
+);
+alter table code_tests add column if not exists name text not null default 'Untitled check';
+create index if not exists code_tests_exercise_position_idx on code_tests (code_exercise_id, position, id);
 -- Existing projects have this table already, so the additive upgrade must follow the create statement.
 alter table code_exercises add column if not exists hidden_code text not null default '';
 create table if not exists reference_answers (
@@ -196,6 +203,7 @@ alter table section_items enable row level security;
 alter table questions enable row level security; alter table question_options enable row level security;
 alter table code_exercises enable row level security; alter table reference_answers enable row level security;
 alter table code_checks enable row level security; alter table module_progress enable row level security;
+alter table code_tests enable row level security;
 alter table section_progress enable row level security; alter table attempts enable row level security;
 alter table code_submissions enable row level security; alter table comments enable row level security;
 
@@ -655,3 +663,21 @@ insert into code_checks (id, code_exercise_id, name, description, position) valu
   ('py-x6-c2', 'py-x6', 'One', 'sum_to(1) returns 1', 2),
   ('py-x6-c3', 'py-x6', 'Zero', 'sum_to(0) returns 0', 3)
 on conflict do nothing;
+
+-- A runnable example for the Functions module. Preserve any teacher-selected function name.
+update code_exercises
+set function_name = 'double'
+where id = 'fn-x4' and function_name = '';
+insert into code_tests (id, code_exercise_id, args, expected, position) values
+  ('fn-x4-t1', 'fn-x4', '[4]'::jsonb, '8'::jsonb, 1),
+  ('fn-x4-t2', 'fn-x4', '[0]'::jsonb, '0'::jsonb, 2),
+  ('fn-x4-t3', 'fn-x4', '[-3]'::jsonb, '-6'::jsonb, 3)
+on conflict do nothing;
+update code_tests
+set name = case id
+  when 'fn-x4-t1' then 'Positive number'
+  when 'fn-x4-t2' then 'Zero'
+  when 'fn-x4-t3' then 'Negative number'
+  else name
+end
+where id in ('fn-x4-t1', 'fn-x4-t2', 'fn-x4-t3') and name = 'Untitled check';
