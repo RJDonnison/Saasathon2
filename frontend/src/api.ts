@@ -69,10 +69,7 @@ import type {
   TeacherLessonPlan,
 } from "../../shared/types";
 import { supabase } from "./supabase.ts";
-
-// Empty locally: Vite proxies /api to the backend. In a hosted frontend this
-// points at the separately deployed API origin.
-const apiOrigin = import.meta.env.VITE_API_ORIGIN?.replace(/\/$/, "") ?? "";
+import { backendEndpoint } from "./endpoints.ts";
 
 export class ApiClientError extends Error {
   status: number;
@@ -87,6 +84,8 @@ async function request<T>(
   path: string,
   init: RequestInit & { json?: unknown } = {},
 ): Promise<T> {
+  if (backendEndpoint.error) throw new Error(backendEndpoint.error);
+
   const { json, ...requestInit } = init;
   const headers = new Headers(requestInit.headers);
   // The Supabase access token (auto-refreshed by supabase-js) authenticates every API call.
@@ -97,7 +96,7 @@ async function request<T>(
   }
   if (json !== undefined) headers.set("Content-Type", "application/json");
 
-  const res = await fetch(`${apiOrigin}${path}`, {
+  const res = await fetch(`${backendEndpoint.origin}${path}`, {
     ...requestInit,
     headers,
     body: json !== undefined ? JSON.stringify(json) : requestInit.body,

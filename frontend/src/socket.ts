@@ -16,28 +16,28 @@ import type {
   LiveModuleAggregateUpdatePayload,
 } from "../../shared/events";
 import { supabase } from "./supabase.ts";
-
-// Empty locally: Vite proxies Socket.io to the backend. In a hosted frontend
-// this points at the separately deployed Socket.io origin.
-const socketOrigin =
-  import.meta.env.VITE_SOCKET_ORIGIN?.replace(/\/$/, "") || undefined;
+import { backendEndpoint } from "./endpoints.ts";
 
 type AppSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
 // One long-lived socket that does NOT connect on its own (autoConnect: false).
 // Listeners can be attached at any time (even before login); the connection itself is opened
-// by connectSocket() only once the user is signed in and in a classroom. With no configured origin,
-// Vite proxies /socket.io locally. `auth` is a function so every (re)connect sends the current,
+// by connectSocket() only once the user is signed in and in a classroom. `auth` is a function so every (re)connect sends the current,
 // auto-refreshed Supabase token.
-const socket: AppSocket = io(socketOrigin, {
-  autoConnect: false,
-  auth: (cb) => {
-    void supabase.auth
-      .getSession()
-      .then(({ data }) => cb({ token: data.session?.access_token ?? "" }));
-  },
-});
-socket.on("connect_error", (err) =>
+const socket: AppSocket | null =
+  backendEndpoint.origin === null
+    ? null
+    : io(backendEndpoint.origin || undefined, {
+        autoConnect: false,
+        auth: (cb) => {
+          void supabase.auth
+            .getSession()
+            .then(({ data }) =>
+              cb({ token: data.session?.access_token ?? "" }),
+            );
+        },
+      });
+socket?.on("connect_error", (err) =>
   console.warn("[socket] connect_error:", err.message),
 );
 
@@ -46,21 +46,21 @@ socket.on("connect_error", (err) =>
 let currentRaisedHands: RaisedHandsUpdatePayload | null = null;
 let currentPresence: PresenceUpdatePayload | null = null;
 const raisedHandsListeners = new Set<(p: RaisedHandsUpdatePayload) => void>();
-socket.on("raised_hands_update", (payload) => {
+socket?.on("raised_hands_update", (payload) => {
   currentRaisedHands = payload;
   for (const listener of raisedHandsListeners) listener(payload);
 });
-socket.on("presence_update", (payload) => {
+socket?.on("presence_update", (payload) => {
   currentPresence = payload;
 });
 
 /** Open the connection. Call only once signed in and in a classroom — the server rejects the handshake otherwise. */
 export function connectSocket() {
-  if (!socket.connected) socket.connect();
+  if (socket && !socket.connected) socket.connect();
 }
 
 export function disconnectSocket() {
-  socket.disconnect();
+  socket?.disconnect();
   currentRaisedHands = null;
   currentPresence = null;
 }
@@ -72,7 +72,7 @@ export function emitRaiseHand(
   classroomId: string,
   acknowledge: (result: RaiseHandResult) => void,
 ): boolean {
-  if (!socket.connected) return false;
+  if (!socket?.connected) return false;
   socket.emit(
     "raise_hand",
     { type: "raise_hand", studentId, classroomId },
@@ -86,7 +86,7 @@ export function emitLowerHand(
   classroomId: string,
   acknowledge: (result: LowerHandResult) => void,
 ): boolean {
-  if (!socket.connected) return false;
+  if (!socket?.connected) return false;
   socket.emit(
     "lower_hand",
     { type: "lower_hand", studentId, classroomId },
@@ -96,7 +96,7 @@ export function emitLowerHand(
 }
 
 export function emitAcknowledgeHand(studentId: string, classroomId: string) {
-  if (!socket.connected) return;
+  if (!socket?.connected) return;
   socket.emit("acknowledge_hand", {
     type: "acknowledge_hand",
     studentId,
@@ -107,7 +107,7 @@ export function emitAcknowledgeHand(studentId: string, classroomId: string) {
 export function emitStudentStatusUpdate(
   p: Omit<StudentStatusUpdatePayload, "type">,
 ) {
-  if (!socket.connected) return;
+  if (!socket?.connected) return;
   socket.emit("student_status_update", { type: "student_status_update", ...p });
 }
 
@@ -124,60 +124,60 @@ export function onRaisedHandsUpdate(
 export function onStudentStatusUpdate(
   cb: (p: StudentStatusUpdatePayload) => void,
 ): () => void {
-  socket.on("student_status_update", cb);
-  return () => void socket.off("student_status_update", cb);
+  socket?.on("student_status_update", cb);
+  return () => void socket?.off("student_status_update", cb);
 }
 export function onStudentActivityUpdate(
   cb: (p: StudentActivityUpdatePayload) => void,
 ): () => void {
-  socket.on("student_activity_update", cb);
-  return () => void socket.off("student_activity_update", cb);
+  socket?.on("student_activity_update", cb);
+  return () => void socket?.off("student_activity_update", cb);
 }
 
 export function onSessionUpdate(
   cb: (p: SessionUpdatePayload) => void,
 ): () => void {
-  socket.on("session_update", cb);
-  return () => void socket.off("session_update", cb);
+  socket?.on("session_update", cb);
+  return () => void socket?.off("session_update", cb);
 }
 
 export function onModuleProgressUpdate(
   cb: (p: ModuleProgressUpdatePayload) => void,
 ): () => void {
-  socket.on("module_progress_update", cb);
-  return () => void socket.off("module_progress_update", cb);
+  socket?.on("module_progress_update", cb);
+  return () => void socket?.off("module_progress_update", cb);
 }
 export function onLiveModuleAggregateUpdate(
   cb: (p: LiveModuleAggregateUpdatePayload) => void,
 ): () => void {
-  socket.on("live_module_aggregate_update", cb);
-  return () => void socket.off("live_module_aggregate_update", cb);
+  socket?.on("live_module_aggregate_update", cb);
+  return () => void socket?.off("live_module_aggregate_update", cb);
 }
 
 export function onPresenceUpdate(
   cb: (p: PresenceUpdatePayload) => void,
 ): () => void {
-  socket.on("presence_update", cb);
+  socket?.on("presence_update", cb);
   if (currentPresence) cb(currentPresence);
-  return () => void socket.off("presence_update", cb);
+  return () => void socket?.off("presence_update", cb);
 }
 
 export function onModuleChanged(
   cb: (p: ModuleChangedPayload) => void,
 ): () => void {
-  socket.on("module_changed", cb);
-  return () => void socket.off("module_changed", cb);
+  socket?.on("module_changed", cb);
+  return () => void socket?.off("module_changed", cb);
 }
 export function onQuestionCommentCreated(
   cb: (p: QuestionCommentCreatedPayload) => void,
 ): () => void {
-  socket.on("question_comment_created", cb);
-  return () => void socket.off("question_comment_created", cb);
+  socket?.on("question_comment_created", cb);
+  return () => void socket?.off("question_comment_created", cb);
 }
 
 export function onModuleDeleted(
   cb: (p: ModuleDeletedPayload) => void,
 ): () => void {
-  socket.on("module_deleted", cb);
-  return () => void socket.off("module_deleted", cb);
+  socket?.on("module_deleted", cb);
+  return () => void socket?.off("module_deleted", cb);
 }
