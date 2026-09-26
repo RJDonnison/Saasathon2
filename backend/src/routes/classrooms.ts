@@ -271,7 +271,7 @@ classroomsRouter.get("/", async (req, res) => {
   if (!ids.length) return res.json([]);
   const [classrooms, modules, progress, teachers] = await Promise.all([
     supabase.from("classrooms").select("*").in("id", ids),
-    supabase.from("modules").select("id,classroom_id").in("classroom_id", ids),
+    supabase.from("modules").select("id,classroom_id").in("classroom_id", ids).eq("status", "published"),
     supabase.from("module_progress").select("module_id,status").eq("student_id", req.user!.userId),
     teacherNames(ids),
   ]);
@@ -332,6 +332,7 @@ classroomsRouter.get("/:id/lessons", requireRole("student"), async (req, res) =>
       .from("modules")
       .select("*")
       .eq("classroom_id", req.params.id)
+      .eq("status", "published")
       .order("position")
       .order("id"),
   ) as ModuleRow[];
@@ -506,6 +507,10 @@ classroomsRouter.get(
         .from("memberships")
         .select("*")
         .eq("classroom_id", req.params.id)
+        .eq(
+          req.user!.role === "student" ? "status" : "classroom_id",
+          req.user!.role === "student" ? "published" : req.params.id,
+        )
         .eq("role", "student"),
     ) as MembershipRow[];
     const ids = memberships.map((m) => m.user_id);
@@ -525,14 +530,9 @@ classroomsRouter.get(
 );
 classroomsRouter.get("/:id/modules", async (req, res) => {
   if (!(await member(req, res))) return;
-  const rows = unwrap(
-    await supabase
-      .from("modules")
-      .select("*")
-      .eq("classroom_id", req.params.id)
-      .order("position")
-      .order("id"),
-  ) as ModuleRow[];
+  let query = supabase.from("modules").select("*").eq("classroom_id", req.params.id);
+  if (req.user!.role === "student") query = query.eq("status", "published");
+  const rows = unwrap(await query.order("position").order("id")) as ModuleRow[];
   const body: ListModulesResponse = rows.map(toModule);
   res.json(body);
 });

@@ -4,6 +4,7 @@ import { findProfile, verifyToken, type AuthUser } from "./auth.js";
 import { CLIENT_ORIGIN } from "./config.js";
 import type {
   ClientToServerEvents,
+  ModuleChangedPayload,
   PresenceUpdatePayload,
   ServerToClientEvents,
 } from "../../shared/events.js";
@@ -30,6 +31,11 @@ let activeIo: AppServer | null = null;
 /** Tell everyone in the classroom the live lesson changed (null = it ended). */
 export function emitSessionUpdate(classroomId: string, session: LessonSession | null): void {
   activeIo?.to(classroomId).emit("session_update", { type: "session_update", classroomId, session });
+}
+
+/** Tell everyone in the classroom a module was edited. */
+export function emitModuleChanged(payload: ModuleChangedPayload): void {
+  activeIo?.to(payload.classroomId).emit("module_changed", payload);
 }
 
 /** Close live classroom sockets as soon as a teacher removes a student. */
