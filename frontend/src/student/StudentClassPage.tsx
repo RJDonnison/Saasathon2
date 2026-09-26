@@ -7,7 +7,7 @@ import { CARD, TINT } from "../ui/styles.ts";
 import {
   introSnippet,
   lessonOverview,
-  lessonWindowLabel,
+  lessonAccessLabel,
   plural,
   STATUS_LABEL,
   timeAgo,
@@ -167,12 +167,12 @@ export default function StudentClassPage() {
                         {STATUS_LABEL[lesson.status]}
                       </span>
                     </div>
-                    {lessonWindowLabel(lesson) && (
+                    {lessonAccessLabel(lesson) && (
                       <p
                         className={`mb-0! mt-3! text-[13px]! font-medium! ${lesson.available ? "text-muted" : "text-peach-ink"}`}
                       >
                         {lesson.available ? "" : "Locked. "}
-                        {lessonWindowLabel(lesson)}
+                        {lessonAccessLabel(lesson)}
                       </p>
                     )}
                     {lesson.sections.length > 0 && (

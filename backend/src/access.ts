@@ -34,18 +34,15 @@ export async function moduleInClassroom(
   ) as ModuleRow | null;
 }
 
-/** Whether now falls inside the lesson's teacher-chosen window (either end may be open). */
-export function inLessonWindow(
-  module: Pick<ModuleRow, "opens_at" | "closes_at">,
-  now = Date.now(),
+/** Whether a lesson is open to students given which lessons are live right now. */
+export function lessonOpen(
+  module: Pick<ModuleRow, "id" | "access">,
+  live: Set<string>,
 ): boolean {
-  return (
-    (!module.opens_at || Date.parse(module.opens_at) <= now) &&
-    (!module.closes_at || now < Date.parse(module.closes_at))
-  );
+  return module.access !== "live" || live.has(module.id);
 }
 
-/** Ids of lessons the teacher is running live right now; a live lesson is open whatever its window says. */
+/** Ids of lessons the teacher is running live right now (at most one per classroom). */
 export async function liveModuleIds(classroomId: string): Promise<Set<string>> {
   const rows = unwrap(
     await supabase
@@ -57,13 +54,13 @@ export async function liveModuleIds(classroomId: string): Promise<Set<string>> {
   return new Set(rows.map((row) => row.module_id));
 }
 
-/** Whether students may open this lesson now: inside its window, or the teacher is running it live. */
+/** Whether students may open this lesson now: it is open any time, or the teacher is teaching it live. */
 export async function lessonOpenForStudents(module: ModuleRow): Promise<boolean> {
-  if (inLessonWindow(module)) return true;
+  if (module.access !== "live") return true;
   return (await liveModuleIds(module.classroom_id)).has(module.id);
 }
 
-/** Resolves a module visible to this role. Students can never resolve drafts or lessons outside their window. */
+/** Resolves a module visible to this role. Students can never resolve drafts, or a live-only lesson that is not being taught. */
 export async function moduleForUser(
   id: string,
   classroomId: string,

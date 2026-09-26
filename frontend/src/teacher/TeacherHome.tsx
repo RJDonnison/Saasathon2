@@ -32,23 +32,6 @@ import type {
   User,
 } from "../../../shared/types";
 
-function shortTime(iso: string) {
-  return new Date(iso).toLocaleString(undefined, {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-function teacherWindowLabel(m: Module) {
-  if (m.opensAt && m.closesAt)
-    return `${shortTime(m.opensAt)} to ${shortTime(m.closesAt)}`;
-  return m.opensAt
-    ? `Opens ${shortTime(m.opensAt)}`
-    : `Closes ${shortTime(m.closesAt!)}`;
-}
-
 const INVITATION_LABEL: Record<ClassroomInvitation["status"], string> = {
   pending: "Invited, waiting for a reply",
   accepted: "Joined",
@@ -456,8 +439,8 @@ export default function TeacherHome() {
                     <span className="flex-none text-xs! font-normal! text-muted">
                       {m.status === "draft"
                         ? "Draft"
-                        : m.opensAt || m.closesAt
-                          ? teacherWindowLabel(m)
+                        : m.access === "live"
+                          ? "Published · live only"
                           : "Published · open any time"}
                     </span>
                   </Link>
