@@ -10,7 +10,9 @@ import type {
   ModuleChangedPayload,
   QuestionCommentCreatedPayload,
   ModuleDeletedPayload,
+  LowerHandResult,
   ModuleProgressUpdatePayload,
+  RaiseHandResult,
 } from "../../shared/events";
 import { supabase } from "./supabase.ts";
 
@@ -58,9 +60,23 @@ export function disconnectSocket() {
 
 // ---- emit helpers (dropped when not connected, rather than buffered) ----
 
-export function emitRaiseHand(studentId: string, classroomId: string): boolean {
+export function emitRaiseHand(
+  studentId: string,
+  classroomId: string,
+  acknowledge: (result: RaiseHandResult) => void,
+): boolean {
   if (!socket.connected) return false;
-  socket.emit("raise_hand", { type: "raise_hand", studentId, classroomId });
+  socket.emit("raise_hand", { type: "raise_hand", studentId, classroomId }, acknowledge);
+  return true;
+}
+
+export function emitLowerHand(
+  studentId: string,
+  classroomId: string,
+  acknowledge: (result: LowerHandResult) => void,
+): boolean {
+  if (!socket.connected) return false;
+  socket.emit("lower_hand", { type: "lower_hand", studentId, classroomId }, acknowledge);
   return true;
 }
 
