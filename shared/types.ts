@@ -277,6 +277,10 @@ export interface LessonSummary extends Omit<Module, "status"> {
   available: boolean;
   sections: Array<{ id: string; title: string }>;
   exercises: ExerciseSummary[];
+  /** All student-visible questions in this lesson, including non-code questions. */
+  questionCount: number;
+  /** Questions with saved work, an answer attempt, or a code submission from this student. */
+  startedQuestionCount: number;
 }
 /** GET /api/classrooms/:id/lessons (student) — every lesson in order, with the caller's progress. */
 export type ListLessonSummariesResponse = LessonSummary[];
@@ -516,6 +520,8 @@ export interface AiModuleSuggestionsRequest {
 }
 export interface AiModuleSuggestionsResponse {
   suggestions: AiModuleSuggestion[];
+  /** Present when the assistant could not produce a reviewable builder document. */
+  warning?: string;
 }
 /** PUT /api/modules/:id/availability (teacher) — the time window students may open the lesson in; null = unbounded. */
 export interface UpdateModuleAvailabilityRequest {

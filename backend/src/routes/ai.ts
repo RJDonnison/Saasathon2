@@ -31,6 +31,7 @@ import type {
   AiModuleSuggestionsRequest,
   AiModuleSuggestionsResponse,
   AiModuleSuggestion,
+  ModuleBuilderDocument,
 } from "../../../shared/types.js";
 import { supabase } from "../supabase.js";
 import { reviewStudentMessage } from "../ai/review.js";
@@ -275,7 +276,13 @@ function builderSuggestion(
   sourceStatus: "draft" | "published",
 ): AiModuleSuggestion | null {
   try {
-    const value: unknown = JSON.parse(raw);
+    // JSON mode should make this unnecessary, but a few compatible providers still add a
+    // sentence or a Markdown fence. Recover the enclosing object before rejecting a useful draft.
+    const start = raw.indexOf("{");
+    const end = raw.lastIndexOf("}");
+    const value: unknown = JSON.parse(
+      start >= 0 && end > start ? raw.slice(start, end + 1) : raw,
+    );
     if (!value || typeof value !== "object") return null;
     const { label, reply, document } = value as Record<string, unknown>;
     if (
@@ -302,6 +309,36 @@ function builderSuggestion(
   } catch {
     return null;
   }
+}
+
+/**
+ * A malformed model response should not make the lesson planner feel randomly broken. Re-ask once
+ * with the rejected response and the same complete source document. Nothing is persisted here.
+ */
+async function builderSuggestionWithRepair(
+  document: ModuleBuilderDocument,
+  selectedItemId: string | null,
+  request: string,
+): Promise<AiModuleSuggestion | null> {
+  const system = builderSystemPrompt(document, selectedItemId);
+  const first = await complete({
+    system,
+    history: [],
+    message: request,
+    maxTokens: 6000,
+    json: true,
+  });
+  const suggestion = builderSuggestion(first, document.status);
+  if (suggestion) return suggestion;
+
+  const repaired = await complete({
+    system,
+    history: [],
+    message: `Your previous response could not be used by the module builder. Return the complete corrected JSON object now. Do not explain the correction or use Markdown.\n\nTeacher request:\n${request}\n\nPrevious response:\n${first.slice(0, 18_000)}`,
+    maxTokens: 6000,
+    json: true,
+  });
+  return builderSuggestion(repaired, document.status);
 }
 
 aiRouter.post("/hint", requireRole("student"), rateLimit, async (req, res) => {
@@ -566,15 +603,20 @@ aiRouter.post(
         .json({ error: "A valid module document and a request are required" });
     if (!isAiConfigured()) return notConfigured(res);
     await reply(res, async () => {
-      const raw = await complete({
-        system: builderSystemPrompt(document, selectedItemId ?? null),
-        history: [],
-        message: request.trim(),
-        maxTokens: 4000,
-        json: true,
-      });
-      const suggestion = builderSuggestion(raw, document.status);
-      return { suggestions: suggestion ? [suggestion] : [] };
+      const suggestion = await builderSuggestionWithRepair(
+        document,
+        selectedItemId ?? null,
+        request.trim(),
+      );
+      return {
+        suggestions: suggestion ? [suggestion] : [],
+        ...(suggestion
+          ? {}
+          : {
+              warning:
+                "The assistant did not return a complete lesson document. Please try a more specific topic.",
+            }),
+      } satisfies AiModuleSuggestionsResponse;
     });
   },
 );
