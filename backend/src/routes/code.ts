@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { moduleInClassroom } from "../access.js";
+import { moduleForUser } from "../access.js";
 import { PISTON_API_URL, PISTON_AUTH_TOKEN } from "../config.js";
 import type {
   GradeCodeExerciseRequest,
@@ -75,7 +75,7 @@ function stageText(
 async function exerciseInClassroom(
   exerciseId: string,
   classroomId: string,
-  isStudent: boolean,
+  role: "student" | "teacher",
 ): Promise<ExerciseRow | null> {
   const exercise = unwrap(
     await supabase
@@ -101,8 +101,7 @@ async function exerciseInClassroom(
       .maybeSingle(),
   ) as SectionRow | null;
   if (!section) return null;
-  const module = await moduleInClassroom(section.module_id, classroomId);
-  return module && (!isStudent || module.status === "published")
+  return (await moduleForUser(section.module_id, classroomId, role))
     ? exercise
     : null;
 }
@@ -146,7 +145,7 @@ codeRouter.post("/run", async (req, res) => {
     const exercise = await exerciseInClassroom(
       exerciseId,
       req.user!.classroomId,
-      req.user!.role === "student",
+      req.user!.role,
     );
     if (!exercise) {
       res.status(404).json({ error: "Code exercise not found" });
@@ -276,23 +275,12 @@ codeRouter.post("/grade", requireRole("student"), async (req, res) => {
     });
     return;
   }
-  const exercise = unwrap(
-    await supabase
-      .from("code_exercises")
-      .select(
-        "*, questions!inner(section_id, sections!inner(module_id, modules!inner(classroom_id)))",
-      )
-      .eq("id", exerciseId)
-      .maybeSingle(),
-  ) as
-    | (ExerciseRow & {
-        questions: { sections: { modules: { classroom_id: string } } };
-      })
-    | null;
-  if (
-    !exercise ||
-    exercise.questions.sections.modules.classroom_id !== req.user!.classroomId
-  ) {
+  const exercise = await exerciseInClassroom(
+    exerciseId,
+    req.user!.classroomId,
+    req.user!.role,
+  );
+  if (!exercise) {
     res.status(404).json({ error: "Exercise not found" });
     return;
   }

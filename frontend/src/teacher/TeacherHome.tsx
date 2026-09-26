@@ -3,7 +3,13 @@ import { Link } from 'react-router-dom'
 import { api } from '../api.ts'
 import { useAuth } from '../auth/useAuth.ts'
 import { useLiveSession } from '../useLiveSession.ts'
-import { emitAcknowledgeHand, onPresenceUpdate, onRaisedHandsUpdate } from '../socket.ts'
+import {
+  emitAcknowledgeHand,
+  onModuleChanged,
+  onModuleDeleted,
+  onPresenceUpdate,
+  onRaisedHandsUpdate,
+} from '../socket.ts'
 import AnswerKeyPanel from './AnswerKeyPanel.tsx'
 import ClassroomGrid from './ClassroomGrid.tsx'
 import CodeTestPanel from './CodeTestPanel.tsx'
@@ -84,6 +90,22 @@ export default function TeacherHome() {
       window.clearInterval(inviteInterval)
     }
   }, [user])
+
+  useEffect(() => {
+    if (!user) return;
+    const refresh = () => {
+      void api
+        .listModules(user.classroomId)
+        .then(setModules)
+        .catch(() => {});
+    };
+    const changed = onModuleChanged(refresh);
+    const deleted = onModuleDeleted(refresh);
+    return () => {
+      changed();
+      deleted();
+    };
+  }, [user]);
 
   useEffect(
     () =>

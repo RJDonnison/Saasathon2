@@ -7,6 +7,7 @@ import type {
   SessionUpdatePayload,
   StudentStatusUpdatePayload,
   ModuleChangedPayload,
+  ModuleDeletedPayload,
 } from "../../shared/events";
 import { supabase } from "./supabase.ts";
 
@@ -105,4 +106,10 @@ export function onModuleChanged(
 ): () => void {
   socket.on("module_changed", cb);
   return () => void socket.off("module_changed", cb);
+}
+export function onModuleDeleted(
+  cb: (p: ModuleDeletedPayload) => void,
+): () => void {
+  socket.on("module_deleted", cb);
+  return () => void socket.off("module_deleted", cb);
 }

@@ -157,6 +157,8 @@ export const api = {
     }),
   deleteCodeTest: (id: string) =>
     request<void>(`/api/modules/tests/${id}`, { method: "DELETE" }),
+  deleteModule: (id: string) =>
+    request<void>(`/api/modules/${id}`, { method: "DELETE" }),
   validateMath: (body: ValidateMathRequest) =>
     post<ValidateMathResponse>("/api/math/validate", body),
   aiHint: (body: AiHintRequest) => post<AiHintResponse>("/api/ai/hint", body),

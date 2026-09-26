@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Router } from "express";
 import {
   isStudentOwner,
-  moduleInClassroom,
+  moduleForUser,
   studentInClassroom,
 } from "../access.js";
 import { supabase } from "../supabase.js";
@@ -16,6 +16,8 @@ import {
 } from "../rows.js";
 import type {
   ProgressStatus,
+  ModuleProgress,
+  SectionProgress,
   UpsertModuleProgressRequest,
   UpsertSectionProgressRequest,
 } from "../../../shared/types.js";
@@ -38,7 +40,18 @@ progressRouter.get("/students/:id/progress", async (req, res) => {
       .select("*")
       .eq("student_id", req.params.id),
   ) as ModuleProgressRow[];
-  res.json(rows.map(toModuleProgress));
+  const visible = await Promise.all(
+    rows.map(async (row) =>
+      (await moduleForUser(
+        row.module_id,
+        req.user!.classroomId,
+        req.user!.role,
+      ))
+        ? toModuleProgress(row)
+        : null,
+    ),
+  );
+  res.json(visible.filter((row): row is ModuleProgress => row !== null));
 });
 progressRouter.get("/students/:id/section-progress", async (req, res) => {
   if (!(await permitted(req, req.params.id)))
@@ -49,7 +62,26 @@ progressRouter.get("/students/:id/section-progress", async (req, res) => {
       .select("*")
       .eq("student_id", req.params.id),
   ) as SectionProgressRow[];
-  res.json(rows.map(toSectionProgress));
+  const visible = await Promise.all(
+    rows.map(async (row) => {
+      const section = unwrap(
+        await supabase
+          .from("sections")
+          .select("module_id")
+          .eq("id", row.section_id)
+          .maybeSingle(),
+      ) as { module_id: string } | null;
+      return section &&
+        (await moduleForUser(
+          section.module_id,
+          req.user!.classroomId,
+          req.user!.role,
+        ))
+        ? toSectionProgress(row)
+        : null;
+    }),
+  );
+  res.json(visible.filter((row): row is SectionProgress => row !== null));
 });
 progressRouter.put("/progress", async (req, res) => {
   const b = (req.body ?? {}) as Partial<UpsertModuleProgressRequest>;
@@ -58,7 +90,7 @@ progressRouter.put("/progress", async (req, res) => {
     typeof b.moduleId !== "string" ||
     !statuses.includes(b.status as ProgressStatus) ||
     !(await permitted(req, studentId)) ||
-    !(await moduleInClassroom(b.moduleId, req.user!.classroomId))
+    !(await moduleForUser(b.moduleId, req.user!.classroomId, req.user!.role))
   )
     return res.status(400).json({ error: "Invalid module progress request" });
   const row = unwrap(
@@ -96,7 +128,11 @@ progressRouter.put("/section-progress", async (req, res) => {
     !section ||
     !statuses.includes(b.status as ProgressStatus) ||
     !(await permitted(req, studentId)) ||
-    !(await moduleInClassroom(section.module_id, req.user!.classroomId))
+    !(await moduleForUser(
+      section.module_id,
+      req.user!.classroomId,
+      req.user!.role,
+    ))
   )
     return res.status(400).json({ error: "Invalid section progress request" });
   const row = unwrap(

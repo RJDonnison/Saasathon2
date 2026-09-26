@@ -34,6 +34,18 @@ export async function moduleInClassroom(
   ) as ModuleRow | null;
 }
 
+/** Resolves a module visible to this role. Students can never resolve drafts. */
+export async function moduleForUser(
+  id: string,
+  classroomId: string,
+  role: "student" | "teacher",
+): Promise<ModuleRow | null> {
+  const module = await moduleInClassroom(id, classroomId);
+  return module && (role === "teacher" || module.status === "published")
+    ? module
+    : null;
+}
+
 export async function studentInClassroom(
   id: string,
   classroomId: string,

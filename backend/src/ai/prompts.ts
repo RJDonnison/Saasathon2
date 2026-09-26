@@ -204,10 +204,10 @@ ${JSON.stringify(document)}
 /** Teacher-only: produce structured cases for review, never persist them. */
 export function codeTestSystemPrompt(exerciseContext: string): string {
   return `You help a teacher author automated checks for one classroom code exercise. Return ONLY JSON in this shape:
-{"candidates":[{"functionName":"validIdentifier","args":[...],"expected":<JSON value>}]}
+{"candidates":[{"name":"short descriptive label","args":[...],"expected":<JSON value>}]}
 
-- Suggest at most 5 small, deterministic cases for the named synchronous function.
-- args must be a JSON array; expected must be a JSON value. Do not include code, prose, markdown, or test explanations.
+- Suggest at most 5 small, deterministic cases for the named synchronous function in the supplied exercise context.
+- name is a short teacher-facing label. args must be a JSON array; expected must be a JSON value. Do not include a function name, code, prose, markdown, or test explanations.
 - These are teacher-facing editable suggestions, not student feedback.
 
 <exercise>

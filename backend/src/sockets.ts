@@ -5,6 +5,7 @@ import { CLIENT_ORIGIN } from "./config.js";
 import type {
   ClientToServerEvents,
   ModuleChangedPayload,
+  ModuleDeletedPayload,
   PresenceUpdatePayload,
   RaisedHandsUpdatePayload,
   ServerToClientEvents,
@@ -50,6 +51,9 @@ export async function disconnectClassroomMember(classroomId: string, userId: str
       .filter((socket) => socket.data.user.userId === userId)
       .map((socket) => socket.disconnect(true)),
   );
+}
+export function emitModuleDeleted(payload: ModuleDeletedPayload) {
+  activeIo?.to(payload.classroomId).emit("module_deleted", payload);
 }
 
 function onlineStudentIds(classroomId: string): string[] {
