@@ -4,7 +4,7 @@ import type { GradeCodeTestResult } from "../../../shared/types";
 import { api } from "../api.ts";
 import Button from "../ui/Button.tsx";
 import Card from "../ui/Card.tsx";
-import InlineText from "../ui/InlineText.tsx";
+import Markdown from "../ui/Markdown.tsx";
 import { CodeIcon, PlayIcon, SparklesIcon, XIcon } from "../ui/icons.tsx";
 import { GRADED_CARD_SHADOW, GRADED_FEEDBACK } from "../ui/styles.ts";
 import { useWorkspace, type EditorInfo } from "./useWorkspace.ts";
@@ -288,14 +288,16 @@ export default function CodeEditor({
             {language}
           </span>
           {prompt && (
-            <p className="m-0 text-[17px] leading-snug font-semibold text-ink">
-              <InlineText text={prompt} />
-            </p>
+            <Markdown
+              text={prompt}
+              className="text-[17px] leading-snug font-semibold text-ink"
+            />
           )}
           {instructions && (
-            <p className="m-0 text-[15px] leading-relaxed whitespace-pre-line text-ink">
-              <InlineText text={instructions} />
-            </p>
+            <Markdown
+              text={instructions}
+              className="text-[15px] leading-relaxed text-ink"
+            />
           )}
         </div>
       )}

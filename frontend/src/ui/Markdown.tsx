@@ -88,9 +88,16 @@ const components: Components = {
   ),
 };
 
-export default function Markdown({ text }: { text: string }) {
+export default function Markdown({
+  text,
+  className = "text-[15px] leading-relaxed text-muted",
+}: {
+  text: string;
+  /** Text size/colour of the wrapper; defaults to the muted lesson body style. */
+  className?: string;
+}) {
   return (
-    <div className="flex flex-col gap-3.5 text-[15px] leading-relaxed text-muted">
+    <div className={`flex flex-col gap-3.5 ${className}`}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath]}
         rehypePlugins={[rehypeKatex]}

@@ -77,7 +77,7 @@ function LiveLessonQuestions({ moduleId }: { moduleId: string }) {
                       return question ? (
                         <article key={item.id} className="flex flex-col gap-1 rounded-xl border border-border bg-surface p-3">
                           <span className="text-xs font-medium text-muted">{question.kind}</span>
-                          <p className="m-0 whitespace-pre-wrap text-sm text-ink">{question.prompt}</p>
+                          <Markdown text={question.prompt} className="text-sm leading-relaxed text-ink" />
                         </article>
                       ) : null;
                     })}

@@ -1022,7 +1022,7 @@ function QuestionEditor({
           </select>
         </label>
         <label className="flex flex-col gap-2 text-sm text-muted">
-          Prompt
+          Prompt (Markdown supported)
           <textarea
             className={`${INPUT} min-h-24 py-2.5`}
             value={item.prompt}

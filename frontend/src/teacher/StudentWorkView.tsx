@@ -6,7 +6,7 @@ import { onStudentActivityUpdate } from "../socket.ts";
 import Card from "../ui/Card.tsx";
 import Heading from "../ui/Heading.tsx";
 import InlineText from "../ui/InlineText.tsx";
-import MathText from "../ui/MathText.tsx";
+import Markdown from "../ui/Markdown.tsx";
 import QuestionConversation from "../ui/QuestionConversation.tsx";
 import { BookIcon, CodeIcon, PencilIcon } from "../ui/icons.tsx";
 import { TINT } from "../ui/styles.ts";
@@ -157,9 +157,7 @@ export default function StudentWorkView() {
             tint={isCode ? "mint" : "peach"}
             bodyClassName="flex flex-col gap-5 p-5 sm:p-6"
           >
-            <p className="m-0! text-[16px] leading-relaxed text-ink">
-              {question.kind === "math" ? <MathText text={question.prompt} /> : <InlineText text={question.prompt} />}
-            </p>
+            <Markdown text={question.prompt} className="text-[16px] leading-relaxed text-ink" />
             {isCode && question.codeExercise?.instructions && (
               <p className="m-0 text-sm leading-relaxed text-muted">{question.codeExercise.instructions}</p>
             )}

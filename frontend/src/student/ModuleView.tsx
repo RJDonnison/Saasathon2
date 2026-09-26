@@ -4,7 +4,6 @@ import Button from "../ui/Button.tsx";
 import Card from "../ui/Card.tsx";
 import Heading from "../ui/Heading.tsx";
 import InlineText from "../ui/InlineText.tsx";
-import MathText from "../ui/MathText.tsx";
 import QuestionConversation from "../ui/QuestionConversation.tsx";
 import Markdown from "../ui/Markdown.tsx";
 import { CheckIcon, PencilIcon } from "../ui/icons.tsx";
@@ -585,9 +584,10 @@ function AnswerQuestion({
       }
       bodyClassName="flex flex-col gap-4 p-5"
     >
-      <p className="m-0! text-[15px] leading-relaxed text-ink">
-        <InlineText text={question.prompt} />
-      </p>
+      <Markdown
+        text={question.prompt}
+        className="text-[15px] leading-relaxed text-ink"
+      />
       {question.kind === "mcq" && question.options.length > 0 ? (
         <fieldset className="m-0 flex flex-col gap-2 border-0 p-0">
           <legend className="sr-only">Choose an answer</legend>
@@ -807,9 +807,10 @@ function MathQuestion({
       }
       bodyClassName="flex flex-col gap-4 p-5"
     >
-      <p className="m-0 text-[15px] leading-relaxed text-ink">
-        <MathText text={question.prompt} />
-      </p>
+      <Markdown
+        text={question.prompt}
+        className="text-[15px] leading-relaxed text-ink"
+      />
       <label className="sr-only" htmlFor={`answer-${question.id}`}>
         Your answer
       </label>
