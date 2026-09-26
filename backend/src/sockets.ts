@@ -7,6 +7,7 @@ import type {
   PresenceUpdatePayload,
   ServerToClientEvents,
 } from "../../shared/events.js";
+import type { LessonSession } from "../../shared/types.js";
 
 type SocketData = { user: AuthUser };
 type AppServer = Server<
@@ -26,7 +27,12 @@ type AppSocket = Socket<
 const online = new Map<string, Map<string, number>>();
 let activeIo: AppServer | null = null;
 
-/** Close live classroom sockets as soon as a teacher removes a student's assignment. */
+/** Tell everyone in the classroom the live lesson changed (null = it ended). */
+export function emitSessionUpdate(classroomId: string, session: LessonSession | null): void {
+  activeIo?.to(classroomId).emit("session_update", { type: "session_update", classroomId, session });
+}
+
+/** Close live classroom sockets as soon as a teacher removes a student. */
 export async function disconnectClassroomMember(classroomId: string, userId: string): Promise<void> {
   if (!activeIo) return;
   const sockets = await activeIo.in(classroomId).fetchSockets();

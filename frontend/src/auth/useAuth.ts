@@ -1,6 +1,6 @@
 import { createContext, useContext } from 'react'
 import type { Session } from '@supabase/supabase-js'
-import type { JoinRequest, User } from '../../../shared/types'
+import type { User } from '../../../shared/types'
 
 export interface AuthState {
   /** The Supabase (Google) session; null when signed out. */
@@ -10,7 +10,12 @@ export interface AuthState {
   /** true until the session and (if signed in) the classroom profile have been resolved */
   loading: boolean
   signInWithGoogle: () => Promise<void>
-  joinClassroom: (req: JoinRequest) => Promise<User>
+  /** A teacher creates a classroom (and becomes its teacher); it becomes their active classroom. */
+  createClassroom: (name: string) => Promise<User>
+  /** Accept a teacher's invitation: enrols the student and makes that classroom their active one. */
+  acceptInvitation: (invitationId: string) => Promise<User>
+  /** Make another of the student's classrooms the active one. */
+  switchClassroom: (classroomId: string) => Promise<User>
   signOut: () => Promise<void>
 }
 

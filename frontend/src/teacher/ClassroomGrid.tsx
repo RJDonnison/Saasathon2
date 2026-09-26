@@ -6,7 +6,7 @@ import { FOCUS_RING } from '../ui/styles.ts'
 import type { User } from '../../../shared/types'
 
 // Students (REST) with live online/offline state (socket presence_update, owned by TeacherHome).
-// PLACEHOLDER: no per-student status/progress yet.
+// Per-student progress lives in StudentDetailPanel, which loads the selected student's aggregate.
 export default function ClassroomGrid({
   students,
   online,
@@ -46,7 +46,7 @@ export default function ClassroomGrid({
           ))}
         </div>
       ) : sorted.length === 0 ? (
-        <p className="m-0 py-8 text-center text-sm text-muted">No students have joined yet. Share your room code to get started.</p>
+        <p className="m-0 py-8 text-center text-sm text-muted">No students have joined yet. Invite them from the panel above.</p>
       ) : (
         <ul className="m-0 grid list-none gap-3 p-0 sm:grid-cols-2">
           {sorted.map((s) => {

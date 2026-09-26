@@ -17,6 +17,15 @@ export interface StudentStatusUpdatePayload {
   moduleId: string;
 }
 
+import type { LessonSession } from './types';
+
+export interface SessionUpdatePayload {
+  type: 'session_update';
+  classroomId: string;
+  /** The classroom's live lesson after the change; null once it has ended. */
+  session: LessonSession | null;
+}
+
 export interface PresenceUpdatePayload {
   type: 'presence_update';
   classroomId: string;
@@ -27,7 +36,8 @@ export interface PresenceUpdatePayload {
 export type SocketPayload =
   | RaiseHandPayload
   | StudentStatusUpdatePayload
-  | PresenceUpdatePayload;
+  | PresenceUpdatePayload
+  | SessionUpdatePayload;
 
 /** Events the client emits -> server. */
 export interface ClientToServerEvents {
@@ -40,4 +50,5 @@ export interface ServerToClientEvents {
   raise_hand: (payload: RaiseHandPayload) => void;
   student_status_update: (payload: StudentStatusUpdatePayload) => void;
   presence_update: (payload: PresenceUpdatePayload) => void;
+  session_update: (payload: SessionUpdatePayload) => void;
 }

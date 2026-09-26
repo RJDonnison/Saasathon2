@@ -17,7 +17,7 @@ root/
   (Postgres); the schema and demo seed are in `backend/schema.sql`.
 - **Frontend** — one app. After joining, users are routed to `/student` or `/teacher` by role; visiting
   the other role's route redirects you back to your own.
-- **Auth** — Supabase Auth with Google sign-in, then a room code + role to enter a classroom. The browser's
+- **Auth** — Supabase Auth with Google sign-in, then a teacher creates a classroom, or a student accepts a teacher's invitation. There are no join codes. The browser's
   Supabase access token authenticates both REST (`Authorization: Bearer`) and the socket handshake; the
   backend issues no tokens of its own.
 - **Contract** — `shared/types.ts` and `shared/events.ts` are the source of truth. Edit them first.
@@ -62,14 +62,14 @@ Then set up Supabase (the only database):
 
 `backend/schema.sql` seeds:
 
-- **Room code: `DEMO123`**
-- Teacher: `Ms. Rivera` · Students: `Alex`, `Sam`
+- A `Demo Classroom` with teacher `Ms. Rivera` and students `Alex`, `Sam` (demo rows with no login, so the
+  classroom itself can't be entered from the app)
 - One ordered module with two sections, markdown content, MCQ/short/code questions, a code exercise,
   two teacher reference answers/checks, progress, an attempt, a sandbox result, and a line comment.
 
-Sign in with Google, then join with `DEMO123` as a student in one browser window and as a teacher in another
-(use two Google accounts, or a normal window plus a private one) to try the raise-hand flow. Your name comes
-from your Google profile. Alex and Sam are demo rows with no login; they just populate the teacher's grid.
+To try it end to end, use two Google accounts (or a normal window plus a private one): sign in as a teacher and
+create a classroom, invite the other account's email, then sign in as that student and accept the invitation.
+Your name comes from your Google profile.
 
 ## Code execution
 
@@ -88,16 +88,21 @@ See [CLAUDE.md](CLAUDE.md#ai-service-openai).
 
 ## Core API
 
-All endpoints require a Supabase access token in `Authorization: Bearer <token>`. `POST /api/auth/join` and
-`GET /api/auth/me` only require a signed-in identity; all other endpoints also require a classroom membership.
-Users are global and role is stored on `memberships`, scoped to each classroom. Joining a classroom selects its
-membership for subsequent requests.
+All endpoints require a Supabase access token in `Authorization: Bearer <token>`. `GET /api/auth/me`, `POST /api/classrooms`
+and `/api/invitations/*` only require a signed-in identity; all other endpoints also require a classroom membership.
+Users are global and role is stored on `memberships`, scoped to each classroom. Creating or accepting into a
+classroom selects its membership for subsequent requests.
 
 ### Auth and classroom reads
 
-- `POST /api/auth/join` — `{ roomCode, role }`; creates or updates the caller's classroom membership.
 - `GET /api/auth/me`
-- `POST /api/classrooms` (teacher) — `{ name, roomCode }`; adds the caller as its teacher.
+- `POST /api/classrooms` (signed in, not a student) — `{ name }`; creates the classroom and makes the caller its
+  teacher and active classroom.
+- `GET|POST /api/classrooms/:id/invitations`, `DELETE /api/classrooms/:id/invitations/:invitationId` (teacher) —
+  invite students by email; cancel an invitation or remove a student who accepted.
+- `GET|POST|PATCH|DELETE /api/classrooms/:id/session` — the live lesson (read: any member; start, move on, switch
+  phase, end: teacher). Changes are pushed over the socket as `session_update`.
+- `GET /api/invitations`, `POST /api/invitations/:id/accept|decline` (signed in) — the invited student's answer.
 - `GET /api/classrooms/:id`, `GET /api/classrooms/:id/modules` (members)
 - `GET /api/classrooms/:id/students` (teacher)
 - `GET /api/classrooms/:id/students/:studentId/aggregate` (teacher) — progress, attempts, submissions,

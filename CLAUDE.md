@@ -36,19 +36,24 @@ first**; never fork or redeclare these types locally in frontend or backend.
   token as `auth.token` (`frontend/src/api.ts`, `frontend/src/socket.ts`). Do **not** hand-roll JWT
   signing/verification or add a login/logout endpoint — the backend validates tokens with
   `supabase.auth.getUser(token)` (`backend/src/auth.ts`, briefly cached).
-- Two levels of access: `requireIdentity` = valid Google session (used by `/api/auth/join` and
-  `/api/auth/me`); `requireMember` = identity that has also been assigned to a classroom (everything else).
-- Teachers bootstrap through `POST /api/auth/join`, which upserts their global `users` row and creates a teacher
-  membership. Students are assigned by school email from the teacher roster; `/api/auth/me` matches the Google
-  email, upserts the user row, and creates the student membership. The browser retries `/api/auth/me` while a
-  signed-in identity has no membership yet. Role and classroom come from the most recently joined membership.
+- Two levels of access: `requireIdentity` = valid Google session (used by `/api/auth/me`, `POST /api/classrooms` and
+  `/api/invitations`); `requireMember` = identity that has also joined a classroom (created one as a teacher, or accepted
+  a student invitation) (everything else).
+- **There are no room/join codes.** A teacher bootstraps by creating a classroom (`POST /api/classrooms`, mounted
+  before `requireMember`; upserts their `users` row and creates the classroom plus a teacher membership; students are
+  refused). Students are **never enrolled automatically**: a teacher invites a school email
+  (`/api/classrooms/:id/invitations`), and the student sees it after Google sign-in (`GET /api/invitations`, mounted
+  under `requireIdentity`, before `requireMember`) and must `accept` (creates the student membership) or `decline`.
+  Invitations are matched on the verified Google email. No email is sent; the invitation just appears in the app
+  (landing page for a student with no classroom, dashboard banner otherwise). Role and classroom come from the most
+  recently joined membership, so accepting switches the student's active classroom.
 - Sign-out is `supabase.auth.signOut()`.
 
 ## Current stub status
 
 REAL (backed by Supabase / real socket broadcasts):
-- `POST /api/auth/join`, `GET /api/auth/me` (Supabase Auth + Google)
-- Classroom, module (create/read/update/delete, teacher-only writes), progress and comment endpoints
+- `GET /api/auth/me` (Supabase Auth + Google)
+- Classroom, invitation (teacher invites, student accepts/declines), announcements, lessons/progress, module (create/read/update/delete, teacher-only writes), progress and comment endpoints
 - AI (OpenAI): `POST /api/ai/hint` (student "I'm stuck" tutor) and `POST /api/ai/draft` (teacher module
   drafting/planning) — see "AI service" below. Needs `OPENAI_API_KEY`; without it they return 503.
 - `POST /api/code/run` — runs JavaScript, TypeScript and Python in the configured Piston sandbox. It is
@@ -56,11 +61,12 @@ REAL (backed by Supabase / real socket broadcasts):
 - Socket.io: presence (`presence_update`), `raise_hand`, `student_status_update`, broadcast to a
   classroom-scoped room (`io.to(classroomId)`). The server trusts the authenticated user (from the Supabase token), not the client payload.
 
-MOCKED — don't "fix" these into real implementations unless explicitly asked; that is follow-up feature work:
-
-- Most frontend components under `frontend/src/student/` and `frontend/src/teacher/` are placeholders
-  with static/mock content. The student's multiple-choice / short-answer questions are local-only (no attempts
-  endpoint is wired up).
+Nothing in the classroom screens is mocked any more. Everything the student and teacher see comes from Supabase:
+lessons and their progress (`module_progress`, written when a student opens or marks a lesson done), code runs
+(`code_submissions`, saved on every Run of a real exercise), question attempts (`attempts`), teacher announcements
+(`classroom_announcements`), and the student's classes (`GET /api/classrooms`, switch with `POST
+/api/classrooms/:id/activate`). Don't reintroduce placeholder/demo content; if a screen needs data that has no source
+yet, add the table/endpoint or leave the section out. There is deliberately no timetable, due-date or marks feature.
 
 ## Database: Supabase only
 
@@ -74,7 +80,7 @@ MOCKED — don't "fix" these into real implementations unless explicitly asked; 
   when you change a table, update `backend/schema.sql` (and the row types/mappers in `backend/src/rows.ts`)
   and re-run the SQL in the Supabase SQL editor. Add fields to `shared/types.ts` first.
 - The seeded demo users (Ms. Rivera, Alex, Sam) have no auth account; they only populate the teacher's
-  grid. Real users are created by `POST /api/auth/join`.
+  grid. Real users are created when a teacher creates a classroom or a student accepts an invitation.
 - DB columns are snake_case; `rows.ts` maps them to the camelCase entities in `shared/types.ts`.
   Wrap queries in `unwrap()` so database errors become JSON 500s.
 
@@ -103,17 +109,34 @@ module itself (scoped to the caller's classroom), so clients can't inject or swa
   502 (never leaked). Known limit: chat history is client-supplied, so a determined student could forge
   "assistant" turns; the system prompt tells the model to hold the line, but it isn't a hard guarantee.
 
-## Student dashboard
+## Live lessons
 
-Two columns: the lesson on the left, the tutor (`AiChatPanel`) on the right, `sticky` under the top bar so it
-stays on screen while the lesson scrolls (stacked on phones). A lesson (`ModuleView`) renders its sections in
-order; each section is its Markdown content blocks followed by its questions, so teachers interleave reading and
-work by ordering sections (read -> practice -> read -> practice). Blocks and questions have separate `position`
-sequences, so they can't be mixed *within* a section without a contract change. Each code exercise gets its own
-`CodeEditor`; there is also a free playground at the end. `WorkspaceContext` shares editor text, the active
-editor and the tutor's highlight between the columns. Each editor is Monaco; tutor highlights are Monaco
-whole-line decorations and are revealed in the editor when received. Monaco is lazy-loaded only when a code
-segment is rendered.
+The teacher runs the class: from the dashboard (`LiveLessonControl`) they start a lesson, move the class to the
+previous/next lesson, switch between **Teach** (helper paused) and **Work time**, and end it. That is one row in
+`lesson_sessions` (at most one live per classroom, enforced by a partial unique index), changed through
+`/api/classrooms/:id/session` (GET any member; POST/PATCH/DELETE teacher). Every change is also pushed to the classroom
+room as the `session_update` socket event (`emitSessionUpdate` in `sockets.ts`); `useLiveSession` (frontend) reads it
+with a slow poll as a safety net. Students see a "Live now" banner with Join lesson, and on the live page they
+**follow** the teacher by default (lesson and phase come from the session; the phase is read-only for them). They can
+step off (pick another lesson, or "I'm lost" during Teach) and return with "Back to {teacher}". With no live session the
+live page is self-paced.
+
+## Student screens
+
+- **Home** (`StudentDashboard`): invitations, a "pick up where you left off" banner, the class's lessons with status, a
+  to-do list, the teacher's notes, and "My classes" (switchable).
+- **Class page** (`StudentClassPage`, `/student/class/:id`): continue card, per-lesson sections and code-run status,
+  progress, up next, teacher notes. It and the live lesson bring their own `ClassTopBar`; `AppShell` steps aside for
+  `/student/class/*`.
+- **Live lesson** (`StudentHome`, `.../live?lesson=<id>`): three columns — lesson list, the lesson, and the tutor
+  (`AiChatPanel`) — each scrolling on its own on large screens, stacked on phones. A lesson (`ModuleView`) renders its
+  sections in order; each section is its Markdown content blocks followed by its questions, so teachers interleave
+  reading and work by ordering sections. Blocks and questions have separate `position` sequences, so they can't be
+  mixed *within* a section without a contract change. Each code exercise gets its own `CodeEditor` (Monaco,
+  lazy-loaded); there is also a free playground at the end. `WorkspaceContext` shares editor text, the active editor and
+  the tutor's highlight between the columns. Opening a lesson marks it in progress; "Mark lesson complete" completes it.
+- **Teacher home** (`TeacherHome`): banner with live counts, roll call, raised hands, student detail (real progress and
+  runs), announcements, invitations, lessons (with a quick "Add a lesson") and the AI lesson planner.
 
 ## Code execution (Piston)
 
@@ -147,8 +170,8 @@ npm run dev                     # from root: boots backend :4000 and frontend :5
 `VITE_`-prefixed vars reach the browser, so `SUPABASE_SERVICE_ROLE_KEY` never does — don't change
 `envPrefix`, and never put the service-role key in a `VITE_` var. Restart the dev server after editing `.env`.
 
-`backend/schema.sql` creates the tables and seeds the demo data: room code **`DEMO123`**, teacher
-"Ms. Rivera", students "Alex" and "Sam", two modules.
+`backend/schema.sql` creates the tables and seeds the demo data: a "Demo Classroom" with teacher
+"Ms. Rivera", students "Alex" and "Sam", two modules (no auth account owns it, so it isn't reachable from the app).
 
 The backend resolves `.env` (repo root) from its working directory, so run it via its npm scripts
 (cwd = `backend/`), not `node backend/dist/...` from elsewhere.

@@ -1,39 +1,31 @@
 import { useEffect, useMemo, useState } from 'react'
 import { api } from '../api.ts'
 import { useAuth } from '../auth/useAuth.ts'
+import { useLiveSession } from '../useLiveSession.ts'
 import { onPresenceUpdate, onRaiseHand } from '../socket.ts'
 import ClassroomGrid from './ClassroomGrid.tsx'
 import StudentDetailPanel from './StudentDetailPanel.tsx'
+import AnnouncementsCard from './AnnouncementsCard.tsx'
+import LessonPlanner from './LessonPlanner.tsx'
+import LiveLessonControl from './LiveLessonControl.tsx'
+import NewLessonForm from './NewLessonForm.tsx'
 import RaiseHandAlert, { type RaisedHand } from './RaiseHandAlert.tsx'
 import Button from '../ui/Button.tsx'
 import Card from '../ui/Card.tsx'
-import Dot from '../ui/Dot.tsx'
-import Eyebrow from '../ui/Eyebrow.tsx'
 import Heading from '../ui/Heading.tsx'
-import { HandIcon, PencilIcon, SparklesIcon, UsersIcon } from '../ui/icons.tsx'
-import { CARD, INPUT, TINT, type Tint } from '../ui/styles.ts'
-import type { Classroom, ClassroomAssignment, Module, User } from '../../../shared/types'
+import { BookIcon, UsersIcon } from '../ui/icons.tsx'
+import { INPUT, TINT } from '../ui/styles.ts'
+import type { Classroom, ClassroomInvitation, Module, User } from '../../../shared/types'
 
-function Stat({ label, value, tint, icon }: { label: string; value: number | string; tint: Tint; icon: React.ReactNode }) {
-  return (
-    <div className={`flex flex-col items-start gap-3 p-4 sm:flex-row sm:items-center sm:gap-4 sm:px-5 ${CARD}`}>
-      <span className={`grid size-9 flex-none place-items-center rounded-xl sm:size-11 sm:rounded-2xl ${TINT[tint]}`}>{icon}</span>
-      <div className="flex flex-col gap-2">
-        <div className="font-display text-2xl leading-none font-semibold tracking-tight sm:text-[28px]">{value}</div>
-        <Eyebrow>{label}</Eyebrow>
-      </div>
-    </div>
-  )
-}
-
-function Chip({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-3 py-1.5 text-xs text-muted">{children}</span>
-  )
+const INVITATION_LABEL: Record<ClassroomInvitation['status'], string> = {
+  pending: 'Invited, waiting for a reply',
+  accepted: 'Joined',
+  declined: 'Declined',
 }
 
 export default function TeacherHome() {
-  const { user } = useAuth()
+  const { user, createClassroom: createClassroomFor } = useAuth()
+  const { session, setSession } = useLiveSession()
   const [students, setStudents] = useState<User[] | null>(null)
   const [classroom, setClassroom] = useState<Classroom | null>(null)
   const [modules, setModules] = useState<Module[]>([])
@@ -42,11 +34,10 @@ export default function TeacherHome() {
   const [hands, setHands] = useState<RaisedHand[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
-  const [lesson, setLesson] = useState('')
-  const [assignments, setAssignments] = useState<ClassroomAssignment[]>([])
-  const [rosterText, setRosterText] = useState('')
-  const [rosterBusy, setRosterBusy] = useState(false)
-  const [rosterMessage, setRosterMessage] = useState<string | null>(null)
+  const [invitations, setInvitations] = useState<ClassroomInvitation[]>([])
+  const [inviteText, setInviteText] = useState('')
+  const [inviteBusy, setInviteBusy] = useState(false)
+  const [inviteMessage, setInviteMessage] = useState<string | null>(null)
 
   useEffect(() => {
     if (!user) return
@@ -72,19 +63,21 @@ export default function TeacherHome() {
         if (!cancelled) setModules(m)
       })
       .catch(() => {})
-    const loadAssignments = () => {
+    // Poll so a student's answer (accepted / declined) shows up without a refresh; a student who joins also
+    // triggers a presence_update, which refreshes the student grid.
+    const loadInvitations = () => {
       void api
-        .getAssignments(user.classroomId)
+        .getInvitations(user.classroomId)
         .then((list) => {
-          if (!cancelled) setAssignments(list)
+          if (!cancelled) setInvitations(list)
         })
         .catch(() => {})
     }
-    loadAssignments()
-    const rosterInterval = window.setInterval(loadAssignments, 15000)
+    const inviteInterval = window.setInterval(loadInvitations, 15000)
+    loadInvitations()
     return () => {
       cancelled = true
-      window.clearInterval(rosterInterval)
+      window.clearInterval(inviteInterval)
     }
   }, [user])
 
@@ -115,10 +108,10 @@ export default function TeacherHome() {
     if (!name?.trim()) return
     setCreating(true)
     try {
-      const code = `LOOP${Math.random().toString(36).slice(2, 6).toUpperCase()}`
-      const room = await api.createClassroom(name.trim(), code)
-      window.alert(`Classroom created. Join code: ${room.roomCode}`)
-      window.location.assign('/teacher')
+      // The new classroom becomes the active one; the profile change reloads this dashboard for it.
+      setStudents(null)
+      setInvitations([])
+      await createClassroomFor(name.trim())
     } catch (e) {
       window.alert(e instanceof Error ? e.message : 'Could not create classroom')
     } finally {
@@ -126,135 +119,126 @@ export default function TeacherHome() {
     }
   }
 
-  async function assignStudents(event: React.FormEvent<HTMLFormElement>) {
+  async function inviteStudents(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!user) return
-    const entries = rosterText.split(/[\n;]+/).map((line) => line.trim()).filter(Boolean)
-    const students = entries.map((line) => {
+    const entries = inviteText.split(/[\n;]+/).map((line) => line.trim()).filter(Boolean)
+    const invitees = entries.map((line) => {
       const email = line.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0]?.toLowerCase()
       const name = email ? line.replace(email, '').replace(/^[\s<,]+|[\s>,]+$/g, '').trim() : ''
       return email ? { email, ...(name ? { name } : {}) } : null
     })
-    if (students.some((student) => student === null)) {
-      setRosterMessage('Check the list. Add one school email per line, or a name followed by an email.')
+    if (invitees.some((invitee) => invitee === null)) {
+      setInviteMessage('Check the list. Add one school email per line, or a name followed by an email.')
       return
     }
-    setRosterBusy(true)
-    setRosterMessage(null)
+    setInviteBusy(true)
+    setInviteMessage(null)
     try {
-      const created = await api.assignStudents(user.classroomId, { students: students.filter((student): student is NonNullable<typeof student> => student !== null) })
-      setAssignments(await api.getAssignments(user.classroomId))
-      setStudents(await api.getStudents(user.classroomId))
-      setRosterText('')
-      setRosterMessage(`${created.length} student${created.length === 1 ? '' : 's'} added. They will get access automatically when they sign in with this email.`)
+      const { invitations: sent, skipped } = await api.inviteStudents(user.classroomId, {
+        students: invitees.filter((invitee): invitee is NonNullable<typeof invitee> => invitee !== null),
+      })
+      setInvitations(await api.getInvitations(user.classroomId))
+      setInviteText('')
+      const parts = []
+      if (sent.length) parts.push(`${sent.length} invitation${sent.length === 1 ? '' : 's'} sent. Students see them when they sign in with that email and choose whether to join.`)
+      if (skipped.length) parts.push(`Already in this class: ${skipped.join(', ')}.`)
+      setInviteMessage(parts.join(' '))
     } catch (err) {
-      setRosterMessage(err instanceof Error ? err.message : 'Could not assign students')
+      setInviteMessage(err instanceof Error ? err.message : 'Could not send invitations')
     } finally {
-      setRosterBusy(false)
+      setInviteBusy(false)
     }
   }
 
-  async function removeStudent(assignment: ClassroomAssignment) {
-    if (!user || !window.confirm(`Remove ${assignment.studentName || assignment.email} from this classroom?`)) return
+  async function removeInvitation(invitation: ClassroomInvitation) {
+    const who = invitation.studentName || invitation.email
+    const prompt = invitation.status === 'accepted' ? `Remove ${who} from this classroom?` : `Cancel the invitation to ${who}?`
+    if (!user || !window.confirm(prompt)) return
     try {
-      await api.removeAssignment(user.classroomId, assignment.id)
-      setAssignments((current) => current.filter((item) => item.id !== assignment.id))
+      await api.removeInvitation(user.classroomId, invitation.id)
+      setInvitations((current) => current.filter((item) => item.id !== invitation.id))
       setStudents(await api.getStudents(user.classroomId))
     } catch (err) {
-      setRosterMessage(err instanceof Error ? err.message : 'Could not remove student')
+      setInviteMessage(err instanceof Error ? err.message : 'Could not remove invitation')
     }
   }
 
   const byId = useMemo(() => new Map((students ?? []).map((s) => [s.id, s])), [students])
   const onlineCount = (students ?? []).filter((s) => online.has(s.id)).length
   const selected = selectedId ? (byId.get(selectedId) ?? null) : null
+  const hour = new Date().getHours()
+  const greeting = hour < 12 ? 'Morning' : hour < 18 ? 'Afternoon' : 'Evening'
+  const firstName = user?.name.trim().split(/\s+/)[0] || 'there'
+  const today = new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })
+  const studentCount = students?.length ?? 0
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex flex-col gap-3">
-          <Eyebrow>Teacher dashboard</Eyebrow>
-          <Heading as="h1" variant="title">
-            Your classroom, at a glance.
-          </Heading>
-          <p className="m-0 text-[15px] text-muted">See who is learning, where they need support, and what they are asking.</p>
-          {classroom && (
-            <div className="flex flex-wrap gap-2">
-              <Chip>{classroom.name}</Chip>
-              <Chip>
-                Join code <strong className="font-mono font-medium text-ink">{classroom.roomCode}</strong>
-              </Chip>
-            </div>
-          )}
-        </div>
-        <Button variant="primary" size="lg" disabled={creating} onClick={() => void createClassroom()}>
-          {creating ? 'Creating…' : '＋ Create classroom'}
+    <div className="mx-auto flex max-w-[1020px] flex-col gap-6 sm:gap-7">
+      <div className="flex flex-wrap items-start justify-between gap-4 pt-1">
+       <div className="flex flex-col gap-2">
+        <p className="m-0 text-[13px] font-medium text-muted">{today}</p>
+        <Heading as="h1" variant="title" className="text-[34px]! sm:text-[38px]!">
+          {greeting}, {firstName}
+        </Heading>
+        <p className="m-0 text-[15px] text-muted">
+          {students === null
+            ? 'Loading your classroom…'
+            : `${studentCount} student${studentCount === 1 ? '' : 's'} in ${classroom?.name ?? 'your classroom'}, ${onlineCount} online and ${hands.length} hand${hands.length === 1 ? '' : 's'} raised.`}
+        </p>
+       </div>
+        <Button disabled={creating} onClick={() => void createClassroom()}>
+          {creating ? 'Creating…' : '＋ New classroom'}
         </Button>
       </div>
 
       {error && <p className={`m-0 rounded-xl px-4 py-3 text-sm ${TINT.peach}`}>{error}</p>}
 
-      <Card
-        title="Assign students"
-        eyebrow="Class roster"
-        icon={<UsersIcon className="size-[18px]" />}
-        tint="lavender"
-        bodyClassName="flex flex-col gap-4 p-5"
-      >
-        <p className="m-0 text-sm leading-relaxed text-muted">
-          Paste school email addresses, one per line. Students who sign in with a matching Google account are added to this class automatically.
-        </p>
-        <form onSubmit={(event) => void assignStudents(event)} className="flex flex-col gap-3">
-          <textarea
-            className={`${INPUT} min-h-28 resize-y py-3`}
-            value={rosterText}
-            onChange={(event) => setRosterText(event.target.value)}
-            placeholder={'alex@school.edu\nsam@school.edu\nTaylor Lee <taylor@school.edu>'}
-            aria-label="Student school email addresses"
-          />
-          <div className="flex flex-wrap items-center gap-3">
-            <Button type="submit" variant="primary" disabled={rosterBusy || !rosterText.trim()}>
-              {rosterBusy ? 'Adding students…' : 'Add to class'}
-            </Button>
-            {rosterMessage && <span role="status" className="text-sm text-muted">{rosterMessage}</span>}
-          </div>
-        </form>
-        <div className="flex flex-col divide-y divide-border rounded-xl border border-border">
-          {assignments.length === 0 ? (
-            <p className="m-0 px-4 py-3 text-sm text-muted">Your roster is empty. Add students above to give them access.</p>
-          ) : assignments.map((assignment) => (
-            <div key={assignment.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-              <div className="min-w-0">
-                <p className="m-0 truncate text-sm font-medium text-ink">{assignment.studentName || assignment.email}</p>
-                {assignment.studentName && <p className="m-0 truncate text-xs text-muted">{assignment.email}</p>}
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="text-xs text-muted">{assignment.status === 'active' ? 'Access granted' : 'Waiting for sign-in'}</span>
-                <Button size="sm" onClick={() => void removeStudent(assignment)}>Remove</Button>
-              </div>
-            </div>
-          ))}
-        </div>
-      </Card>
+      <LiveLessonControl
+        classroomId={user!.classroomId}
+        classroomName={classroom?.name ?? 'your classroom'}
+        lessons={modules}
+        session={session}
+        onSession={setSession}
+        online={onlineCount}
+        students={studentCount}
+        hands={hands.length}
+      />
 
       {/*
-        Two columns on large screens: [stats + roll call] | [raised hands + detail]. The column wrappers are
-        `contents` below lg, so on a phone the order is stats, raised hands, students, detail: the urgent
-        thing (a raised hand) is never buried under a long student list.
+        Two columns on large screens: [students + lessons] | [raised hands, detail, invitations]. The column wrappers
+        are `contents` below lg, so on a phone the order is raised hands, students, detail, invitations, lessons: the
+        urgent thing (a raised hand) is never buried under a long student list.
       */}
-      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_23rem]">
-        <div className="contents lg:flex lg:min-w-0 lg:flex-col lg:gap-6">
-          <div className="order-1 grid grid-cols-3 gap-3 sm:gap-4">
-            <Stat label="Students" value={students?.length ?? '–'} tint="lavender" icon={<UsersIcon className="size-[18px] sm:size-5" />} />
-            <Stat label="Online" value={students ? onlineCount : '–'} tint="mint" icon={<Dot live />} />
-            <Stat label="Hands" value={hands.length} tint="peach" icon={<HandIcon className="size-[18px] sm:size-5" />} />
-          </div>
-          <div className="order-3 min-w-0">
+      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1.7fr)_minmax(290px,.95fr)]">
+        <div className="contents lg:flex lg:min-w-0 lg:flex-col lg:gap-5">
+          <div className="order-2 min-w-0">
             <ClassroomGrid students={students} online={online} selectedId={selectedId} onSelect={setSelectedId} />
           </div>
+          <div className="order-5 min-w-0">
+            <Card
+              title="Lessons"
+              eyebrow="Your modules"
+              icon={<BookIcon className="size-[18px]" />}
+              tint="mint"
+              bodyClassName="flex flex-col divide-y divide-border"
+            >
+              {modules.length === 0 ? (
+                <p className="m-0 px-5 py-4 text-sm text-muted">No lessons yet. Lessons you create appear here for your students.</p>
+              ) : (
+                modules.map((m, i) => (
+                  <div key={m.id} className="flex items-center gap-3 px-5 py-3.5">
+                    <span className="grid size-8 flex-none place-items-center rounded-full border border-border bg-surface text-[13px] font-semibold text-muted">{i + 1}</span>
+                    <strong className="min-w-0 truncate text-[14px]">{m.title}</strong>
+                  </div>
+                ))
+              )}
+              <NewLessonForm onCreated={(lesson) => setModules((current) => [...current, lesson])} />
+            </Card>
+          </div>
         </div>
-        <div className="contents lg:flex lg:min-w-0 lg:flex-col lg:gap-6">
-          <div className="order-2 min-w-0">
+        <div className="contents lg:flex lg:min-w-0 lg:flex-col lg:gap-5">
+          <div className="order-1 min-w-0">
             <RaiseHandAlert
               hands={hands}
               nameOf={(id) => byId.get(id)?.name ?? 'A student'}
@@ -262,71 +246,60 @@ export default function TeacherHome() {
               onSelect={setSelectedId}
             />
           </div>
+          <div className="order-3 min-w-0">
+            <StudentDetailPanel student={selected} online={selected ? online.has(selected.id) : false} classroomId={user!.classroomId} lessons={modules} />
+          </div>
           <div className="order-4 min-w-0">
-            <StudentDetailPanel student={selected} online={selected ? online.has(selected.id) : false} />
+            <AnnouncementsCard key={user!.classroomId} classroomId={user!.classroomId} />
+          </div>
+          <div className="order-6 min-w-0">
+      <Card
+        title="Invite students"
+        eyebrow="Class invitations"
+        icon={<UsersIcon className="size-[18px]" />}
+        tint="lavender"
+        bodyClassName="flex flex-col gap-4 p-5"
+      >
+        <p className="m-0 text-sm leading-relaxed text-muted">
+          Paste school email addresses, one per line. Nobody is added automatically: each student sees the invitation when they sign in with a matching Google account and chooses to accept or decline.
+        </p>
+        <form onSubmit={(event) => void inviteStudents(event)} className="flex flex-col gap-3">
+          <textarea
+            className={`${INPUT} min-h-28 resize-y py-3`}
+            value={inviteText}
+            onChange={(event) => setInviteText(event.target.value)}
+            placeholder={'alex@school.edu\nsam@school.edu\nTaylor Lee <taylor@school.edu>'}
+            aria-label="Student school email addresses"
+          />
+          <div className="flex flex-wrap items-center gap-3">
+            <Button type="submit" variant="primary" disabled={inviteBusy || !inviteText.trim()}>
+              {inviteBusy ? 'Sending invitations…' : 'Send invitations'}
+            </Button>
+            {inviteMessage && <span role="status" className="text-sm text-muted">{inviteMessage}</span>}
+          </div>
+        </form>
+        <div className="flex flex-col divide-y divide-border rounded-xl border border-border">
+          {invitations.length === 0 ? (
+            <p className="m-0 px-4 py-3 text-sm text-muted">No invitations yet. Invite students above.</p>
+          ) : invitations.map((invitation) => (
+            <div key={invitation.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+              <div className="min-w-0">
+                <p className="m-0 truncate text-sm font-medium text-ink">{invitation.studentName || invitation.email}</p>
+                {invitation.studentName && <p className="m-0 truncate text-xs text-muted">{invitation.email}</p>}
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-muted">{INVITATION_LABEL[invitation.status]}</span>
+                <Button size="sm" onClick={() => void removeInvitation(invitation)}>{invitation.status === 'accepted' ? 'Remove' : 'Cancel'}</Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
           </div>
         </div>
       </div>
 
-      <div className="grid items-start gap-6 lg:grid-cols-2">
-        <Card
-          title="Plan a lesson"
-          eyebrow="Lesson planner"
-          icon={<PencilIcon className="size-[18px]" />}
-          tint="lavender"
-          bodyClassName="flex flex-col gap-4 p-5"
-        >
-          <label className="flex flex-col gap-2 text-[13px] text-muted">
-            Topic
-            <input className={`${INPUT} h-10`} value={lesson} onChange={(e) => setLesson(e.target.value)} placeholder="For example, loops and repetition" />
-          </label>
-          <label className="flex flex-col gap-2 text-[13px] text-muted">
-            Level
-            <select className={`${INPUT} h-10`} defaultValue="beginner">
-              <option value="beginner">Beginner</option>
-              <option value="intermediate">Intermediate</option>
-              <option value="advanced">Advanced</option>
-            </select>
-          </label>
-          <div>
-            <Button variant="primary" onClick={() => window.alert('Lesson drafting needs the AI lesson service, which is not connected yet.')}>
-              Draft lesson plan
-            </Button>
-          </div>
-          <p className="m-0 text-xs leading-relaxed text-muted">
-            AI lesson planning is not connected in this demo yet. Current lessons: {modules.length}.
-          </p>
-        </Card>
-
-        <Card
-          title="Guide the way students learn"
-          eyebrow="AI helper"
-          icon={<SparklesIcon className="size-[18px]" />}
-          tint="mint"
-          bodyClassName="flex flex-col gap-4 p-5"
-        >
-          <p className="m-0 text-sm leading-relaxed text-muted">
-            The student helper gives hints, never answers. Classroom-specific settings need somewhere to be stored before they can change
-            how it responds.
-          </p>
-          <div className="grid gap-x-4 gap-y-3 text-[13px] text-muted sm:grid-cols-2">
-            <label className="flex items-center gap-2">
-              <input type="radio" name="strictness" defaultChecked className="accent-accent" /> Hints only
-            </label>
-            <label className="flex items-center gap-2">
-              <input type="radio" name="strictness" className="accent-accent" /> Explanations allowed
-            </label>
-            <label className="flex flex-col gap-2">
-              Focus topics
-              <input className={`${INPUT} h-10 opacity-65`} placeholder="Variables, loops, functions" disabled />
-            </label>
-            <label className="flex flex-col gap-2">
-              Custom instruction
-              <input className={`${INPUT} h-10 opacity-65`} placeholder="Add a classroom note" disabled />
-            </label>
-          </div>
-        </Card>
-      </div>
+      <LessonPlanner />
     </div>
   )
 }
