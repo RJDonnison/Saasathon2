@@ -1,7 +1,7 @@
 // Single source of truth for socket.io event payloads.
 // Plain file (not an npm package) — imported by relative path from backend and frontend.
 
-import type { StudentActivity, StudentWork } from "./types.js";
+import type { QuestionComment, StudentActivity, StudentWork } from "./types.js";
 
 export type StudentStatus = "idle" | "working" | "stuck";
 
@@ -59,6 +59,11 @@ export interface ModuleChangedPayload {
   moduleId: string;
   revision: number;
 }
+export interface QuestionCommentCreatedPayload {
+  type: "question_comment_created";
+  classroomId: string;
+  comment: QuestionComment;
+}
 
 /** Discriminated union (on `type`) of every socket payload. */
 export type SocketPayload =
@@ -68,7 +73,8 @@ export type SocketPayload =
   | StudentStatusUpdatePayload
   | StudentActivityUpdatePayload
   | PresenceUpdatePayload
-  | ModuleChangedPayload;
+  | ModuleChangedPayload
+  | QuestionCommentCreatedPayload;
 
 /** Events the client emits -> server. */
 export interface ClientToServerEvents {
@@ -84,4 +90,5 @@ export interface ServerToClientEvents {
   student_activity_update: (payload: StudentActivityUpdatePayload) => void;
   presence_update: (payload: PresenceUpdatePayload) => void;
   module_changed: (payload: ModuleChangedPayload) => void;
+  question_comment_created: (payload: QuestionCommentCreatedPayload) => void;
 }

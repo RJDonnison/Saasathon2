@@ -310,7 +310,10 @@ export default function TeacherHome() {
               activity={selected ? activity[selected.id] : undefined}
               onOpenQuestion={(current) =>
                 current.questionId &&
-                navigate(`/teacher/modules/${current.moduleId}?questionId=${encodeURIComponent(current.questionId)}`)
+                selected &&
+                navigate(
+                  `/teacher/student-work/${selected.id}/${current.moduleId}?questionId=${encodeURIComponent(current.questionId)}`,
+                )
               }
             />
           </div>

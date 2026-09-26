@@ -6,6 +6,7 @@ import Eyebrow from "../ui/Eyebrow.tsx";
 import Heading from "../ui/Heading.tsx";
 import InlineText from "../ui/InlineText.tsx";
 import MathText from "../ui/MathText.tsx";
+import QuestionConversation from "../ui/QuestionConversation.tsx";
 import Markdown from "../ui/Markdown.tsx";
 import { BookIcon, PencilIcon } from "../ui/icons.tsx";
 import { CARD, INPUT, TINT } from "../ui/styles.ts";
@@ -286,9 +287,9 @@ function QuestionView({
   savedWork?: StudentWork;
 }) {
   if (question.kind === "code" && question.codeExercise)
-    return <CodeQuestion question={question} moduleId={moduleId} sectionId={sectionId} savedWork={savedWork} />;
-  if (question.kind === "math") return <MathQuestion question={question} moduleId={moduleId} sectionId={sectionId} savedWork={savedWork} />;
-  return <AnswerQuestion question={question} moduleId={moduleId} sectionId={sectionId} savedWork={savedWork} />;
+    return <><CodeQuestion question={question} moduleId={moduleId} sectionId={sectionId} savedWork={savedWork} /><QuestionConversation questionId={question.id} /></>;
+  if (question.kind === "math") return <><MathQuestion question={question} moduleId={moduleId} sectionId={sectionId} savedWork={savedWork} /><QuestionConversation questionId={question.id} /></>;
+  return <><AnswerQuestion question={question} moduleId={moduleId} sectionId={sectionId} savedWork={savedWork} /><QuestionConversation questionId={question.id} /></>;
 }
 
 /** "Write a function `double(n)` that returns…" -> a short, plain-text name for the exercise. */

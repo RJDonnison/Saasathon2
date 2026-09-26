@@ -37,9 +37,13 @@ import type {
   UpsertProgressResponse,
   GetClassroomStudentActivityResponse,
   GetStudentWorkResponse,
+  GetTeacherStudentAggregateResponse,
   RecordStudentActivityRequest,
   SaveStudentWorkRequest,
   StudentActivity,
+  CreateQuestionCommentRequest,
+  CreateQuestionCommentResponse,
+  ListQuestionCommentsResponse,
 } from "../../shared/types";
 import { supabase } from "./supabase.ts";
 
@@ -100,6 +104,10 @@ export const api = {
     request<GetClassroomStudentActivityResponse>(
       `/api/activity/classrooms/${classroomId}`,
     ),
+  getTeacherStudentAggregate: (classroomId: string, studentId: string) =>
+    request<GetTeacherStudentAggregateResponse>(
+      `/api/classrooms/${classroomId}/students/${studentId}/aggregate`,
+    ),
   getStudentWork: (moduleId: string) =>
     request<GetStudentWorkResponse>(
       `/api/activity/work?moduleId=${encodeURIComponent(moduleId)}`,
@@ -110,6 +118,12 @@ export const api = {
     post<StudentActivity>("/api/activity", body),
   createComment: (body: CreateCommentRequest) =>
     post<Comment>("/api/comments", body),
+  getQuestionComments: (questionId: string, studentId?: string) =>
+    request<ListQuestionCommentsResponse>(
+      `/api/comments/questions/${questionId}/comments${studentId ? `?studentId=${encodeURIComponent(studentId)}` : ""}`,
+    ),
+  createQuestionComment: (questionId: string, body: CreateQuestionCommentRequest) =>
+    post<CreateQuestionCommentResponse>(`/api/comments/questions/${questionId}/comments`, body),
   createAttempt: (body: CreateAttemptRequest) =>
     post<Attempt>("/api/comments/attempts", body),
   upsertProgress: (body: UpsertProgressRequest) =>

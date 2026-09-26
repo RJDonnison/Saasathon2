@@ -64,6 +64,7 @@ export default function CodeEditor({
   const [edited, setEdited] = useState(false);
   const [reportedWriting, setReportedWriting] = useState(false);
   const monacoEditor = useRef<Parameters<OnMount>[0] | null>(null);
+  const latestCode = useRef("");
   const decorations = useRef<ReturnType<
     Parameters<OnMount>[0]["createDecorationsCollection"]
   > | null>(null);
@@ -72,20 +73,27 @@ export default function CodeEditor({
   const mine = highlight?.editorKey === editor.key ? highlight : null;
 
   useEffect(() => {
+    latestCode.current = code;
+  }, [code]);
+
+  useEffect(() => {
     if (!edited || !moduleId || !sectionId || !editor.questionId) return;
-    const timer = window.setTimeout(
-      () =>
+    const saveLatest = () =>
         saveWork({
           moduleId,
           sectionId,
           questionId: editor.questionId!,
           kind: "code",
-          value: code,
-        }),
-      700,
-    );
-    return () => window.clearTimeout(timer);
-  }, [code, edited, editor.questionId, moduleId, saveWork, sectionId]);
+          value: latestCode.current,
+        });
+    // A throttle (rather than a debounced save) keeps the teacher's live view moving while the student types.
+    saveLatest();
+    const timer = window.setInterval(saveLatest, 2_500);
+    return () => {
+      window.clearInterval(timer);
+      saveLatest();
+    };
+  }, [edited, editor.questionId, moduleId, saveWork, sectionId]);
 
   function report(type: "writing_code" | "running_code" | "checking_code") {
     if (!moduleId || !sectionId || !editor.questionId) return;

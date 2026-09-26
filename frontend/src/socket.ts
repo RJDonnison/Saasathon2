@@ -7,6 +7,7 @@ import type {
   StudentStatusUpdatePayload,
   StudentActivityUpdatePayload,
   ModuleChangedPayload,
+  QuestionCommentCreatedPayload,
 } from "../../shared/events";
 import { supabase } from "./supabase.ts";
 
@@ -31,10 +32,14 @@ socket.on("connect_error", (err) =>
 // Cache the most recent snapshot. Socket setup happens above page components, so this avoids
 // losing the initial snapshot when a route mounts just after the connection succeeds.
 let currentRaisedHands: RaisedHandsUpdatePayload | null = null;
+let currentPresence: PresenceUpdatePayload | null = null;
 const raisedHandsListeners = new Set<(p: RaisedHandsUpdatePayload) => void>();
 socket.on("raised_hands_update", (payload) => {
   currentRaisedHands = payload;
   for (const listener of raisedHandsListeners) listener(payload);
+});
+socket.on("presence_update", (payload) => {
+  currentPresence = payload;
 });
 
 /** Open the connection. Call only once signed in and in a classroom — the server rejects the handshake otherwise. */
@@ -45,6 +50,7 @@ export function connectSocket() {
 export function disconnectSocket() {
   socket.disconnect();
   currentRaisedHands = null;
+  currentPresence = null;
 }
 
 // ---- emit helpers (dropped when not connected, rather than buffered) ----
@@ -98,6 +104,7 @@ export function onPresenceUpdate(
   cb: (p: PresenceUpdatePayload) => void,
 ): () => void {
   socket.on("presence_update", cb);
+  if (currentPresence) cb(currentPresence);
   return () => void socket.off("presence_update", cb);
 }
 export function onModuleChanged(
@@ -105,4 +112,10 @@ export function onModuleChanged(
 ): () => void {
   socket.on("module_changed", cb);
   return () => void socket.off("module_changed", cb);
+}
+export function onQuestionCommentCreated(
+  cb: (p: QuestionCommentCreatedPayload) => void,
+): () => void {
+  socket.on("question_comment_created", cb);
+  return () => void socket.off("question_comment_created", cb);
 }
