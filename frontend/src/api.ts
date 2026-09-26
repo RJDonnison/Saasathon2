@@ -66,6 +66,10 @@ import type {
 } from "../../shared/types";
 import { supabase } from "./supabase.ts";
 
+// Empty locally: Vite proxies /api to the backend. In a hosted frontend this
+// points at the separately deployed API origin.
+const apiOrigin = import.meta.env.VITE_API_ORIGIN?.replace(/\/$/, "") ?? "";
+
 export class ApiClientError extends Error {
   status: number;
   constructor(status: number, message: string) {
@@ -87,7 +91,7 @@ async function request<T>(
   if (token) headers.set("Authorization", `Bearer ${token}`);
   if (json !== undefined) headers.set("Content-Type", "application/json");
 
-  const res = await fetch(path, {
+  const res = await fetch(`${apiOrigin}${path}`, {
     ...requestInit,
     headers,
     body: json !== undefined ? JSON.stringify(json) : requestInit.body,
@@ -233,9 +237,13 @@ export const api = {
   recordLessonFollow: (sessionId: string, following: boolean) =>
     post<void>("/api/feedback/follow", { sessionId, following }),
   getLessonFeedback: (sessionId: string) =>
-    request<LessonFeedbackReport>(`/api/feedback/sessions/${encodeURIComponent(sessionId)}`),
+    request<LessonFeedbackReport>(
+      `/api/feedback/sessions/${encodeURIComponent(sessionId)}`,
+    ),
   getLessonStudentFeedback: (sessionId: string, studentId: string) =>
-    request<LessonFeedbackStudentDetail>(`/api/feedback/sessions/${encodeURIComponent(sessionId)}/students/${encodeURIComponent(studentId)}`),
+    request<LessonFeedbackStudentDetail>(
+      `/api/feedback/sessions/${encodeURIComponent(sessionId)}/students/${encodeURIComponent(studentId)}`,
+    ),
   createAttempt: (body: CreateAttemptRequest) =>
     post<CreateAttemptResponse>("/api/comments/attempts", body),
   createSubmission: (body: CreateSubmissionRequest) =>
@@ -265,8 +273,14 @@ export const api = {
     }),
   deleteCodeTest: (id: string) =>
     request<void>(`/api/modules/tests/${id}`, { method: "DELETE" }),
-  updateModuleAvailability: (id: string, body: UpdateModuleAvailabilityRequest) =>
-    request<Module>(`/api/modules/${id}/availability`, { method: "PUT", json: body }),
+  updateModuleAvailability: (
+    id: string,
+    body: UpdateModuleAvailabilityRequest,
+  ) =>
+    request<Module>(`/api/modules/${id}/availability`, {
+      method: "PUT",
+      json: body,
+    }),
   deleteModule: (id: string) =>
     request<void>(`/api/modules/${id}`, { method: "DELETE" }),
   validateMath: (body: ValidateMathRequest) =>
